@@ -14,3 +14,9 @@ wheels/
 
 # Quarto
 reports/output/
+
+# Local data and acquisition artifacts
+data/
+*.partial
+.env
+.gsi

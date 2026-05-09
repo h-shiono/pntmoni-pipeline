@@ -1,0 +1,30 @@
+"""Top-level Typer CLI for ``pntmoni-pipeline``."""
+from __future__ import annotations
+
+import logging
+
+import typer
+
+from .acquire import app as acquire_app
+
+app = typer.Typer(
+    name="pntmoni-pipeline",
+    help="PNT Moni — local batch pipeline (data, processing, reports).",
+    no_args_is_help=True,
+)
+
+app.add_typer(acquire_app, name="acquire", help="Data acquisition commands.")
+
+
+@app.callback()
+def _root(
+    verbose: bool = typer.Option(False, "-v", "--verbose", help="Enable debug logging."),
+) -> None:
+    logging.basicConfig(
+        level=logging.DEBUG if verbose else logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    )
+
+
+if __name__ == "__main__":
+    app()

@@ -1,0 +1,24 @@
+# Default configuration for pntmoni-pipeline.
+# Override with --config <path> on individual CLI commands.
+
+[paths]
+data_root = "data"
+raw_dir = "data/raw"
+processed_dir = "data/processed"
+metadata_dir = "data/metadata"
+
+[acquisition.geonet]
+# GSI FTP (terras.gsi.go.jp). Credentials supplied via env:
+#   GSI_FTP_USER, GSI_FTP_PASSWORD
+# (FTP_USER / FTP_PASSWORD also accepted for parity with legacy shell scripts.)
+rinex_archive = "/data/GRJE_3.02"
+f5_archive    = "/data/coordinates_F5/GPS"
+
+[acquisition.cddis]
+# Earthdata Login required.
+# Credentials via EARTHDATA_USER/EARTHDATA_PASSWORD or ~/.netrc
+brdc_root = "https://cddis.nasa.gov/archive/gnss/data/daily"
+
+[acquisition.qzss]
+# Public archive (no auth).
+l6_root = "https://sys.qzss.go.jp/archives/l6"

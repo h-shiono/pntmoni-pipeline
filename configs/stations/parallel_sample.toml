@@ -1,0 +1,13 @@
+# Sample station list for MRTKLIB parallel evaluation (ADR 0001).
+# 100–200 GEONET stations; the full list is sourced separately.
+# This file is a placeholder for the structure.
+
+[stations]
+ids = [
+    # Sample 4-character GEONET station IDs.
+    # Tsukuba (TSKB region) cluster:
+    "0231",
+    "0232",
+    "0233",
+    # Add more stations here, or generate from a sampling script.
+]

@@ -1,2 +1,4 @@
-def main() -> None:
-    print("Hello from pntmoni-pipeline!")
+"""PNT Moni pipeline package."""
+from .cli import app
+
+__all__ = ["app"]

@@ -66,34 +66,48 @@ matching the design in pntmoni-docs ADRs.
 
 ---
 
-## [Phase 0] Task: First GEONET acquisition module
+## [2026-05-09] Task: Acquisition layer (GEONET / CDDIS / QZSS)
 
 ### Goal
-Implement minimal GEONET 30-second RINEX OBS acquisition for a
-single station, with metadata recording.
+Replace four legacy shell scripts (get_gsi_f5, get_gsi_rinex, get_brdc,
+get_l6) with a Python acquisition layer that records provenance, supports
+station filtering, and exposes a Typer CLI.
 
 ### Plan
-- [ ] Identify GEONET FTP/HTTP endpoint and access pattern
-- [ ] Implement `src/pntmoni_pipeline/acquisition/geonet.py`
-  - Function: `fetch_geonet_30s(date, station) -> Path`
-  - Records metadata: source, URL, retrieval timestamp, SHA-256
-- [ ] Store metadata in SQLite or JSONL `data/metadata/`
-- [ ] Add basic test in `tests/unit/test_acquisition.py`
-- [ ] CLI: `pntmoni-pipeline acquire geonet --date YYYY-MM-DD --station <id>`
+- [x] Declare httpx, typer, pytest dependencies in pyproject.toml
+- [x] `acquisition/_base.py`: AcquisitionResult, sha256_file, with_retry
+- [x] `acquisition/_provenance.py`: JSONL append-log
+- [x] `acquisition/_http.py`: streaming download + Earthdata auth resolver
+- [x] `acquisition/_ftp.py`: GSI FTP list/download + station prefix filter
+- [x] `acquisition/geonet_rinex.py`: GRJE_3.02 RINEX OBS, optional station filter
+- [x] `acquisition/geonet_f5.py`: F5 yearly snapshot
+- [x] `acquisition/cddis_brdc.py`: BRDC daily merged nav (Earthdata auth)
+- [x] `acquisition/qzss_l6.py`: 24 hourly L6 files + concatenated AX
+- [x] `cli/`: Typer app with `acquire {rinex,f5,brdc,l6}` subcommands
+- [x] `configs/default.toml` baseline
+- [x] Unit tests for hashing, provenance, URL composition (7 tests pass)
+- [ ] Live integration test against a single GEONET station + DOY
+      (requires GSI_FTP_USER/GSI_FTP_PASSWORD; defer until creds set)
+- [ ] Live BRDC test against CDDIS (requires Earthdata Login)
+- [ ] Live L6 test against QZSS public archive (no auth required)
 
 ### Phase Guard
-[ ] Confirmed Phase 0 scope
+[x] Confirmed Phase 0 scope (Initial GEONET acquisition module)
 
 ### Done Criteria
-- Successfully downloads RINEX OBS file for a chosen test station
-  (e.g., 0231 — Tsukuba) for a recent date
-- Metadata recorded and queryable
-- Unit test passes
+- All four sources have a Python implementation with parity to shell
+- `pntmoni-pipeline acquire --help` lists rinex/f5/brdc/l6
+- Provenance JSONL written to `data/metadata/acquisition.jsonl`
+- Unit tests pass (`uv run pytest`)
+- Live download produces a file whose SHA-256 matches a re-run
 
 ### Open Issues
-- License compliance with GSI: confirm PDL 1.0 attribution applied
-  to any redistributed data (this is internal use, not redistribution,
-  but pattern should be established early)
+- GEONET FTP NLST behaviour: server may return absolute or relative
+  paths. Code handles both, but verify on first live run.
+- License compliance: PDL 1.0 attribution applied at report-render
+  time, not at acquisition time (internal use only here).
+- Storage tiering: not implemented — `data/raw/` will grow until
+  that lands. Track disk usage during first month of operation.
 
 ---
 
