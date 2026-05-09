@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from datetime import date
 from pathlib import Path
 from typing import NamedTuple
 
@@ -52,9 +53,24 @@ F5_VARIANTS: dict[str, F5Variant] = {
     ),
 }
 
-DEFAULT_VARIANT = "f5"      # backward-compat default; switch to "f5_1"
-                            # when CLAS-side migration is confirmed
+DEFAULT_VARIANT = "f5"      # backward-compat default for explicit
+                            # ``acquire`` runs; ``--variant`` is recommended
 SOURCE_PREFIX = "geonet_"   # provenance source label = SOURCE_PREFIX + variant
+
+# CLAS evaluation officially switches from F5 (ITRF2014) to F5.1
+# (ITRF2020) on this date per QSS announcement IS-QZSS_260327
+# (https://qzss.go.jp/info/information/is-qzss_260327.html).
+# Pre-switch dates are evaluated against F5; post-switch against F5.1.
+CLAS_F51_EFFECTIVE_DATE = date(2026, 4, 1)
+
+
+def variant_for_date(target: date) -> str:
+    """Return the F5 variant CLAS officially uses for ``target``.
+
+    Pre-:data:`CLAS_F51_EFFECTIVE_DATE` → ``"f5"`` (ITRF2014).
+    On or after that date → ``"f5_1"`` (ITRF2020).
+    """
+    return "f5_1" if target >= CLAS_F51_EFFECTIVE_DATE else "f5"
 
 
 def variant_for(label: str) -> F5Variant:
@@ -130,10 +146,12 @@ def fetch(
 
 
 __all__ = [
+    "CLAS_F51_EFFECTIVE_DATE",
     "DEFAULT_VARIANT",
     "F5Variant",
     "F5_VARIANTS",
     "fetch",
     "remote_dir",
     "variant_for",
+    "variant_for_date",
 ]

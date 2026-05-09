@@ -478,6 +478,74 @@ the planned `MOD-001` modification.
 
 ---
 
+## [2026-05-10] Task: Production aux-data dir + igs20.atx acquisition
+
+### Goal
+Stage a writable ``configs/aux_data/`` directory containing the
+official aux files referenced by the production config
+``configs/kinematic_p30.conf`` (``igs20.atx``,
+``clas_grid_003.def``), so production processing can run with
+``--data-dir configs/aux_data`` instead of falling back to the
+verify config.
+
+### Plan (sketch)
+- [ ] Acquire official igs20.atx from
+      ``https://files.igs.org/pub/station/general/igs20.atx``;
+      record sha256 in a provenance log
+- [ ] Source ``clas_grid_003.def`` (CAO/MELCO) — currently CLASLIB
+      ships only ``clas_grid.def``; check if 003 is a newer drop
+      with extra grid points or just a rename
+- [ ] Place under ``configs/aux_data/`` (gitignored if large; small
+      files committed with provenance comment)
+- [ ] Optional: small acquire CLI (``pntmoni-pipeline acquire
+      igs-antex --version igs20``) so re-acquisition is reproducible
+- [ ] Document the production run recipe in README.md
+
+### Phase Guard
+[ ] Phase 0 (production-grade processing depends on this)
+
+### Open Issues
+- ``igs14_L5copy.atx`` (CLASLIB-shipped) is content-equivalent to
+  ``igs20.atx`` (per user). Use that as a fallback while official
+  acquisition is set up — but track it as "stand-in", not the
+  canonical file
+- ``clas_grid_003.def`` source path/URL is unconfirmed; user contact
+  with CAO/MELCO may be needed
+
+---
+
+## [2026-05-10] Task: Re-run downstream chain with F5.1 reference for 2026-04-01
+
+### Goal
+The current ``data/processed/{epoch_errors, accuracy, accuracy_network,
+ttff, ttff_network, *_monthly}/`` Parquets for 2026-04-01 were
+computed against the previous trailing-7-day F5 (ITRF2014) reference.
+After the F5.1 acquisition the reference at the same path is now
+full-window F5.1 (ITRF2020). Downstream Parquets should be re-run for
+internal coherence and to produce the production-grade verify number.
+
+### Plan
+- [ ] ``analyze epoch-errors --date 2026-04-01 --mode kinematic_p30_verify``
+- [ ] ``analyze epoch-errors --date 2026-04-01 --mode kinematic_p30_ttff_verify``
+- [ ] ``analyze accuracy --date 2026-04-01 --mode kinematic_p30_*``
+- [ ] ``analyze ttff-stats --date 2026-04-01 --mode kinematic_p30_ttff_verify``
+- [ ] ``analyze monthly --month 2026-04 --mode kinematic_p30_*``
+- [ ] Compare numbers against the previous run; document the
+      ITRF2014→ITRF2020 shift's effect on percentile errors in
+      lessons.md
+- [ ] Verify provenance JSONLs accumulate cleanly (append-only)
+
+### Phase Guard
+[x] Phase 0 (verify run with the latest reference)
+
+### Done Criteria
+- Downstream Parquets recomputed against ITRF2020 reference
+- Provenance log records both runs
+- Differences explained in lessons.md (frame difference is mostly
+  intercept; cm-level effect on percentiles)
+
+---
+
 # Backlog (2026-05-09 — added per user direction)
 
 The tasks below are stacked for future sprints. They share dependencies

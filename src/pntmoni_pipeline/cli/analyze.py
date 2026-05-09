@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from ..acquisition import geonet_f5
 from ..analysis import (
     _accuracy_stats,
     _epoch_errors,
@@ -151,10 +152,12 @@ def cmd_reference_coords(
         str,
         typer.Option(
             "--f5-variant",
-            help="GSI variant: 'f5' (ITRF2014) or 'f5_1' (ITRF2020). "
-                 "Resolves f5_root to data/raw/{variant} unless --f5-root is set.",
+            help="GSI variant: 'auto' (date-based: F5 pre-2026-04-01, F5.1 "
+                 "after; per QSS IS-QZSS_260327), 'f5' (ITRF2014, force), "
+                 "or 'f5_1' (ITRF2020, force). Resolves f5_root to "
+                 "data/raw/{variant} unless --f5-root is set.",
         ),
-    ] = "f5",
+    ] = "auto",
     output_root: Annotated[
         Path,
         typer.Option("--out", help="Reference-coords output root."),
@@ -186,11 +189,6 @@ def cmd_reference_coords(
     if (date_ is None) == (week is None):
         raise typer.BadParameter("provide exactly one of --date or --week")
 
-    if f5_root is None:
-        if f5_variant not in ("f5", "f5_1"):
-            raise typer.BadParameter(f"unknown --f5-variant: {f5_variant}")
-        f5_root = Path("data/raw") / f5_variant
-
     if date_ is not None:
         targets = [_parse_iso_date(date_)]
         out_path = _reference_coords.output_path_for_day(output_root, targets[0])
@@ -199,6 +197,20 @@ def cmd_reference_coords(
         year, iso_week = _parse_iso_week(week)
         targets = _iso_week_dates(year, iso_week)
         out_path = _reference_coords.output_path_for_week(output_root, year, iso_week)
+
+    if f5_root is None:
+        if f5_variant == "auto":
+            chosen = {geonet_f5.variant_for_date(t) for t in targets}
+            if len(chosen) > 1:
+                raise typer.BadParameter(
+                    f"targets span the F5→F5.1 switch "
+                    f"({geonet_f5.CLAS_F51_EFFECTIVE_DATE.isoformat()}); "
+                    f"split into two runs with explicit --f5-variant"
+                )
+            f5_variant = chosen.pop()
+        if f5_variant not in ("f5", "f5_1"):
+            raise typer.BadParameter(f"unknown --f5-variant: {f5_variant}")
+        f5_root = Path("data/raw") / f5_variant
 
     jumps = _reference_coords.load_jumps(jumps_path)
 

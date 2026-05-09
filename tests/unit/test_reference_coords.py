@@ -163,6 +163,16 @@ def test_read_f5_handles_f5_1_variant(tmp_path: Path) -> None:
     assert s.df["date"].iloc[0].day == 1
 
 
+def test_geonet_f5_variant_for_date_uses_clas_switchover() -> None:
+    from pntmoni_pipeline.acquisition import geonet_f5
+    # Per QSS IS-QZSS_260327, CLAS switches to F5.1 on 2026-04-01.
+    assert geonet_f5.variant_for_date(date(2026, 3, 31)) == "f5"
+    assert geonet_f5.variant_for_date(date(2026, 4, 1)) == "f5_1"
+    assert geonet_f5.variant_for_date(date(2025, 12, 1)) == "f5"
+    assert geonet_f5.variant_for_date(date(2027, 1, 1)) == "f5_1"
+    assert geonet_f5.CLAS_F51_EFFECTIVE_DATE == date(2026, 4, 1)
+
+
 def test_geonet_f5_variant_routing(tmp_path: Path) -> None:
     from pntmoni_pipeline.acquisition import geonet_f5
     # Routing only — no FTP call. We just assert path strings.

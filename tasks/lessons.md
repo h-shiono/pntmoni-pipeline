@@ -154,6 +154,58 @@ separate measurement worth doing once that aux data is staged.
 
 ---
 
+## [2026-05-10] reference: F5 → F5.1 switchover effective 2026-04-01
+
+**Context**: QSS announcement
+[IS-QZSS_260327](https://qzss.go.jp/info/information/is-qzss_260327.html)
+fixes the CLAS evaluation reference's switch from F5 (ITRF2014) to
+F5.1 (ITRF2020) at **2026-04-01 JST** (backup date 2026-04-02). Both
+archives remain published; the switch is methodological, not access.
+**Implementation**: ``acquisition.geonet_f5.CLAS_F51_EFFECTIVE_DATE``
+codifies the date and ``variant_for_date(target)`` returns the
+official variant for a given date. CLI ``analyze reference-coords
+--f5-variant auto`` (now the default) auto-resolves per target; runs
+that span the switch (e.g. ``--week 2026-W14`` covering 2026-03-30 to
+04-05) raise an error asking the operator to split into two runs.
+**Boundary edge case 2026-03-25 to 2026-03-31**: pre-switch dates
+whose ±7 d window extends into post-switch days. F5 publication may
+freeze at 2026-03-31; the official methodology is to evaluate these
+dates against F5 with whatever days are available. PNT Moni mirrors
+this — operators must pass ``--allow-partial-window`` for these
+boundary dates and document the days-used count from provenance.
+**Rule**: When an upstream methodological switch is anchored to a
+calendar date, codify the date as a constant (not a string in
+docstrings) and add an auto-routing layer at the CLI so individual
+runs cannot pick the wrong variant by accident. The spanning case
+fails loudly because the most common "natural" mistake is to roll up
+a week that straddles the switch.
+**Tags:** #f5 #f5_1 #clas #switchover #adr-0001
+
+---
+
+## [2026-05-10] data: igs20.atx is officially adopted; igs14_L5copy is content-equivalent
+
+**Context**: As of the F5→F5.1 switch (2026-04-01) the official IGS
+antenna PCV file is ``igs20.atx``. CLASLIB ships
+``igs14_L5copy.atx``, whose contents are equivalent to igs20.atx
+(per user verification — same per-block antenna offsets/PCVs).
+**Status**:
+- ``configs/kinematic_p30_verify.conf`` continues to reference
+  ``data/igs14_L5copy.atx`` for verify runs against the CLASLIB-
+  shipped ``data/`` dir. Functionally equivalent to igs20 today.
+- ``configs/kinematic_p30.conf`` (production) references
+  ``data/igs20.atx`` directly. The production aux-data dir is not
+  yet staged in this repo (tracked in tasks/todo.md).
+**Rule**: Don't silently swap content-equivalent ANTEX files at the
+filename layer; downstream provenance loses the trail. When the
+production aux-data dir lands, the file should be the official
+``igs20.atx`` from
+``https://files.igs.org/pub/station/general/igs20.atx`` with sha256
+recorded in provenance.
+**Tags:** #igs #antenna-pcv #aux-data
+
+---
+
 ## [2026-05-09] data: 2026-04-01 reference is verify-grade (trailing 7 days)
 
 **Mistake / context:** Stage-1 `epoch_errors`, Stage-2a `accuracy`,
