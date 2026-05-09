@@ -22,3 +22,7 @@ logs/
 *.partial
 .env
 .gsi
+
+# QC binaries (user-staged, license / size sensitive — not source-controlled)
+vendor/teqc/
+teqc_OSX_*.zip
