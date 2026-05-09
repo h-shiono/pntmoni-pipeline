@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from ..analysis import _epoch_errors, _reference_coords, _ttff, format_summary
+from ..analysis import _accuracy_stats, _epoch_errors, _reference_coords, _ttff, format_summary
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -248,4 +248,38 @@ def cmd_epoch_errors(
         f"wrote {res.parquet_path}  "
         f"stations={res.n_stations}  epochs={res.n_epochs}  "
         f"ref={res.ref_coords_source.name}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# accuracy (Stage 2a)
+# ---------------------------------------------------------------------------
+
+@app.command("accuracy")
+def cmd_accuracy(
+    date_: Annotated[
+        str, typer.Option("--date", "-d", help="Target date (YYYY-MM-DD).")
+    ],
+    mode: Annotated[
+        str, typer.Option("--mode", "-m", help="Processing mode."),
+    ] = "kinematic_p30_verify",
+    epoch_errors_root: Annotated[
+        Path, typer.Option("--epoch-errors-root", help="Stage-1 root."),
+    ] = _accuracy_stats.DEFAULT_EPOCH_ERRORS_ROOT,
+    output_root: Annotated[
+        Path, typer.Option("--out", help="Stage-2 output root."),
+    ] = _accuracy_stats.DEFAULT_OUTPUT_ROOT,
+) -> None:
+    """Build daily accuracy stats (per-station + per-network cube) — Stage 2a."""
+    target = _parse_iso_date(date_)
+    res = _accuracy_stats.compute_daily(
+        target,
+        mode=mode,
+        epoch_errors_root=epoch_errors_root,
+        output_root=output_root,
+    )
+    typer.echo(
+        f"wrote {res.station_parquet.name} + {res.network_parquet.name}  "
+        f"stations={res.n_stations}  epochs={res.n_epochs}  "
+        f"qualified={res.n_qualified_stations}"
     )

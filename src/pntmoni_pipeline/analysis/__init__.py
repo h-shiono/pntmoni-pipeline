@@ -5,6 +5,13 @@ cover percentile error metrics, regional aggregates, F10.7
 correlations, and integrity indicators per the planned layout in
 ``CLAUDE.md``.
 """
+from . import _registry
+from ._accuracy_stats import (
+    AccuracyDailyResult,
+    compute_daily as compute_accuracy_daily,
+    compute_network_accuracy,
+    compute_station_accuracy,
+)
 from ._epoch_errors import (
     DAY_HOURS_UTC,
     EpochErrorsResult,
@@ -30,6 +37,7 @@ from ._ttff import (
 )
 
 __all__ = [
+    "AccuracyDailyResult",
     "ComputeResult",
     "DAY_HOURS_UTC",
     "EpochErrorsResult",
@@ -37,9 +45,12 @@ __all__ = [
     "TTFFEvent",
     "TTFFSummary",
     "analyze_doy",
+    "compute_accuracy_daily",
     "compute_epoch_errors",
     "compute_for_target",
     "compute_for_targets",
+    "compute_network_accuracy",
+    "compute_station_accuracy",
     "extract_events",
     "format_summary",
     "load_jumps",

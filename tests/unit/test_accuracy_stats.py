@@ -1,0 +1,256 @@
+"""Unit tests for the registry loader and accuracy_stats Stage 2a."""
+from __future__ import annotations
+
+import textwrap
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from pntmoni_pipeline.analysis import _accuracy_stats, _registry
+
+
+# ---------------------------------------------------------------------------
+# Registry
+# ---------------------------------------------------------------------------
+
+def _write_minimal_registry(tmp_path: Path) -> _registry.RegistrySources:
+    na = tmp_path / "na.toml"
+    na.write_text(textwrap.dedent("""\
+        [stations."0231"]
+        netid = 7
+        isinside = true
+
+        [stations."1098"]
+        isinside = false
+
+        [stations."0500"]
+        netid = 1
+        isinside = true
+    """))
+    ev = tmp_path / "ev.toml"
+    ev.write_text(textwrap.dedent("""\
+        [stations."0231"]
+        periods = [
+            { from = 2024-04-01, to = 2024-09-30, fy_label = "fy2024_1st_h" },
+            { from = 2024-10-01, to = 2025-03-31, fy_label = "fy2024_2nd_h" },
+        ]
+        [stations."0500"]
+        periods = [
+            { from = 2024-01-01, to = 2024-06-30, fy_label = "fy2023_2nd_h" },
+            # gap intentionally
+            { from = 2025-01-01, to = 2025-03-31, fy_label = "post_recovery" },
+        ]
+    """))
+    ni = tmp_path / "ni.toml"
+    ni.write_text("# placeholder\n")
+    return _registry.RegistrySources(
+        network_assignments=na, network_info=ni, eval_periods=ev,
+    )
+
+
+def test_registry_resolves_is_eval_at_target_date(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    df = _registry.load(date(2024, 5, 15), sources=src)
+    assert set(df["rinex_id"]) == {"0231", "0500", "1098"}
+    row_0231 = df[df["rinex_id"] == "0231"].iloc[0]
+    assert row_0231["is_eval"] is np.True_ or bool(row_0231["is_eval"]) is True
+    assert int(row_0231["netid"]) == 7
+    assert bool(row_0231["isinside"])
+    # 0500 in fy2023_2nd_h period (2024-01-01..06-30) → in eval here.
+    assert bool(df[df["rinex_id"] == "0500"].iloc[0]["is_eval"])
+    # 1098 has no eval period at all.
+    assert not bool(df[df["rinex_id"] == "1098"].iloc[0]["is_eval"])
+
+
+def test_registry_eval_gap_period(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    df = _registry.load(date(2024, 8, 15), sources=src)
+    row_0500 = df[df["rinex_id"] == "0500"].iloc[0]
+    # 2024-08-15 is in the gap (after 06-30, before 2025-01-01).
+    assert not bool(row_0500["is_eval"])
+
+
+def test_registry_qualified_collapses_to_is_eval_when_qc_missing(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    df = _registry.load(date(2024, 5, 15), sources=src)
+    # qualified == is_eval today (qc_pass is None placeholder).
+    assert (df["qualified"] == df["is_eval"]).all()
+
+
+def test_registry_southern_flag(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    df = _registry.load(date(2024, 5, 15), sources=src)
+    # 0500 is netid=1 (southern); 0231 is netid=7 (not southern).
+    assert bool(df[df["rinex_id"] == "0500"].iloc[0]["is_southern"])
+    assert not bool(df[df["rinex_id"] == "0231"].iloc[0]["is_southern"])
+
+
+# ---------------------------------------------------------------------------
+# Synthetic epoch_errors fixture
+# ---------------------------------------------------------------------------
+
+def _make_epoch_errors(stations_to_errors: dict[str, tuple[float, float, int]]) -> pd.DataFrame:
+    """Build a synthetic epoch_errors frame.
+
+    ``stations_to_errors[station]`` = (h_error_const, v_error_const, q).
+    Each station gets 6 epochs, mix of day/night.
+    """
+    rows = []
+    base = datetime(2026, 4, 1, 0, 0, 0, tzinfo=UTC)
+    for station, (h_err, v_err, q) in stations_to_errors.items():
+        for i in range(6):
+            t = base + timedelta(seconds=30 * i)
+            is_day = t.hour in set(range(0, 10)) | set(range(21, 24))
+            rows.append({
+                "date": "2026-04-01",
+                "station": station,
+                "mode": "kinematic_p30_test",
+                "engine_version": "v-test",
+                "epoch_idx": i,
+                "time_utc": t,
+                "quality": np.int8(q),
+                "num_sat": np.int8(12),
+                "e_m": np.float32(h_err / np.sqrt(2)),
+                "n_m": np.float32(h_err / np.sqrt(2)),
+                "u_m": np.float32(v_err),
+                "horizontal_m": np.float32(h_err),
+                "vertical_m": np.float32(v_err),
+                "is_day": is_day,
+            })
+    return pd.DataFrame(rows)
+
+
+def test_compute_station_accuracy_basic_metrics() -> None:
+    # Two stations, all Q=4 with constant errors → percentiles equal the value.
+    df = _make_epoch_errors({"0231": (0.05, 0.10, 4), "0500": (0.20, 0.40, 4)})
+    out = _accuracy_stats.compute_station_accuracy(
+        df, target_date=date(2026, 4, 1),
+        mode="kinematic_p30_test", engine_version="v-test",
+    )
+    assert set(out["window"]) == {"all", "day", "night"}
+    row = out[(out["station"] == "0231") & (out["window"] == "all")].iloc[0]
+    assert row["n_epoch"] == 6
+    assert row["fix_rate"] == pytest.approx(1.0)
+    assert row["hor_p95"] == pytest.approx(0.05, abs=1e-4)
+    assert row["ver_p99"] == pytest.approx(0.10, abs=1e-4)
+    assert row["hor_rms"] == pytest.approx(0.05, abs=1e-4)
+
+
+def test_compute_station_accuracy_fix_rate_and_percentiles_with_q1() -> None:
+    # 0231: 4 epochs Q=4 with hor=0.05, 2 epochs Q=1 with hor=10.0 (mocked via different stations).
+    rows = []
+    base = datetime(2026, 4, 1, 0, 0, tzinfo=UTC)
+    for i in range(6):
+        q = 4 if i < 4 else 1
+        h = 0.05 if q == 4 else 10.0
+        rows.append({
+            "date": "2026-04-01",
+            "station": "0231",
+            "mode": "m", "engine_version": "v",
+            "epoch_idx": i,
+            "time_utc": base + timedelta(seconds=30 * i),
+            "quality": np.int8(q), "num_sat": np.int8(12),
+            "e_m": np.float32(h), "n_m": np.float32(0.0),
+            "u_m": np.float32(0.0),
+            "horizontal_m": np.float32(h),
+            "vertical_m": np.float32(0.0),
+            "is_day": True,
+        })
+    df = pd.DataFrame(rows)
+    out = _accuracy_stats.compute_station_accuracy(
+        df, target_date=date(2026, 4, 1), mode="m", engine_version="v",
+    )
+    row = out[(out["station"] == "0231") & (out["window"] == "all")].iloc[0]
+    assert row["n_epoch"] == 6
+    assert row["fix_rate"] == pytest.approx(4 / 6)
+    # Q=1 epochs ARE included in percentile calculation (legacy convention).
+    # p95 of [0.05, 0.05, 0.05, 0.05, 10.0, 10.0] in linear-interp = ~9.5.
+    assert row["hor_p95"] > 5.0
+
+
+def test_compute_network_accuracy_cube_dimensions(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    reg = _registry.load(date(2024, 5, 15), sources=src)
+    # 3 stations (0231, 0500, 1098). All Q=4, distinct error magnitudes.
+    df = _make_epoch_errors({
+        "0231": (0.05, 0.10, 4),    # netid 7, inside, eval
+        "0500": (0.10, 0.20, 4),    # netid 1, inside, eval (southern)
+        "1098": (0.50, 1.00, 4),    # no netid, outside, NOT eval
+    })
+    out = _accuracy_stats.compute_network_accuracy(
+        df, reg,
+        target_date=date(2024, 5, 15), mode="m", engine_version="v",
+    )
+    # Dimensions: 13 networks × 4 scopes × 3 station_sets × 3 windows = 468.
+    assert len(out) == 468
+    expected_cols = {
+        "date", "mode", "engine_version",
+        "network_id", "scope", "station_set", "window",
+        "n_stations", "n_epoch", "n_sat_mean", "fix_rate",
+        "hor_p50", "hor_p95", "hor_p99", "hor_p999",
+        "ver_p50", "ver_p95", "ver_p99", "ver_p999",
+        "hor_rms", "ver_rms",
+    }
+    assert expected_cols.issubset(out.columns)
+
+
+def test_compute_network_accuracy_eval_only_filters_to_eval_stations(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    reg = _registry.load(date(2024, 5, 15), sources=src)
+    df = _make_epoch_errors({
+        "0231": (0.05, 0.10, 4),    # is_eval=True
+        "1098": (10.0, 5.0, 4),     # is_eval=False
+    })
+    out = _accuracy_stats.compute_network_accuracy(
+        df, reg,
+        target_date=date(2024, 5, 15), mode="m", engine_version="v",
+    )
+    # network_id="all", scope="all", station_set="eval_only", window="all".
+    cell_eval = out[
+        (out["network_id"] == "all")
+        & (out["scope"] == "all")
+        & (out["station_set"] == "eval_only")
+        & (out["window"] == "all")
+    ].iloc[0]
+    cell_all = out[
+        (out["network_id"] == "all")
+        & (out["scope"] == "all")
+        & (out["station_set"] == "all")
+        & (out["window"] == "all")
+    ].iloc[0]
+    # eval_only excludes 1098; "all" includes both. So eval_only's hor_p95
+    # equals 0.05 (only 0231 errors), but "all" gets pulled toward 1098's
+    # 10.0.
+    assert cell_eval["n_stations"] == 1
+    assert cell_eval["hor_p95"] == pytest.approx(0.05, abs=1e-4)
+    assert cell_all["n_stations"] == 2
+    assert cell_all["hor_p95"] > 1.0
+
+
+def test_compute_network_accuracy_outside_wo_southern_excludes_southern(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    reg = _registry.load(date(2024, 5, 15), sources=src)
+    # All three stations marked "outside" by patching the registry.
+    reg.loc[reg["rinex_id"].isin(["0231", "0500", "1098"]), "isinside"] = False
+    # 0231 (netid=7), 0500 (netid=1, southern), 1098 (no netid).
+    df = _make_epoch_errors({
+        "0231": (0.05, 0.10, 4),
+        "0500": (0.20, 0.40, 4),
+        "1098": (10.0, 5.0, 4),
+    })
+    out = _accuracy_stats.compute_network_accuracy(
+        df, reg,
+        target_date=date(2024, 5, 15), mode="m", engine_version="v",
+    )
+    cell = out[
+        (out["network_id"] == "all")
+        & (out["scope"] == "outside_wo_southern")
+        & (out["station_set"] == "all")
+        & (out["window"] == "all")
+    ].iloc[0]
+    # 0500 (netid=1, southern) is excluded; 0231 (netid=7) and 1098
+    # (no netid → is_southern=False) remain.
+    assert cell["n_stations"] == 2
