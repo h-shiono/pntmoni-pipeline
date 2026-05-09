@@ -8,7 +8,15 @@ from typing import Annotated
 
 import typer
 
-from ..analysis import _accuracy_stats, _epoch_errors, _reference_coords, _ttff, format_summary
+from ..analysis import (
+    _accuracy_stats,
+    _epoch_errors,
+    _monthly,
+    _reference_coords,
+    _ttff,
+    _ttff_stats,
+    format_summary,
+)
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -282,4 +290,103 @@ def cmd_accuracy(
         f"wrote {res.station_parquet.name} + {res.network_parquet.name}  "
         f"stations={res.n_stations}  epochs={res.n_epochs}  "
         f"qualified={res.n_qualified_stations}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# ttff-stats (Stage 2b — strict criterion: Q==4 AND error≤threshold)
+# ---------------------------------------------------------------------------
+
+@app.command("ttff-stats")
+def cmd_ttff_stats(
+    date_: Annotated[
+        str, typer.Option("--date", "-d", help="Target date (YYYY-MM-DD).")
+    ],
+    mode: Annotated[
+        str, typer.Option("--mode", "-m", help="Processing mode."),
+    ] = "kinematic_p30_ttff_verify",
+    epoch_errors_root: Annotated[
+        Path, typer.Option("--epoch-errors-root", help="Stage-1 root."),
+    ] = _accuracy_stats.DEFAULT_EPOCH_ERRORS_ROOT,
+    output_root: Annotated[
+        Path, typer.Option("--out", help="Stage-2 output root."),
+    ] = _accuracy_stats.DEFAULT_OUTPUT_ROOT,
+    reset_period: Annotated[
+        int,
+        typer.Option(
+            "--reset-period",
+            help="Reset period in seconds (must match misc-regularly).",
+        ),
+    ] = _ttff_stats.DEFAULT_RESET_PERIOD_SEC,
+    horizontal_threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--h-threshold",
+            help="Horizontal accuracy threshold (m). Auto from mode if omitted.",
+        ),
+    ] = None,
+    vertical_threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--v-threshold",
+            help="Vertical accuracy threshold (m). Auto from mode if omitted.",
+        ),
+    ] = None,
+) -> None:
+    """Build daily strict-TTFF stats — Stage 2b."""
+    target = _parse_iso_date(date_)
+    res = _ttff_stats.compute_daily(
+        target,
+        mode=mode,
+        epoch_errors_root=epoch_errors_root,
+        output_root=output_root,
+        reset_period_sec=reset_period,
+        horizontal_threshold_m=horizontal_threshold,
+        vertical_threshold_m=vertical_threshold,
+    )
+    typer.echo(
+        f"wrote {res.station_parquet.name} + {res.network_parquet.name}  "
+        f"H={res.horizontal_threshold_m:.3f}  V={res.vertical_threshold_m:.3f}  "
+        f"reset={res.reset_period_sec}s  qualified={res.n_qualified_stations}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# monthly rollup (Stage 2 monthly — accuracy + ttff in one shot)
+# ---------------------------------------------------------------------------
+
+@app.command("monthly")
+def cmd_monthly(
+    month: Annotated[
+        str, typer.Option("--month", "-m", help="Target month (YYYY-MM).")
+    ],
+    mode: Annotated[
+        str, typer.Option("--mode", help="Processing mode."),
+    ] = "kinematic_p30_ttff_verify",
+    epoch_errors_root: Annotated[
+        Path, typer.Option("--epoch-errors-root", help="Stage-1 root."),
+    ] = _accuracy_stats.DEFAULT_EPOCH_ERRORS_ROOT,
+    output_root: Annotated[
+        Path, typer.Option("--out", help="Stage-2 output root."),
+    ] = _accuracy_stats.DEFAULT_OUTPUT_ROOT,
+    reset_period: Annotated[
+        int, typer.Option("--reset-period", help="Reset period in seconds."),
+    ] = _ttff_stats.DEFAULT_RESET_PERIOD_SEC,
+) -> None:
+    """Pool a month of daily epoch_errors and emit monthly Parquets."""
+    try:
+        year_str, month_str = month.split("-")
+        year, month_int = int(year_str), int(month_str)
+    except (ValueError, AttributeError) as e:
+        raise typer.BadParameter(f"month must be YYYY-MM: {e}") from e
+    res = _monthly.compute_monthly(
+        year, month_int,
+        mode=mode,
+        epoch_errors_root=epoch_errors_root,
+        output_root=output_root,
+        reset_period_sec=reset_period,
+    )
+    typer.echo(
+        f"wrote 4 Parquets for {res.period} (mode={res.mode})  "
+        f"pooled {res.n_dates_pooled} day(s)"
     )
