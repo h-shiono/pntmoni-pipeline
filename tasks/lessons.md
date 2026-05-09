@@ -85,6 +85,130 @@ differ again. Verify with NLST before building filters.
 
 ---
 
+## [2026-05-09] build: CLASLIB rnx2rtkp does not build cleanly on macOS clang
+
+**Mistake:** First attempt at `make -C vendor/pntmoni-claslib/util/rnx2rtkp`
+failed with `error: call to undeclared function 'strtok_r'` from
+`rtkcmn.c:3514`.
+**Root cause:** Two compounding issues:
+1. The Makefile passes `-ansi -pedantic` (i.e. `-std=c89 -pedantic`),
+   which prevents declaration of POSIX functions like `strtok_r`.
+2. `src/rtkcmn.c:113` defines `_POSIX_C_SOURCE 199309` (POSIX.1b-1993,
+   pre-`strtok_r`) — this in-file `#define` overrides any cmdline
+   `-D_POSIX_C_SOURCE=200809L`. Apple clang 21 promotes
+   implicit-function-declaration to error by default, so the build fails.
+   The file has CRLF line endings (Windows-style), which made
+   one-shot `sed -i 's|...$|...|'` replacements no-op.
+**Fix applied (verification only):** Locally edited
+`vendor/pntmoni-claslib/src/rtkcmn.c` to bump `_POSIX_C_SOURCE` to
+`200809L`, then bypassed the Makefile by calling `gcc` directly with
+the source list extracted from the Makefile's `SRCS`/`RCV_SRCS`
+variables. Built without `-DLAPACK` (used the Makefile's commented
+"without lapack" path) — slower for large-N but adequate for
+verification.
+**Rule:** Track these as candidate fork-side modifications:
+- **MOD-NNN (build hygiene)**: bump `_POSIX_C_SOURCE` to `200809L`
+  in `rtkcmn.c`; either drop `-ansi` from the Makefile or add
+  `-D_DARWIN_C_SOURCE` for macOS portability.
+- **MOD-NNN (LAPACK)**: switch the Makefile's macOS branch to use
+  `-framework Accelerate` instead of `-llapack -lblas` so production
+  builds get hardware LAPACK/BLAS without Homebrew dependency.
+Until those land, the build recipe lives in this repo's
+`tasks/lessons.md` and `tasks/todo.md`. The local working-tree edits
+make the submodule "dirty"; `git describe --tags --dirty` reports
+`v0.8.3-pntmoni-1-dirty` and that string is now captured as
+`engine_version` in `processing.jsonl` — exactly the audit signal we
+want.
+**Tags:** #build #claslib #macos #pntmoni-claslib #mod-candidates
+
+---
+
+## [2026-05-09] data: kinematic_p30.conf references newer aux data than CLASLIB ships
+
+**Mistake:** First processing run failed (or would have, before being
+caught) because `kinematic_p30.conf` references
+`data/igs20.atx` and `data/clas_grid_003.def`, neither of which
+ship with CLASLIB v0.8.3 (`data/igs14_L5copy.atx` and
+`data/clas_grid.def` are the available versions).
+**Root cause:** The production config was authored against a newer
+aux data drop than is present in `vendor/pntmoni-claslib/data/`.
+The newer files (igs20 antex with full Galileo/BeiDou PCV;
+clas_grid_003.def with 2024 grid update) need to be sourced
+externally — they are not redistributable through CLASLIB.
+**Fix applied:** Created `configs/kinematic_p30_verify.conf` that
+points at the CLASLIB-shipped versions for first-run verification.
+Production `kinematic_p30.conf` is untouched so the upgrade path is
+trivial (drop newer files into a local data dir + use the original
+config).
+**Rule:** When adding a new mode config, audit `file-*` references
+against the actual aux data dir (`vendor/pntmoni-claslib/data/`)
+before first run. If newer files are required, surface that as a
+setup task and either (a) provide the verify variant, or (b) stage
+the newer files in a writable overlay and point `--data-dir` at it.
+The verify run produced 96% Q=4 (RTK FIX, ambiguity-resolved) on
+station 0231 even with the older atx, so the verify config is good
+enough for end-to-end pipeline validation. Whether the newer
+`igs20.atx` materially improves fixing rate or accuracy is a
+separate measurement worth doing once that aux data is staged.
+**Tags:** #claslib #aux-data #setup
+
+---
+
+## [2026-05-09] benchmark: first full-DOY processing on 2026-04-01
+
+**Mistake / context:** First-ever full-DOY (1298-station) CLASLIB
+processing run on PNT Moni's hardware. We did not have an a priori
+estimate of monthly-batch wall time, only Phase 0's "≤8 hours/month
+operational budget" target.
+**Result:** With `pntmoni-claslib v0.8.3-pntmoni-1` (MOD-001 applied),
+no LAPACK, 30 s sampling, ppp-rtk + l1+l2+l5, 10-core
+ThreadPoolExecutor:
+- Wall time: **55.2 min for 1 day / 1298 stations** (kinematic_p30_verify)
+- Per-station: p50 = 25.4 s, p95 = 29.1 s
+- Σ duration / wall = 10.0× (perfect parallelism, no I/O contention)
+- Failures: 0
+- Mean Q=4 (FIX) rate across a 30-station sample: 93.9%
+  (range 76.6%–99.1%); Q=2 rate: 0% (never degrades to DGPS)
+- Output: ~516 KB/.pos × 1298 = 669 MB / DOY
+**Implications for monthly batch:**
+- 30 days × 55 min ≈ **27.6 hours/month** wall, well inside the
+  founder workload budget (≤80 h/month)
+- Disk: 669 MB × 30 ≈ 20 GB/month for .pos NMEA; smaller once
+  converted to Parquet (planned)
+- A LAPACK-enabled rebuild would likely cut per-station time
+  substantially (untested) — meaningful margin to absorb future
+  MRTKLIB-parallel evaluation (ADR 0001)
+**Rule:** Re-measure this baseline whenever any of the following
+changes: CLASLIB fork rebase, new `MOD-NNN`, OS/clang upgrade,
+LAPACK enable/disable. The trend is captured automatically in
+`data/metadata/processing.jsonl` (Tier 2). If wall time exceeds
+~3× the baseline (165 min) for a non-throttled run, treat as a
+silent regression and investigate before merging the change.
+**Tags:** #benchmark #claslib #ppp-rtk #performance #monthly-batch
+
+---
+
+## [2026-05-09] interpretation: NMEA GGA quality flag in CLASLIB
+
+**Mistake:** First read of `outnmea_gga` output for station 0231
+inverted the meaning of Q=4 vs Q=5; reported the run as "96% RTK
+float" when it was actually "96% RTK FIX".
+**Root cause:** Confused the `SOLQ_*` enum order in `rtklib.h`
+(SOLQ_FIX=1, SOLQ_FLOAT=2) with the NMEA-quality field. The
+mapping is performed by `solq_nmea[]` in `solution.c:56-62`, which
+follows NMEA 0183: index 4 = RTK fixed, index 5 = RTK float.
+**Fix applied:** Corrected the run analysis. The verify-mode run
+produced 96% Q=4 (FIX) — a good result, not a poor one.
+**Rule:** When interpreting CLASLIB NMEA output, use NMEA 0183
+conventions: Q=1 single, Q=2 DGPS, Q=4 RTK fixed, Q=5 RTK float.
+Cross-reference `solq_nmea[]` in `solution.c` rather than reading
+the SOLQ enum directly. When summarising a run for the user,
+double-check the value-to-meaning mapping before reporting
+percentages — inversions are easy and embarrassing.
+**Tags:** #claslib #nmea #interpretation #ppp-rtk
+
+---
+
 ## [2026-05-09] design: provenance JSONL is append-only attempt log
 
 **Mistake:** After a failed BRDC download saved an HTML file as if
