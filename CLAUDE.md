@@ -18,6 +18,10 @@ For pipeline-specific decisions, also consult:
   (CLASLIB as Primary Processing Baseline)
 - `/Users/hayato/dev/pntmoni-docs/70-decisions/adr-0002.md`
   (Four-Repository Structure)
+- `/Users/hayato/dev/pntmoni-docs/70-decisions/adr-0004.md`
+  (pntmoni-claslib Fork Strategy)
+- `/Users/hayato/dev/pntmoni-docs/70-decisions/adr-0005.md`
+  (TTFF Reset Period Selection)
 
 ### Repository Map
 - `pntmoni-docs`: vision, strategy, ADRs, methodology
@@ -79,6 +83,21 @@ ls vendor/claslib/
 # Verify Quarto installation
 quarto check
 ```
+
+### CLASLIB engine: pntmoni-claslib fork
+
+Per ADR 0004, this pipeline uses `pntmoni-claslib` (a transparent
+fork of CLASLIB with documented modifications) rather than upstream
+CLASLIB directly. The fork repository is at
+`https://github.com/h-shiono/pntmoni-claslib` and is referenced
+as a git submodule under `vendor/pntmoni-claslib/`.
+
+During the transition period (May 2026), the submodule may still
+reference upstream CLASLIB. Migration to the fork is tracked in
+`tasks/todo.md`.
+
+For the modification list and verification protocol, see
+`vendor/pntmoni-claslib/PNTMONI_CHANGES.md` (after migration).
 
 ### MRTKLIB submodule (to be added)
 

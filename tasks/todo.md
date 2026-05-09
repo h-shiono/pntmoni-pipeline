@@ -172,6 +172,48 @@ template and sample processed data.
 
 ---
 
+## [2026-05-09] Task: Migrate to pntmoni-claslib fork
+
+### Goal
+Replace the upstream CLASLIB submodule reference with the
+`pntmoni-claslib` fork created per ADR 0004, enabling TTFF
+measurement on 30-second GEONET data.
+
+This task depends on the fork repository being created and
+MOD-001 (TTFF reset interval rounding) being implemented and
+verified in the fork. See cross-repo todo:
+`pntmoni-docs/tasks/cross-repo-todo.md`.
+
+### Plan
+- [ ] Wait for `pntmoni-claslib` fork to have at least one
+      tagged release with MOD-001
+- [ ] Update `.gitmodules`:
+      - Remove `vendor/claslib` entry
+      - Add `vendor/pntmoni-claslib` entry pointing to fork
+- [ ] Run `git submodule sync && git submodule update --init`
+- [ ] Update build instructions in CLAUDE.md and README.md
+- [ ] Verify CLASLIB processing still works (existing behavior)
+- [ ] Verify TTFF measurement now works on 30-second test data
+- [ ] Update any internal path references in source code
+      (`vendor/claslib/` → `vendor/pntmoni-claslib/`)
+- [ ] Update lessons.md with any submodule migration gotchas
+
+### Phase Guard
+[ ] Confirmed Phase 0 scope (technical foundation, ADR 0004)
+
+### Done Criteria
+- `vendor/pntmoni-claslib/` is the active CLASLIB submodule
+- Existing positioning processing is unchanged (same outputs)
+- TTFF measurement works on 30-second sampled data
+- Documentation references are updated
+
+### Open Issues
+- Fork repository must exist before this task can begin
+- Verify build process changes (if any) between upstream
+  CLASLIB and the fork
+
+---
+
 ## How to use this file
 
 When starting a task:
