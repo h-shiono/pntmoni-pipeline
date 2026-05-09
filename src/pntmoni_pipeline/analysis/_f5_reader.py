@@ -40,17 +40,8 @@ from pathlib import Path
 
 import pandas as pd
 
-# Number of header lines to skip before the data table starts.
-# Counted explicitly against a representative file:
-#   1: +SITE/INF                  6: -SITE/INF              13: EPOCH ...
-#   2: ID                         7: (blank)                14: COORDINATE ...
-#   3: RINEX                      8: +SOLVER/INF            15: ELLIPSOID ...
-#   4: J_NAME                     9: SOFT_NAME              16: -SOLVER/INF
-#   5: E_NAME                    10: EPHEMERIS              17: (blank)
-#                                11: SOLUTION_ID            18: +DATA
-#                                12: VERSION                19: *yyyy mm ...
-#                                                          20: *----+--+...
-F5_HEADER_SKIP = 20
+# Number of trailing lines after the data block that are not data rows.
+# (``*----`` separator + ``-DATA`` marker.) Stable across F5 / F5.1.
 F5_FOOTER_SKIP = 2
 
 F5_DATA_COLUMNS = [
@@ -128,20 +119,37 @@ def _parse_metadata(path: Path) -> F5Metadata:
     )
 
 
+def _find_data_block_start(path: Path) -> int:
+    """Return 1-based line number of the ``+DATA`` marker.
+
+    ``pd.read_csv(..., skiprows=N)`` then skips lines 1..N (inclusive),
+    so passing this number leaves the two ``*`` column-header lines
+    immediately after ``+DATA`` to be filtered by ``comment="*"``.
+    Robust to header growth across F5 versions (e.g. F5.1 added a
+    ``HISTORY_ID`` field).
+    """
+    with path.open("r", encoding="utf-8", errors="replace") as f:
+        for i, line in enumerate(f, start=1):
+            if line.startswith("+DATA"):
+                return i
+    raise ValueError(f"+DATA marker not found in {path}")
+
+
 def read_f5(path: Path) -> F5Station:
-    """Parse one F5 ``.pos`` file into header metadata + daily series."""
+    """Parse one F5 / F5.1 ``.pos`` file into header metadata + daily series."""
     md = _parse_metadata(path)
+    skiprows = _find_data_block_start(path)
 
     # The DATA block separates columns by variable whitespace; pandas
     # handles this via sep=r"\s+" / engine="python" with skipfooter.
     df = pd.read_csv(
         path,
         sep=r"\s+",
-        skiprows=F5_HEADER_SKIP,
+        skiprows=skiprows,
         skipfooter=F5_FOOTER_SKIP,
         names=F5_DATA_COLUMNS,
         engine="python",
-        comment="*",                 # tolerate stray separator/header markers
+        comment="*",                 # filters the two ``*`` column-header lines
     )
     if df.empty:
         return F5Station(
@@ -183,7 +191,6 @@ def date_range(target: date, window_days: int) -> tuple[date, date]:
 __all__ = [
     "F5_DATA_COLUMNS",
     "F5_FOOTER_SKIP",
-    "F5_HEADER_SKIP",
     "F5Metadata",
     "F5Station",
     "date_range",

@@ -62,17 +62,25 @@ def cmd_rinex(
 def cmd_f5(
     year: Annotated[int, typer.Option("--year", "-y", help="GPS year (e.g. 2025).")],
     dest: DestOpt = Path("data/raw"),
+    variant: Annotated[
+        str,
+        typer.Option(
+            "--variant",
+            help="GSI archive variant: 'f5' (ITRF2014, legacy) or 'f5_1' "
+                 "(ITRF2020, current — primary CLAS reference for fy2026+).",
+        ),
+    ] = geonet_f5.DEFAULT_VARIANT,
     stations: Annotated[
         list[str] | None,
-        typer.Option("--station", "-s", help="Filter by 4-char station ID."),
+        typer.Option("--station", "-s", help="Filter by F5 station-ID prefix."),
     ] = None,
     overwrite: OverwriteOpt = False,
 ) -> None:
-    """Acquire GEONET F5 coordinate snapshot for one year."""
+    """Acquire GEONET F5 / F5.1 coordinate snapshot for one year."""
     results = geonet_f5.fetch(
-        year, dest, stations=stations, overwrite=overwrite,
+        year, dest, variant=variant, stations=stations, overwrite=overwrite,
     )
-    typer.echo(f"acquired {len(results)} F5 file(s) for {year}")
+    typer.echo(f"acquired {len(results)} {variant} file(s) for {year}")
 
 
 @app.command("brdc")

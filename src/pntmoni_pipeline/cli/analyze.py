@@ -141,9 +141,20 @@ def cmd_reference_coords(
         typer.Option("--window-days", help="Half-window size in days (full window = 2N+1)."),
     ] = _reference_coords.DEFAULT_WINDOW_DAYS,
     f5_root: Annotated[
-        Path,
-        typer.Option("--f5-root", help="F5 archive root."),
-    ] = _reference_coords.DEFAULT_F5_ROOT,
+        Path | None,
+        typer.Option(
+            "--f5-root",
+            help="F5 archive root. Defaults to data/raw/{f5-variant} when omitted.",
+        ),
+    ] = None,
+    f5_variant: Annotated[
+        str,
+        typer.Option(
+            "--f5-variant",
+            help="GSI variant: 'f5' (ITRF2014) or 'f5_1' (ITRF2020). "
+                 "Resolves f5_root to data/raw/{variant} unless --f5-root is set.",
+        ),
+    ] = "f5",
     output_root: Annotated[
         Path,
         typer.Option("--out", help="Reference-coords output root."),
@@ -174,6 +185,11 @@ def cmd_reference_coords(
     """Build reference coordinates by 15-day robust median (CMR)."""
     if (date_ is None) == (week is None):
         raise typer.BadParameter("provide exactly one of --date or --week")
+
+    if f5_root is None:
+        if f5_variant not in ("f5", "f5_1"):
+            raise typer.BadParameter(f"unknown --f5-variant: {f5_variant}")
+        f5_root = Path("data/raw") / f5_variant
 
     if date_ is not None:
         targets = [_parse_iso_date(date_)]

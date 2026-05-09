@@ -89,6 +89,95 @@ def test_read_f5_metadata_and_rows(tmp_path: Path) -> None:
     assert s.df["x_m"].iloc[-1] == pytest.approx(-3.9e6 + 10)
 
 
+def _write_synthetic_f5_1(
+    root: Path,
+    f5_id: str,
+    rinex_id: str,
+    j_name: str,
+    e_name: str,
+    year: int,
+    daily_xyz: list[tuple[date, float, float, float]],
+) -> Path:
+    """Write a minimal F5.1 .pos: HISTORY_ID line + ITRF2020 frame.
+
+    F5.1 differs from F5 by an extra ``HISTORY_ID`` line in SOLVER/INF,
+    a ``VERSION`` of ``01`` instead of ``00``, and the ITRF2020 frame.
+    """
+    yy = f"{year % 100:02d}"
+    out = root / f"{year}" / f"{f5_id}.{yy}.pos"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    header = (
+        "+SITE/INF\n"
+        f" ID           {f5_id}\n"
+        f" RINEX        {rinex_id}\n"
+        f" J_NAME       {j_name}\n"
+        f" E_NAME       {e_name}\n"
+        "-SITE/INF\n"
+        "\n"
+        "+SOLVER/INF\n"
+        " SOFT_NAME    Bernese\n"
+        " EPHEMERIS    IGS\n"
+        " SOLUTION_ID  F5(GPS)\n"
+        " VERSION      01\n"
+        " EPOCH        START=... END=... COUNT=...\n"
+        " COORDINATE   ITRF2020\n"
+        " ELLIPSOID    GRS80\n"
+        f" HISTORY_ID   {year}-03\n"
+        "-SOLVER/INF\n"
+        "\n"
+        "+DATA\n"
+        "*yyyy mm dd HH:MM:SS       X (m)             Y (m)             Z (m)         "
+        "Lat. (deg.)       Lon. (deg.)       Height (m)\n"
+        "*----+--+--+--------+-----------------+-----------------+-----------------+"
+        "-----------------+-----------------+-----------------+\n"
+    )
+    body = []
+    for d, x, y, z in daily_xyz:
+        body.append(
+            f" {d.year:04d} {d.month:02d} {d.day:02d} 12:00:00 "
+            f"{x: .10E}  {y: .10E}  {z: .10E}  "
+            f"{0.0: .10E}  {0.0: .10E}  {0.0: .10E} "
+        )
+    footer = (
+        "\n"
+        "*----+--+--+--------+-----------------+-----------------+-----------------+"
+        "-----------------+-----------------+-----------------+\n"
+        "-DATA\n"
+    )
+    out.write_text(header + "\n".join(body) + footer)
+    return out
+
+
+def test_read_f5_handles_f5_1_variant(tmp_path: Path) -> None:
+    """F5.1 has an extra HISTORY_ID line in SOLVER/INF; the reader must
+    detect the +DATA marker dynamically rather than rely on a fixed
+    header-skip count.
+    """
+    days = [(date(2026, 4, d), -3.9571625e6 + d * 1e-3, 3.31e6, 3.74e6) for d in range(1, 6)]
+    p = _write_synthetic_f5_1(tmp_path, "92110", "2110", "つくば１", "TSUKUBA1", 2026, days)
+    s = _f5_reader.read_f5(p)
+    assert s.metadata.frame == "ITRF2020"
+    assert s.df.shape == (5, 7)
+    # First daily row matches the synthetic input.
+    assert s.df["x_m"].iloc[0] == pytest.approx(-3.9571625e6 + 1e-3, rel=1e-9)
+    assert s.df["date"].iloc[0].day == 1
+
+
+def test_geonet_f5_variant_routing(tmp_path: Path) -> None:
+    from pntmoni_pipeline.acquisition import geonet_f5
+    # Routing only — no FTP call. We just assert path strings.
+    assert geonet_f5.remote_dir(2026, "f5") == "/data/coordinates_F5/GPS/2026"
+    assert geonet_f5.remote_dir(2026, "f5_1") == "/data/coordinates_F5.1/2026"
+    v_f5 = geonet_f5.variant_for("f5")
+    v_f51 = geonet_f5.variant_for("f5_1")
+    assert v_f5.local_subdir == "f5"
+    assert v_f51.local_subdir == "f5_1"
+    assert v_f5.frame == "ITRF2014"
+    assert v_f51.frame == "ITRF2020"
+    with pytest.raises(ValueError):
+        geonet_f5.variant_for("nope")
+
+
 # ---------------------------------------------------------------------------
 # Common-Mode Removal core
 # ---------------------------------------------------------------------------
