@@ -6,6 +6,7 @@ import logging
 import typer
 
 from .acquire import app as acquire_app
+from .process import app as process_app
 
 app = typer.Typer(
     name="pntmoni-pipeline",
@@ -14,6 +15,7 @@ app = typer.Typer(
 )
 
 app.add_typer(acquire_app, name="acquire", help="Data acquisition commands.")
+app.add_typer(process_app, name="process", help="PPP-RTK processing commands.")
 
 
 @app.callback()

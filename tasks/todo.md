@@ -111,33 +111,80 @@ station filtering, and exposes a Typer CLI.
 
 ---
 
-## [Phase 0] Task: First CLASLIB processing run
+## [2026-05-09] Task: CLASLIB engine wrapper (rnx2rtkp)
 
 ### Goal
-Run CLASLIB processing on the GEONET data acquired above and produce
-a Parquet output with positioning solutions.
+Provide a Python wrapper around CLASLIB's ``rnx2rtkp`` that consumes
+the artefacts produced by the acquisition layer (no cold-storage copy
+logic), runs one DOY across all GEONET stations in parallel up to
+``cpu_count()``, and supports mode (config name) selection.
 
 ### Plan
-- [ ] Build CLASLIB binaries from `vendor/claslib/`
-- [ ] Implement `src/pntmoni_pipeline/processing/claslib_engine.py`
-  - Wraps CLASLIB CLI invocation
-  - Parses output to common schema
-- [ ] Define common Parquet schema (see CLAUDE.md "Output schema")
-- [ ] Write to `data/processed/parquet/`
-- [ ] Add integration test on small sample data
-- [ ] CLI: `pntmoni-pipeline process claslib --date YYYY-MM-DD --station <id>`
+- [x] Implement `src/pntmoni_pipeline/processing/`:
+  - [x] `_base.py` — `ProcessingResult` dataclass
+  - [x] `_obs_header.py` — RINEX header receiver/antenna parser
+  - [x] `_config.py` — per-station config substitution + SHA-256 hash
+  - [x] `_workspace.py` — workspace setup (binary/data/conf), gunzip
+  - [x] `_binary.py` — rnx2rtkp locator + version detection
+  - [x] `claslib_engine.py` — `process_station`, `process_doy`
+- [x] CLI: `pntmoni-pipeline process claslib --date Y-M-D [--mode M] [-s ID] [-j N] [--force]`
+- [x] Unit tests for header parsing, config substitution, gunzip,
+      and path layout helpers (7 tests, all passing)
+- [ ] Build rnx2rtkp binary: `make -C vendor/claslib/util/rnx2rtkp`
+      (requires liblapack/libblas; manual step, not automated yet)
+- [ ] Provide aux data files referenced by `kinematic_p30.conf` but
+      not shipped with CLASLIB (`igs20.atx`, `clas_grid_003.def`)
+      in a writable location (e.g. `configs/aux_data/`) and point
+      `--data-dir` at it
+- [ ] Live integration test for 2026-04-01 single-station first
+      (requires above two manual steps)
 
 ### Phase Guard
-[ ] Confirmed Phase 0 scope
+[x] Confirmed Phase 0 scope (Initial CLASLIB processing module)
 
 ### Done Criteria
-- CLASLIB processes the test station for a chosen date
-- Output Parquet conforms to common schema
-- Engine version, config hash recorded in output
+- All Python pieces implemented and unit-tested
+- CLI exposes `pntmoni-pipeline process claslib`
+- Engine version + per-station config SHA-256 captured in
+  `ProcessingResult` (groundwork for the common Parquet schema)
 
 ### Open Issues
-- L6 source: for first test, use QZSS public archive (not local
-  receiver). Local receiver integration is Phase 1+.
+- L6 source: QZSS public archive (acquisition layer); local receiver
+  integration deferred to Phase 1+
+- Aux data files (`.atx`, `.def`, etc.) not yet inventoried — first
+  live run will surface any missing references; document the
+  resolution in `tasks/lessons.md`
+- This task delivers the *wrapper*. The follow-on tasks are below.
+
+---
+
+## [Phase 0] Task: Common Parquet schema for processing output
+
+### Goal
+Convert CLASLIB ``.pos`` solution files into a Parquet schema shared
+between CLASLIB and (future) MRTKLIB, with engine identification per
+ADR 0001 / CLAUDE.md "Output schema".
+
+### Plan
+- [ ] Inventory `.pos` columns from a real run (CLASLIB Rev.L output)
+- [ ] Define schema in `processing/_pos_to_parquet.py`:
+      `processing_engine`, `engine_version`, `config_hash`,
+      `station`, `epoch`, x/y/z (or lat/lon/h), Q (fix quality),
+      ns (sat count), σ (covariance summary)
+- [ ] Implement `pos_to_parquet(pos_path, engine, version, hash) -> Path`
+- [ ] Wire into `process_doy` so processing also writes
+      `data/processed/parquet/{mode}/{year}/{doy}/{station}.parquet`
+- [ ] Round-trip test: read a sample `.pos` → Parquet → DataFrame
+      with expected dtypes
+
+### Phase Guard
+[ ] Confirmed Phase 0 scope (output schema is part of the
+    "First CLASLIB processing run" milestone)
+
+### Done Criteria
+- Sample `.pos` round-trips into Parquet without data loss
+- Parquet file carries engine identification + config hash columns
+- Downstream consumers can filter by engine/version/hash
 
 ---
 
