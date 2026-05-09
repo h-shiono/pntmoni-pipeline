@@ -154,6 +154,67 @@ separate measurement worth doing once that aux data is staged.
 
 ---
 
+## [2026-05-09] migration: legacy clas_eval CSVs → station registry TOMLs
+
+**Mistake / context:** First pass of `migrate_legacy_station_data.py`
+produced incomplete output for two reasons.
+**Root causes:**
+1. **fy2021_1st_h.csv has a leading blank line before its header.**
+   `csv.DictReader` treated the empty line as the header (fieldnames =
+   `['']`), so all rows were misread and the file appeared to contain
+   zero stations. Result: every eval station looked like it had a gap
+   in fy2021_1st_h.
+2. **station_network_info.csv contains `nan` strings for stations that
+   have fewer than 4 corrective grids.** `int(float("nan"))` raises;
+   guard added.
+**Fix applied:** `_open_csv_skip_blank_header` strips leading blank
+lines before passing to DictReader; `_parse_optional_int` treats
+`"nan"` as None; the network_info loader skips grid slots with
+non-finite numerics.
+**Result:** 9/9 fy_h files contribute 72–78 rows each; 75 unique eval
+stations across 2020-Q4 → 2024-Q4. 69 stations have all 9 periods
+(the long-tenured set); 3 stations (0618, 0810, 0969) have genuine
+multi-period sequences with internal gaps — exactly the
+"earthquake-removed-then-restored" pattern the user described.
+**Rule:** Always peek at byte-level structure (`xxd | head`) of new
+legacy CSVs before trusting `csv.DictReader`. Stray newlines, BOMs,
+NaN string sentinels, and trailing footer rows are all silent failure
+modes. Log the row count per source file so corruption is
+immediately visible at INFO level.
+**Tags:** #migration #legacy #csv #data-hygiene
+
+---
+
+## [2026-05-09] audit: 29 eval stations marked `isinside=False` in 2025 station_ng
+
+**Finding** (not a bug): 29 GEONET stations appear in
+`service_performance/fy*_*_h.csv` (i.e. they ARE QSS official CLAS
+evaluation points at some past fiscal half) but the most recent
+`station_ng.csv` (2025) marks them `isinside=False`. Examples include
+`0500` (netid=1), `0007` (netid=10), `0011` (netid=11).
+**Most likely explanation:** `isinside` in `station_ng.csv` is
+computed by a stricter criterion than "any CLAS network has any grid
+near this station" — possibly a coverage polygon or a per-network
+boundary check that has tightened since some of these stations were
+first evaluated. Each of these stations has a valid `netid`, so they
+*are* assigned to a CLAS network; the `isinside` flag is a separate,
+narrower test.
+**Implications for the qualification layer (tracked separately):**
+- Treat `eval_periods.toml` as authoritative for "is this station an
+  official evaluation point at date D?"
+- Treat `network_assignments.toml::isinside` as a secondary signal
+  about coverage geometry, not as a gate on the eval set
+- The qualification mechanism (Backlog #2 + Phase 0–1 task) should
+  document both signals and let monthly-report criteria choose
+**Rule:** When two legacy data sources disagree about a flag's
+meaning, do not silently reconcile during migration. Preserve both,
+log the discrepancy count, and defer reconciliation to the explicit
+qualification step that can record its choice in the methodology
+document.
+**Tags:** #registry #qualification #legacy-data #audit
+
+---
+
 ## [2026-05-09] design: reference coordinates via per-day Common-Mode Removal
 
 **Mistake / context:** The reference toolbox's `make_coord.py` computes

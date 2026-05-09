@@ -494,36 +494,46 @@ Maintain a curated registry of every GEONET station's metadata so the
 analysis layer can join CLASLIB output against network membership,
 official-evaluation flags, QC pass/fail, and coverage flags.
 
-### Plan (sketch)
-- [ ] Schema (one row per station):
-  - `rinex_id` (4-char, primary key), `f5_id` (5/6-char), `j_name`,
-    `e_name`, `lat_deg`, `lon_deg`, `h_m`
-  - `network`            — CLAS coverage region (e.g. inet 0..11) or "outside"
-  - `clas_official_eval` — bool; the QSS Performance Report's evaluation set
-  - `qc_pass`            — bool; from the QC framework (see separate task)
-  - `inside_network`     — bool; convenience derived from `network`
-  - `notes`              — free-text qualification rationale
-- [ ] Source: F5 SITE/INF metadata (already acquired) + curated CLAS
-  network areas + manual official-eval flag
-- [ ] Persist as `configs/stations/registry.toml` (curated source) and
-  derive `data/processed/stations/registry.parquet` for joins
-- [ ] Acquisition / analysis / report layers consume the Parquet form
+### Plan
+- [x] Layered TOML source files under `configs/stations/`:
+  - `network_assignments.toml` — netid + isinside (slow-changing)
+  - `network_info.toml` — top-4 CLAS grid weights per station (from
+    CLASLIB debug trace)
+  - `eval_periods.toml` — per-station list of eval-point validity
+    periods (multi-period supported per fiscal half / earthquake
+    recovery scenarios)
+- [x] `scripts/migrate_legacy_station_data.py` — one-shot migration
+  from `gnss_research_toolbox/clas_eval/`. Reads station_ng.csv (5
+  years), station_network_info.csv (latest), and
+  service_performance/fy*_*_h.csv (9 files spanning 2020-Q4 →
+  2024-Q4). Provenance header in each TOML records source paths +
+  legacy git SHA.
+- [ ] Identity layer: derive `data/processed/stations/identity.parquet`
+  from F5 SITE/INF (auto, year-round refresh)
+- [ ] `analysis/registry.py` — runtime loader that joins all layers
+  and resolves `is_eval` for a target date by walking each station's
+  periods. Returns one DataFrame for the qualification step.
+- [ ] Acquisition / analysis / report layers consume the joined view
 
 ### Phase Guard
-[ ] Phase 0–1 (registry feeds qualification + monthly report
-    methodology section)
+[x] Phase 0–1
 
 ### Done Criteria
-- A single Parquet file lists all GEONET stations with all metadata
-  columns populated for the CLAS-coverage subset
-- TOML source is human-editable and version-controlled
-- The qualification + dual-aggregate task joins on this registry
+- [x] 3 TOML files generated, parse cleanly with `tomllib`
+- [x] eval_periods captures the multi-period audit cases
+  (e.g. 0618, 0810, 0969 — eval, dropped, briefly restored, dropped)
+- [ ] `registry.load(target_date)` returns a unified DataFrame
+- [ ] Qualification + dual-aggregate joins on this registry
 
 ### Open Issues
-- Source of "CLAS Official evaluation point" flag — track provenance
-  (QSS public docs vs CAO/MELCO contact)
-- Network membership at coverage edges may be ambiguous; document the
-  rule used and surface in the registry's `notes`
+- Source of "CLAS Official evaluation point" flag — `pntmoni-docs`
+  references the legacy repo for traceability; future updates land in
+  the TOML directly (not from an automated source)
+- 29 eval-stations are flagged `isinside=False` in 2025 station_ng;
+  treat eval_periods as authoritative and isinside as a secondary
+  signal in the qualification logic (see lessons.md audit note)
+- Network membership at coverage edges may be ambiguous; preserve
+  both `netid` and `isinside` so the qualification step can pick
 
 ---
 
