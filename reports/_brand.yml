@@ -1,0 +1,37 @@
+# reports/_brand.yml
+meta:
+  name: PNT Moni
+  link: https://pntmoni.com
+
+logo:
+  small: assets/logo/pntmoni-small.png
+  medium: assets/logo/pntmoni.png
+  large: assets/logo/pntmoni-large.png
+
+color:
+  palette:
+    primary: "#10b981"      # L6 Active green
+    secondary: "#1f2937"    # dark slate
+    success: "#10b981"
+    warning: "#f59e0b"
+    danger: "#ef4444"
+  background: "#ffffff"
+  foreground: "#1f2937"
+  
+typography:
+  fonts:
+    - family: "Inter"
+      source: file
+      files:
+        - path: assets/fonts/Inter.ttf
+    - family: "Source Han Sans"
+      source: file
+      files:
+        - path: assets/fonts/SourceHanSansJP.ttf
+  base:
+    family: Inter
+  headings:
+    family: Inter
+    weight: 600
+  monospace:
+    family: "JetBrains Mono"

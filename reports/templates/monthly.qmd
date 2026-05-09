@@ -1,0 +1,131 @@
+---
+title: "PNT Moni Monthly Report"
+subtitle: "QZSS CLAS Performance Analysis"
+date: "{{ report_month }}"
+author: "PNT Moni"
+format:
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    fontsize: 10pt
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    colorlinks: true
+    template-partials:
+      - styles/pdf-template.tex
+  html:
+    toc: true
+    toc-location: left
+    code-fold: true
+    theme: styles/pntmoni.scss
+execute:
+  echo: false
+  warning: false
+params:
+  report_month: "2026-04"
+  tier: "free"  # free | personal | pro | enterprise
+---
+
+# Executive Summary {-}
+{{< include shared/executive_summary.qmd >}}
+
+# Introduction
+{{< include shared/methodology.qmd >}}
+
+# This Month at a Glance
+- 全国95% / 99% パーセンタイル前月比
+- "L6 Active" 全国稼働率
+- 重大イベントのハイライト
+- (Free以上で表示)
+
+# Regional Performance
+## National Overview
+- 7地方区分での性能サマリ
+- マップ表示
+
+## Detailed Regional Analysis
+{{< include shared/personal_gate.qmd >}}
+- 都道府県別性能
+- (Personal以上で表示)
+
+## Station-Level Drill-Down  
+{{< include shared/pro_gate.qmd >}}
+- 任意座標近傍の局別評価
+- (Pro以上で表示)
+
+# Network Topology Analysis: 網内 vs 網外
+## Methodology
+- 網内/網外の定義
+- 判定方法
+
+## National Pattern
+- 網内/網外マップ（全国）
+- 性能差の定量化
+
+## Boundary Effects
+{{< include shared/personal_gate.qmd >}}
+- 境界局での挙動
+- (Personal以上で表示)
+
+# Environmental Drivers
+## Solar Activity (F10.7)
+- 当月の太陽活動概況
+- F10.7 と性能の相関
+
+## Geomagnetic Conditions  
+{{< include shared/personal_gate.qmd >}}
+- Kp index、地磁気擾乱イベント
+- (Personal以上で表示)
+
+## Plasma Bubble Activity
+{{< include shared/pro_gate.qmd >}}
+- 深夜帯のプラズマバブル発生状況
+- 影響評価
+- (Pro以上で表示)
+
+# Application Readiness Assessment
+## Performance Tiers
+- 95% / 99% / 99.9% / max パーセンタイル
+
+## Integrity Indicators
+{{< include shared/pro_gate.qmd >}}
+- Protection Level (PL) 達成率
+- Effective Availability
+- IASB Alert Rate
+- (Pro以上で表示)
+
+## Application Suitability Matrix
+{{< include shared/pro_gate.qmd >}}
+- 用途別合格率（測量、ドローン、自動運転、航空）
+- (Pro以上で表示)
+
+# Notable Incidents
+{{< include shared/incidents.qmd >}}
+- 月内の重大イベント
+- 原因推定、影響範囲
+- (Free: 概要のみ、Personal以上: 詳細)
+
+# Cross-Validation
+## CLASLIB vs MRTKLIB Agreement
+- 並行評価サンプル局での agreement統計
+- 差分の主要因
+- 移行に向けた進捗
+
+# Methodology Notes
+{{< include shared/methodology_detail.qmd >}}
+- 処理パラメータ
+- 受信機・アンテナ・補正源の詳細
+- 既知の制約
+
+# Data Provenance
+{{< include shared/data_provenance.qmd >}}
+
+# Acknowledgements
+{{< include shared/acknowledgements.qmd >}}
+
+# Independence Statement
+{{< include shared/independence_statement.qmd >}}
+
+# About PNT Moni {-}
+{{< include shared/about.qmd >}}

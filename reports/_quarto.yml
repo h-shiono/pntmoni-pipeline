@@ -1,5 +1,17 @@
+# reports/_quarto.yml
 project:
-  title: "reports"
+  type: default
+  output-dir: output
 
-
-
+format:
+  html:
+    theme: [cosmo, styles/pntmoni.scss]
+    toc: true
+    toc-location: left
+    code-fold: true
+    smooth-scroll: true
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    fontsize: 10pt
+    toc: true
