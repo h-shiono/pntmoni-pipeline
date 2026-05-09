@@ -17,6 +17,7 @@ reports/output/
 
 # Local data and acquisition artifacts
 data/
+logs/
 *.partial
 .env
 .gsi

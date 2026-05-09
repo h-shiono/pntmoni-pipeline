@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 
 from ._base import AcquisitionResult
-from ._http import download, earthdata_auth
+from ._http import EARTHDATA_AUTH_HOSTS, download, earthdata_auth
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ def fetch(
         dest,
         source=SOURCE,
         auth=auth,
+        auth_hosts=EARTHDATA_AUTH_HOSTS,
         metadata={
             "date": target.isoformat(),
             "year": year,
