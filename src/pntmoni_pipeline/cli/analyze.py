@@ -8,7 +8,7 @@ from typing import Annotated
 
 import typer
 
-from ..analysis import _reference_coords, _ttff, format_summary
+from ..analysis import _epoch_errors, _reference_coords, _ttff, format_summary
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -191,3 +191,61 @@ def cmd_reference_coords(
             f"fixed_days_used={r.n_fixed_days_used}/{r.n_fixed_days_used + r.n_fixed_days_dropped}  "
             f"jumps_applied={len(r.applied_jump_dates)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# epoch-errors (Stage 1)
+# ---------------------------------------------------------------------------
+
+@app.command("epoch-errors")
+def cmd_epoch_errors(
+    date_: Annotated[
+        str, typer.Option("--date", "-d", help="Target date (YYYY-MM-DD).")
+    ],
+    mode: Annotated[
+        str, typer.Option("--mode", "-m", help="Processing mode (= config name)."),
+    ] = "kinematic_p30_verify",
+    processed_root: Annotated[
+        Path, typer.Option("--processed-root", help="Root containing {mode}/{year}/{doy}/*.pos."),
+    ] = _epoch_errors.DEFAULT_PROCESSED_ROOT,
+    ref_coords_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--ref-coords",
+            help="Reference-coords Parquet. Auto-detect under "
+                 "data/processed/reference_coords/{year}/ if omitted.",
+        ),
+    ] = None,
+    output_root: Annotated[
+        Path, typer.Option("--out", help="Epoch-errors output root."),
+    ] = _epoch_errors.DEFAULT_OUTPUT_ROOT,
+    stations: Annotated[
+        list[str] | None,
+        typer.Option("--station", "-s", help="Filter to one or more 4-char station IDs."),
+    ] = None,
+    engine_version: Annotated[
+        str,
+        typer.Option(
+            "--engine-version",
+            help="Override engine_version label written into the Parquet. "
+                 "Auto-detect from binary by default if a process_doy run "
+                 "produced the .pos files; this flag is for repackaging.",
+        ),
+    ] = "unknown",
+) -> None:
+    """Build per-epoch ENU error Parquet from CLASLIB .pos files (Stage 1)."""
+    target = _parse_iso_date(date_)
+    res = _epoch_errors.compute_epoch_errors(
+        target,
+        mode=mode,
+        processed_root=processed_root,
+        ref_coords_path=ref_coords_path,
+        output_root=output_root,
+        stations=stations,
+        engine_version=engine_version,
+    )
+    typer.echo(
+        f"wrote {res.parquet_path}  "
+        f"stations={res.n_stations}  epochs={res.n_epochs}  "
+        f"ref={res.ref_coords_source.name}"
+    )
