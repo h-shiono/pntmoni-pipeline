@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from ..qc import _teqc
+from ..qc import _summary, _teqc
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -73,3 +73,27 @@ def cmd_teqc(
         head = ", ".join(res.failed_stations[:10])
         more = f" (+{len(res.failed_stations) - 10} more)" if len(res.failed_stations) > 10 else ""
         typer.echo(f"  failed sample: {head}{more}")
+
+
+@app.command("summarize")
+def cmd_summarize(
+    date_: Annotated[
+        str, typer.Option("--date", "-d", help="Target date (YYYY-MM-DD).")
+    ],
+    input_root: Annotated[
+        Path, typer.Option("--input-root", help="Root holding the .{yy}S summaries."),
+    ] = _summary.DEFAULT_INPUT_ROOT,
+    output_root: Annotated[
+        Path, typer.Option("--out", help="Output root for the wide Parquet."),
+    ] = _summary.DEFAULT_OUTPUT_ROOT,
+) -> None:
+    """Parse teqc .{yy}S summaries for one DOY → wide Parquet."""
+    target = _parse_date(date_)
+    res = _summary.summarize_doy(
+        target, input_root=input_root, output_root=output_root,
+    )
+    typer.echo(
+        f"qc summarize {target.isoformat()}: "
+        f"stations={res.n_stations}  failed={res.n_failed}  "
+        f"out={res.parquet_path}"
+    )

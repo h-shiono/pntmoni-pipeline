@@ -478,6 +478,37 @@ the planned `MOD-001` modification.
 
 ---
 
+## [Phase 1+] Task: Migrate convbin → MRTKLIB ``mrtk convert``
+
+### Goal
+Replace the RTKLIB ``convbin`` invocation in the QC pipeline
+(``qc/_teqc.py``) with the MRTKLIB ``mrtk convert`` subcommand.
+Functional behaviour stays the same (RINEX 3 → 2 with ``-y R -f 5
+-od -os -oi -ot -ol``); the win is consolidating onto MRTKLIB so the
+pipeline depends on a single GNSS-library codebase.
+
+### Plan (sketch)
+- [ ] Build MRTKLIB ``mrtk`` (``apps/convbin/`` provides convbin.c;
+      verify whether the new umbrella ``mrtk convert`` interface
+      exists or needs to be wrapped)
+- [ ] Stage at ``vendor/teqc/mrtk_convert`` (or replace the existing
+      ``vendor/teqc/convbin`` symlink)
+- [ ] Update ``DEFAULT_CONVBIN`` in ``qc/_teqc.py`` and CLI default
+- [ ] Run a side-by-side check on one DOY: bit-identical or numerically
+      indistinguishable v2 OBS/NAV outputs vs RTKLIB convbin
+- [ ] Update lessons.md if any flag-set difference surfaces
+
+### Phase Guard
+[ ] Phase 1+ (current QC works fine with RTKLIB convbin; this is
+    consolidation, not feature work)
+
+### Open Issues
+- ``mrtk convert`` may have a different CLI surface than convbin
+  (positional arg ordering, default ``-d`` semantics) — wrap if needed
+- The migration should be a single small commit, easy to revert
+
+---
+
 ## [2026-05-10] Task: Production aux-data dir + igs20.atx acquisition
 
 ### Goal
