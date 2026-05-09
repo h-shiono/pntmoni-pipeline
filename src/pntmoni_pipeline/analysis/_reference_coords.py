@@ -52,6 +52,13 @@ DEFAULT_F5_ROOT = Path("data/raw/f5")
 DEFAULT_OUTPUT_ROOT = Path("data/processed/reference_coords")
 DEFAULT_PROVENANCE_PATH = Path("data/metadata/reference_coords.jsonl")
 
+# Minimum non-NaN fixed-station days required for a "production-grade"
+# reference. Default is 14 (out of 15 in a ±7d window), which permits
+# AT MOST one jump-NaN'd day. Partial-window runs (typical when F5
+# publication has not caught up) drop below this threshold and require
+# the explicit ``--allow-partial-window`` flag.
+DEFAULT_MIN_FIXED_DAYS = 14
+
 
 # ---------------------------------------------------------------------------
 # Jump-list loading
@@ -175,7 +182,7 @@ def compute_for_target(
     window_days: int = DEFAULT_WINDOW_DAYS,
     jumps: Sequence[FixedStationJump] | None = None,
     allow_partial_window: bool = False,
-    min_fixed_days: int = 7,
+    min_fixed_days: int = DEFAULT_MIN_FIXED_DAYS,
 ) -> ComputeResult:
     """Compute reference coordinates for one target date.
 
@@ -335,7 +342,7 @@ def compute_for_targets(
     window_days: int = DEFAULT_WINDOW_DAYS,
     jumps: Sequence[FixedStationJump] | None = None,
     allow_partial_window: bool = False,
-    min_fixed_days: int = 7,
+    min_fixed_days: int = DEFAULT_MIN_FIXED_DAYS,
 ) -> tuple[pd.DataFrame, list[ComputeResult]]:
     """Run :func:`compute_for_target` for several dates.
 
@@ -423,6 +430,7 @@ __all__ = [
     "DEFAULT_FIXED_STATION_ID",
     "DEFAULT_F5_ROOT",
     "DEFAULT_JUMPS_PATH",
+    "DEFAULT_MIN_FIXED_DAYS",
     "DEFAULT_OUTPUT_ROOT",
     "DEFAULT_PROVENANCE_PATH",
     "DEFAULT_WINDOW_DAYS",

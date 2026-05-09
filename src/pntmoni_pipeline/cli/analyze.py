@@ -156,9 +156,20 @@ def cmd_reference_coords(
         bool,
         typer.Option(
             "--allow-partial-window",
-            help="Permit windows where F5 publication has not caught up.",
+            help="Permit windows where F5 publication has not caught up. "
+                 "Fail-open: treats below-threshold as warn instead of error.",
         ),
     ] = False,
+    min_fixed_days: Annotated[
+        int,
+        typer.Option(
+            "--min-fixed-days",
+            help="Minimum non-NaN fixed-station days for a production-grade "
+                 "reference (out of 2*window_days+1). Default 14 admits one "
+                 "jump-NaN'd day; partial windows fall below and require "
+                 "--allow-partial-window.",
+        ),
+    ] = _reference_coords.DEFAULT_MIN_FIXED_DAYS,
 ) -> None:
     """Build reference coordinates by 15-day robust median (CMR)."""
     if (date_ is None) == (week is None):
@@ -182,6 +193,7 @@ def cmd_reference_coords(
         window_days=window_days,
         jumps=jumps,
         allow_partial_window=allow_partial_window,
+        min_fixed_days=min_fixed_days,
     )
     _reference_coords.write_parquet(combined, out_path)
     _reference_coords.record_provenance(

@@ -154,6 +154,49 @@ separate measurement worth doing once that aux data is staged.
 
 ---
 
+## [2026-05-09] data: 2026-04-01 reference is verify-grade (trailing 7 days)
+
+**Mistake / context:** Stage-1 `epoch_errors`, Stage-2a `accuracy`,
+and Stage-2b `ttff_stats` Parquets for **2026-04-01** were generated
+against `data/processed/reference_coords/2026/20260401.parquet`,
+which used only 7/15 days (all 2026-03-25 to 2026-03-31, ALL
+pre-target). The F5 publication snapshot acquired 2026-04-02 ends at
+2026-03-31 — the 8 post-target days the ±7 d window expects (2026-04-01
+to 2026-04-08) had not been published yet. Because the original
+`min_fixed_days` default was 7, the partial-window run silently
+proceeded.
+**Root cause:** Default `min_fixed_days=7` was too permissive for a
+"is this production-grade?" gate. F5 has a structural ~1 month
+publication delay; any target within the most recent ~5 weeks will
+necessarily have a partial window.
+**Fix applied:**
+- Bumped `_reference_coords.DEFAULT_MIN_FIXED_DAYS` from 7 → 14
+  (admits at most one jump-NaN'd day in a 15-day ±7 window)
+- Added CLI `--min-fixed-days` flag for explicit override
+- `--allow-partial-window` is now the only way to accept partial-
+  publication windows; without it the run fails loudly
+**Implications for the 2026-04-01 verify run:**
+- The reference is "trailing 7-day median ending 2026-03-31".
+- Secular bias from tectonic motion: ~3 cm/year × 1 week ≈ <1 mm
+  (negligible).
+- Random noise: 7-day median has ~1.46× the standard error of a
+  15-day median; F5 daily noise is sub-cm so the additional noise
+  is ~mm-level — visible but not large.
+- No earthquake / jump events in the window (gsi_jumps.toml is empty,
+  no GSI announcements during 2026-03-25 to 2026-04-08).
+- Verdict: **OK for pipeline verification, NOT production-grade**.
+  Re-run reference_coords + epoch_errors + accuracy + ttff_stats +
+  monthly after 2026-05 mid (when F5 publication catches up to the
+  ±7 d window for early April).
+**Rule:** Production gating defaults must be strict enough that
+"silently proceed in degraded mode" is not the default behaviour.
+When external publication has structural delay, fail-loud + opt-in
+is the right posture; opt-in must produce loud provenance signals
+(``n_fixed_days_used`` is recorded — the gate must read it).
+**Tags:** #reference-coords #f5 #publication-delay #verify-grade
+
+---
+
 ## [2026-05-09] migration: legacy clas_eval CSVs → station registry TOMLs
 
 **Mistake / context:** First pass of `migrate_legacy_station_data.py`
