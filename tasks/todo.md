@@ -478,6 +478,233 @@ the planned `MOD-001` modification.
 
 ---
 
+# Backlog (2026-05-09 — added per user direction)
+
+The tasks below are stacked for future sprints. They share dependencies
+and will likely be picked up alongside the monthly-report scaffolding.
+Order is rough — the accuracy chain (4) and station registry (1) are
+prerequisites for (5) and (6); QC framework (2) feeds qualification.
+
+---
+
+## [Phase 0–1] Task: GEONET station registry with metadata
+
+### Goal
+Maintain a curated registry of every GEONET station's metadata so the
+analysis layer can join CLASLIB output against network membership,
+official-evaluation flags, QC pass/fail, and coverage flags.
+
+### Plan (sketch)
+- [ ] Schema (one row per station):
+  - `rinex_id` (4-char, primary key), `f5_id` (5/6-char), `j_name`,
+    `e_name`, `lat_deg`, `lon_deg`, `h_m`
+  - `network`            — CLAS coverage region (e.g. inet 0..11) or "outside"
+  - `clas_official_eval` — bool; the QSS Performance Report's evaluation set
+  - `qc_pass`            — bool; from the QC framework (see separate task)
+  - `inside_network`     — bool; convenience derived from `network`
+  - `notes`              — free-text qualification rationale
+- [ ] Source: F5 SITE/INF metadata (already acquired) + curated CLAS
+  network areas + manual official-eval flag
+- [ ] Persist as `configs/stations/registry.toml` (curated source) and
+  derive `data/processed/stations/registry.parquet` for joins
+- [ ] Acquisition / analysis / report layers consume the Parquet form
+
+### Phase Guard
+[ ] Phase 0–1 (registry feeds qualification + monthly report
+    methodology section)
+
+### Done Criteria
+- A single Parquet file lists all GEONET stations with all metadata
+  columns populated for the CLAS-coverage subset
+- TOML source is human-editable and version-controlled
+- The qualification + dual-aggregate task joins on this registry
+
+### Open Issues
+- Source of "CLAS Official evaluation point" flag — track provenance
+  (QSS public docs vs CAO/MELCO contact)
+- Network membership at coverage edges may be ambiguous; document the
+  rule used and surface in the registry's `notes`
+
+---
+
+## [Phase 0–1] Task: QC framework for station observation quality
+
+### Goal
+Per-station QC pass/fail flag computed from observation-quality
+metrics (multipath / VIF, SNR, data completeness, …). Output feeds
+the station registry's `qc_pass` field and the qualification mechanism.
+
+### Plan
+- [ ] Receive QC reference script from user (pending)
+- [ ] Adapt to PNT Moni layout: read RINEX OBS / .pos, write per-station
+  QC summary to `data/processed/qc/{date}.parquet`
+- [ ] Define qc_pass criteria thresholds (TBD; likely empirical after
+  a few months of trend data)
+- [ ] Provenance JSONL at `data/metadata/qc.jsonl`
+
+### Phase Guard
+[ ] Phase 0–1
+
+### Open Issues
+- Awaiting user's reference QC script
+- Confirm VIF (Variance Inflation Factor) definition matches CLAS
+  Official methodology
+
+---
+
+## [Phase 1+] Task: TTFF — per-network reset timing semantics
+
+### Goal
+The current TTFF analyzer assumes a single uniform reset period
+(`misc-regularly = 900` for CLAS). When evaluation extends beyond
+CLAS — to MADOCA-PPP, Galileo HAS, BeiDou PPP-B2b, etc. — data
+delivery cadence differs and reset semantics must reflect that.
+
+### Plan (sketch)
+- [ ] Document each evaluated network's data-delivery cadence
+- [ ] Per-network mode configs select an appropriate `misc-regularly`
+  and per-message-rate processing options
+- [ ] Generalise `extract_events` to accept an explicit reset schedule
+  (not only a uniform period) so non-uniform-reset networks fit the
+  same analyser
+- [ ] Per-network TTFF interpretation enters the monthly report's
+  methodology section
+
+### Phase Guard
+[ ] Phase 1+ (initial Phase 0 is CLAS-only)
+
+### Open Issues
+- Galileo HAS reset cadence: TBD
+- MADOCA-PPP: 60 s message rate but slower convergence → reset
+  semantics need a separate methodology discussion before fixing
+
+---
+
+## [Phase 0] Task: Accuracy pipeline `.pos` → ENU → percentiles → DB schema
+
+### Goal
+Convert per-epoch CLASLIB ``.pos`` solutions into horizontal/vertical
+positioning errors (ENU relative to reference truth), aggregate into
+per-station percentiles (50, 95, 99, 99.9), and stage in a schema
+suitable for `pntmoni-cloud` ingestion. This is the core data flow for
+monthly reports.
+
+### Background
+The reference toolbox followed a two-stage chain:
+1. ``.pos`` × smoothed F5 truth → per-epoch ENU error CSV (intermediate)
+2. per-station percentile CSV across all stations
+This task aligns our pipeline on the same chain, picks intermediate
+formats (Parquet vs CSV), and defines the DB schema for cloud ingestion.
+
+### Plan (sketch)
+- [ ] **Stage 1: per-epoch ENU errors**
+  - Read `.pos` ($GPGGA → time, lat, lon, h, q, n_sats)
+  - Read reference coord for (date, station) from
+    `data/processed/reference_coords/{year}/...parquet`
+  - Compute ENU (geodetic → ECEF → ECEF-difference → ENU at ref)
+  - Output: `data/processed/epoch_errors/{mode}/{year}/{doy}/{station}.parquet`
+    columns: `epoch_idx`, `tow`, `q`, `n_used_sats`, `n_obs_sats`,
+    `e_m`, `n_m`, `u_m`, `horizontal_m`, `is_day` (see day/night task)
+- [ ] **Stage 2: per-station percentile aggregate**
+  - From all epoch_errors of a DOY → per-station percentiles
+    (50/95/99/99.9) for horizontal + vertical
+  - Output: `data/processed/accuracy/{mode}/{year}/{month}.parquet`
+    columns: `date`, `station`, `mode`, `engine_version`, `n_epochs`,
+    `n_used_q4`, `q4_rate`, `h_p50`, `h_p95`, `h_p99`, `h_p999`,
+    `v_p50`, `v_p95`, `v_p99`, `v_p999`,
+    `h_p95_day`, `h_p95_night`, … (day/night task)
+    `n_obs_p50`, `n_used_p50`, `used_obs_ratio_p50`, … (sat-count task)
+- [ ] **DB schema**: this Stage 2 Parquet IS the schema; document it
+  for `pntmoni-cloud` ingestion (BigQuery external table or load-job)
+
+### Phase Guard
+[ ] Phase 0 (foundational for monthly report)
+
+### Done Criteria
+- Sample DOY: `.pos` → epoch_errors Parquet → accuracy Parquet
+  round-trip works end-to-end
+- Schema reviewed and signed off for cloud ingestion (cross-repo
+  alignment with `pntmoni-cloud`)
+- Numbers reproducible from raw `.pos` + reference_coords + provenance
+
+### Open Issues
+- ENU coordinate definition: use F5 reference lat/lon (we have it)
+  vs station's RINEX header reference position. Lean: F5 (consistent
+  across stations).
+- epoch_errors volume: NMEA cadence × 1300 stations × 30 days
+  ≈ 100M rows/month. Keep as gzip-Parquet vs treat as
+  recompute-on-demand intermediate? Lean: keep — small, joinable.
+- Cloud-side schema: Parquet on GCS + DuckDB + Cloud Run (per
+  pntmoni-cloud/CLAUDE.md GCS Parquet rationale)
+
+---
+
+## [Phase 0] Task: Day/Night split accuracy metrics
+
+### Goal
+Per-station percentile errors computed for daytime and nighttime
+separately, so monthly reports can show the ionospheric influence on
+PPP-RTK accuracy.
+
+### Plan (sketch)
+- [ ] Define day/night cutoff per epoch:
+  - Default proposal: solar zenith angle threshold (e.g. zenith ≤ 90°
+    = day) computed from station lat/lon + epoch UTC. Station-specific
+    so it stays accurate across seasons and at high latitudes.
+  - Simpler alternative: fixed UTC criterion (e.g. 21:00–09:00 UTC =
+    night for Japan stations); inferior near solstices but
+    requires no additional computation.
+- [ ] Tag each row in Stage 1 (epoch_errors) with `is_day: bool`
+- [ ] Stage 2 computes percentiles separately for day-epochs and
+  night-epochs; output gains `h_p95_day`, `h_p95_night`, etc.
+- [ ] Monthly report shows side-by-side day/night
+
+### Phase Guard
+[ ] Phase 0
+
+### Open Issues
+- Solar zenith vs UTC vs civil twilight: pick one, record in
+  methodology, do not switch silently between reports
+
+---
+
+## [Phase 0] Task: Satellite count metrics (observed vs used)
+
+### Goal
+Per-epoch and per-station satellite-count distributions: how many
+satellites were observed, how many were actually used in the
+positioning solution, and the used/observed ratio. Tracks how
+aggressively the engine rejects sats (multipath, mask, healthy/
+unhealthy) and is a leading indicator of degraded conditions.
+
+### Background
+- **Used count** is in NMEA `$GPGGA` field 8 (already in our `.pos`
+  output)
+- **Observed count** requires either RINEX OBS header / per-epoch
+  scan, or the CLASLIB `.pos.trace` per-epoch listing
+- Ratio `used / observed` ≪ 1 indicates strong rejection (likely
+  obstruction or multipath); ≈ 1 indicates clean conditions
+
+### Plan (sketch)
+- [ ] Stage 1 (epoch_errors): record `n_obs_sats` and `n_used_sats`
+  per epoch (from RINEX scan or trace + NMEA)
+- [ ] Stage 2 (accuracy): aggregate distribution stats — `n_obs_p50`,
+  `n_used_p50`, `used_obs_ratio_p50`, `_p95`, etc.
+- [ ] Constellation breakdown (G/R/E/J/C) where the source supports it
+- [ ] Monthly report shows distributions + per-network comparison
+
+### Phase Guard
+[ ] Phase 0
+
+### Open Issues
+- Observed-count source: trace file is cheap (no re-reading RINEX)
+  but needs verification that it counts ALL observed sats (not only
+  CLAS-eligible). If trace is incomplete, fall back to RINEX scan.
+- Constellation breakdown: NMEA only gives a single count; we may
+  need RINEX or additional CLASLIB output to split by constellation.
+
+---
+
 ## How to use this file
 
 When starting a task:
