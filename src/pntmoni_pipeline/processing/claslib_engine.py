@@ -31,10 +31,11 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
-from . import _binary, _workspace
+from . import _binary, _stats, _workspace
 from ._base import ProcessingResult
 from ._config import write_station_config
 from ._obs_header import read_identity
+from ._stats import RunSummary, format_summary
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +261,8 @@ def process_doy(
     interval: int = DEFAULT_INTERVAL_SEC,
     max_workers: int | None = None,
     force: bool = False,
-) -> list[ProcessingResult]:
+    stats_path: Path | None = None,
+) -> tuple[list[ProcessingResult], RunSummary]:
     """Process every (or a filtered subset of) GEONET station for one DOY.
 
     Parameters
@@ -269,7 +271,15 @@ def process_doy(
     mode : config name without ``.conf`` (e.g. ``"kinematic_p30"``).
     stations : optional iterable of 4-char station IDs.
     max_workers : thread pool size (defaults to ``os.cpu_count()``).
+    stats_path : where to append the per-run summary JSONL. Defaults to
+        ``data/metadata/processing.jsonl`` (set via ``_stats``).
+
+    Returns
+    -------
+    (results, summary) : ProcessingResults plus an aggregate RunSummary
+        whose record was already appended to ``stats_path``.
     """
+    started_at = datetime.now(UTC)
     binary = binary or _binary.find_binary()
     engine_version = _binary.detect_version(binary)
     mode_template = (config_dir / f"{mode}.conf").resolve()
@@ -316,7 +326,15 @@ def process_doy(
         obs_files = [p for p in obs_files if p.is_file()]
     if not obs_files:
         logger.warning("no obs files matched for %s", target.isoformat())
-        return []
+        finished_at = datetime.now(UTC)
+        empty_summary = _stats.summarize(
+            [], failed_stations=[],
+            started_at=started_at, finished_at=finished_at,
+            engine=ENGINE, engine_version=engine_version, mode=mode,
+            date_iso=target.isoformat(),
+        )
+        _stats.record(empty_summary, path=stats_path)
+        return [], empty_summary
 
     workers = max_workers or os.cpu_count() or 1
     logger.info(
@@ -325,6 +343,7 @@ def process_doy(
     )
 
     results: list[ProcessingResult] = []
+    failed_stations: list[str] = []
     with _workspace.cleanup_partials(workspace):
         with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
             futures = {
@@ -353,4 +372,23 @@ def process_doy(
                         "station %s failed: %s: %s",
                         obs.name[:4], type(exc).__name__, exc,
                     )
-    return results
+                    failed_stations.append(obs.name[:4])
+
+    finished_at = datetime.now(UTC)
+    summary = _stats.summarize(
+        results,
+        failed_stations=failed_stations,
+        started_at=started_at,
+        finished_at=finished_at,
+        engine=ENGINE,
+        engine_version=engine_version,
+        mode=mode,
+        date_iso=target.isoformat(),
+    )
+    # Tier 1: human-readable log line(s).
+    for line in format_summary(summary).splitlines():
+        logger.info(line)
+    # Tier 2: append run record for trend tracking.
+    _stats.record(summary, path=stats_path)
+
+    return results, summary

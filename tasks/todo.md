@@ -158,6 +158,46 @@ logic), runs one DOY across all GEONET stations in parallel up to
 
 ---
 
+## [2026-05-09] Task: Processing run-time statistics (Tier 1+2)
+
+### Goal
+Capture per-DOY processing wall time + per-station duration
+distribution so we know how long a 1300-station monthly batch
+will take and can detect silent regressions after CLASLIB fork
+rebases or `MOD-NNN` modifications.
+
+### Plan
+- [x] `processing/_stats.py`: `RunSummary` dataclass, `summarize`,
+      `record` (JSONL append), `format_summary`, `percentile`
+- [x] `process_doy` tracks failed stations, builds `RunSummary` at
+      end, logs the formatted summary (Tier 1) and appends one
+      JSONL line to `data/metadata/processing.jsonl` (Tier 2)
+- [x] `process_doy` return signature now `(results, summary)`;
+      CLI prints summary to stdout
+- [x] Unit tests: percentile edge cases, summarize counts,
+      JSONL append, format_summary truncation (8 tests)
+- [ ] After first live DOY run, capture median per-station duration
+      and document in `tasks/lessons.md` so monthly-batch budget
+      is visible from session start
+
+### Phase Guard
+[x] Confirmed Phase 0 scope (operational visibility for Phase 0
+    "First CLASLIB processing run" milestone)
+
+### Done Criteria
+- A live `process claslib` run prints wall time, p50/p95/total
+  duration, succeeded/skipped/failed counts
+- `data/metadata/processing.jsonl` accumulates one record per run
+  for trend tracking
+- 22/22 unit tests pass
+
+### Open Issues
+- A future small `process stats` CLI subcommand could read the
+  JSONL and print historical trends — defer until ≥2 months of
+  records exist (don't build the read side prematurely)
+
+---
+
 ## [Phase 0] Task: Common Parquet schema for processing output
 
 ### Goal

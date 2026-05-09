@@ -7,7 +7,7 @@ from typing import Annotated
 
 import typer
 
-from ..processing import claslib_engine
+from ..processing import claslib_engine, format_summary
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -71,7 +71,7 @@ def cmd_claslib(
 ) -> None:
     """Run CLASLIB rnx2rtkp on every station of one DOY."""
     target = _parse_date(date_)
-    results = claslib_engine.process_doy(
+    _, summary = claslib_engine.process_doy(
         target,
         mode=mode,
         raw_root=raw_root,
@@ -85,8 +85,4 @@ def cmd_claslib(
         max_workers=workers,
         force=force,
     )
-    ok = sum(1 for r in results if not r.skipped)
-    skipped = sum(1 for r in results if r.skipped)
-    typer.echo(
-        f"processed {ok} station(s), skipped {skipped} for {target.isoformat()} (mode={mode})"
-    )
+    typer.echo(format_summary(summary))
