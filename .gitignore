@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# MacOS files
+.DS_Store
+
+# Quarto
+reports/output/
