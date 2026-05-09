@@ -246,6 +246,58 @@ trend tracking.
 
 ---
 
+## [2026-05-09] Task: Reference coordinates from F5 (15-day median, CMR)
+
+### Goal
+Build per-station truth coordinates from GSI's F5 archive so we can
+compute horizontal/vertical error percentiles (95th, 99th, 99.9th)
+of CLASLIB epoch solutions vs the truth. Each (target_date, station)
+pair gets one (X, Y, Z) ECEF row.
+
+### Plan
+- [x] `analysis/_f5_reader.py` — parse F5 ``.pos`` (header 20 + footer 2,
+  metadata + daily series + sha256)
+- [x] `analysis/_reference_coords.py` —
+  - load fixed-station window across target±7d
+  - apply jumps from `configs/gsi_jumps.toml` (fixed station only)
+  - per-day common-mode removal: `relative_i = station_i − fixed_i`
+  - `station_truth = nanmedian(relative) + nanmedian(fixed_with_jumps_NaNed)`
+  - multi-target driver (week / month support)
+- [x] `configs/gsi_jumps.toml` — curated schema, initially empty
+- [x] CLI: `pntmoni-pipeline analyze reference-coords {--date|--week}`
+- [x] Output: Parquet at
+  `data/processed/reference_coords/{year}/{YYYYMMDD|Wnn}.parquet`
+- [x] Provenance JSONL: per-target record of fixed station, jumps
+  applied, F5 sha256 per file, n_days_used, etc.
+- [x] Unit tests: F5 metadata, CMR truth recovery, jump-only-on-fixed,
+  too-few-days error, TOML loading, multi-day driver (7/7 passing)
+- [x] Live verified for 2026-03-15: 1302 stations, 117 KB Parquet,
+  Tsukuba1 day-to-day stability sub-mm, 2.45 s wall
+- [x] Live verified for 2026-W11 (7-day batch): 9114 rows, 399 KB
+  Parquet, 15 s wall
+
+### Phase Guard
+[x] Confirmed Phase 0 scope (truth coords are foundational for
+    percentile error metrics in monthly reports — CLAUDE.md
+    "Performs statistical analysis (percentiles, ...)")
+
+### Done Criteria
+- [x] `analyze reference-coords` produces Parquet for either
+  --date or --week
+- [x] Method B (per-day CMR) implemented and tested against synthetic
+  jump scenarios — recovers truth exactly when CMR cancels drift
+- [x] Provenance JSONL accumulates one record per target-date
+
+### Open Issues / next
+- Acquire 2025 F5 archive when targets near Jan/Feb need cross-year
+  windows
+- Curated `configs/gsi_jumps.toml` is empty; populate as needed by
+  watching https://terras.gsi.go.jp/information.php
+- A future `pntmoni-pipeline acquire gsi-jumps` could scrape the
+  page and propose TOML diffs, keeping scrape out of the critical path
+
+---
+
 ## [Phase 0–1] Task: Station qualification + dual-aggregate
 
 ### Goal

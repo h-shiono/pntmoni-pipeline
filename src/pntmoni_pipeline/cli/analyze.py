@@ -2,16 +2,39 @@
 from __future__ import annotations
 
 import logging
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
-from ..analysis import _ttff, format_summary
+from ..analysis import _reference_coords, _ttff, format_summary
 
 app = typer.Typer(no_args_is_help=True)
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_iso_date(s: str) -> date:
+    try:
+        return date.fromisoformat(s)
+    except ValueError as e:
+        raise typer.BadParameter(f"date must be YYYY-MM-DD: {e}") from e
+
+
+def _parse_iso_week(s: str) -> tuple[int, int]:
+    """Accept ``YYYY-Www`` (ISO 8601). Returns ``(year, week)``."""
+    try:
+        year_s, week_s = s.split("-W")
+        return int(year_s), int(week_s)
+    except (ValueError, AttributeError) as e:
+        raise typer.BadParameter(f"week must be YYYY-Www (ISO 8601): {e}") from e
+
+
+def _iso_week_dates(year: int, iso_week: int) -> list[date]:
+    """All seven dates of a given ISO 8601 calendar week."""
+    monday = date.fromisocalendar(year, iso_week, 1)
+    return [monday + timedelta(days=i) for i in range(7)]
 
 
 @app.command("ttff")
@@ -85,3 +108,86 @@ def cmd_ttff(
                    f"min={min(p50s):.0f}s max={max(p50s):.0f}s")
         typer.echo(f"  TTFF p95 across stations: median={sorted(p95s)[len(p95s)//2]:.0f}s "
                    f"min={min(p95s):.0f}s max={max(p95s):.0f}s")
+
+
+# ---------------------------------------------------------------------------
+# reference-coords
+# ---------------------------------------------------------------------------
+
+@app.command("reference-coords")
+def cmd_reference_coords(
+    date_: Annotated[
+        str | None,
+        typer.Option("--date", "-d", help="Single target date (YYYY-MM-DD)."),
+    ] = None,
+    week: Annotated[
+        str | None,
+        typer.Option("--week", "-w", help="ISO week (YYYY-Www) — produces 7 target days."),
+    ] = None,
+    fixed_station_id: Annotated[
+        str,
+        typer.Option("--fixed-station", help="Anchor station ID (default Tsukuba1)."),
+    ] = _reference_coords.DEFAULT_FIXED_STATION_ID,
+    window_days: Annotated[
+        int,
+        typer.Option("--window-days", help="Half-window size in days (full window = 2N+1)."),
+    ] = _reference_coords.DEFAULT_WINDOW_DAYS,
+    f5_root: Annotated[
+        Path,
+        typer.Option("--f5-root", help="F5 archive root."),
+    ] = _reference_coords.DEFAULT_F5_ROOT,
+    output_root: Annotated[
+        Path,
+        typer.Option("--out", help="Reference-coords output root."),
+    ] = _reference_coords.DEFAULT_OUTPUT_ROOT,
+    jumps_path: Annotated[
+        Path,
+        typer.Option("--jumps", help="Curated GSI jumps TOML."),
+    ] = _reference_coords.DEFAULT_JUMPS_PATH,
+    allow_partial_window: Annotated[
+        bool,
+        typer.Option(
+            "--allow-partial-window",
+            help="Permit windows where F5 publication has not caught up.",
+        ),
+    ] = False,
+) -> None:
+    """Build reference coordinates by 15-day robust median (CMR)."""
+    if (date_ is None) == (week is None):
+        raise typer.BadParameter("provide exactly one of --date or --week")
+
+    if date_ is not None:
+        targets = [_parse_iso_date(date_)]
+        out_path = _reference_coords.output_path_for_day(output_root, targets[0])
+    else:
+        assert week is not None
+        year, iso_week = _parse_iso_week(week)
+        targets = _iso_week_dates(year, iso_week)
+        out_path = _reference_coords.output_path_for_week(output_root, year, iso_week)
+
+    jumps = _reference_coords.load_jumps(jumps_path)
+
+    combined, results = _reference_coords.compute_for_targets(
+        targets,
+        f5_root=f5_root,
+        fixed_station_id=fixed_station_id,
+        window_days=window_days,
+        jumps=jumps,
+        allow_partial_window=allow_partial_window,
+    )
+    _reference_coords.write_parquet(combined, out_path)
+    _reference_coords.record_provenance(
+        results,
+        output_path=out_path,
+        fixed_station_id=fixed_station_id,
+        window_days=window_days,
+    )
+
+    typer.echo(f"wrote {out_path} ({len(combined)} rows, {len(results)} target dates)")
+    for r in results:
+        typer.echo(
+            f"  {r.df['target_date'].iloc[0]}  "
+            f"stations={len(r.df)}  "
+            f"fixed_days_used={r.n_fixed_days_used}/{r.n_fixed_days_used + r.n_fixed_days_dropped}  "
+            f"jumps_applied={len(r.applied_jump_dates)}"
+        )

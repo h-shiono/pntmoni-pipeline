@@ -1,0 +1,26 @@
+# GSI fixed-station jump dates (curated).
+#
+# F5 publishes per-station coordinates that are SOLVED relative to a
+# network-anchor "fixed station" (default 92110, Tsukuba1). When an IGS
+# product gap perturbs the day's processing, the fixed station's
+# absolute coordinate jumps. Other stations' published coordinates jump
+# together by the same amount, so per-day relative coordinates remain
+# valid. Therefore jump filtering is applied ONLY when computing the
+# fixed station's median absolute — never to other stations.
+#
+# Source: https://terras.gsi.go.jp/information.php
+# Add an entry whenever GSI announces "跳びについて" with
+# "再解析を行う予定はございません" for the fixed station.
+#
+# Schema:
+#   [[jumps]]
+#   date              = "YYYY-MM-DD"        # the calendar day to drop
+#   fixed_station_id  = "92110"             # the affected anchor (or "*" for any)
+#   reason            = "<short note>"
+#   recorded_at       = "YYYY-MM-DD"        # when this entry was added to the TOML
+
+[meta]
+last_reviewed = "2026-05-09"
+source_url = "https://terras.gsi.go.jp/information.php"
+
+# (no jumps recorded yet)

@@ -154,6 +154,63 @@ separate measurement worth doing once that aux data is staged.
 
 ---
 
+## [2026-05-09] design: reference coordinates via per-day Common-Mode Removal
+
+**Mistake / context:** The reference toolbox's `make_coord.py` computes
+station truth coords by subtracting the *median* fixed-station coord
+(a constant) from each day's published station coord, then taking
+nanmedian. That is not strictly Common-Mode Removal — common-mode
+drift remains in each day's value, and only median robustness saves
+the result.
+**Root cause / corrected understanding:** GSI's F5 solves all stations
+*relative* to the network anchor (Tsukuba1, F5 ID 92110). When IGS
+products have gaps, the fixed station's absolute coordinate jumps,
+and **all other stations' published coordinates jump together by the
+same amount** (because F5 anchors them to Tsukuba1). So the per-day
+relative ``station_xyz_i − fixed_xyz_i`` is invariant across jumps.
+**Fix applied:** Implemented per-day relative (Method B) instead of
+median-centering (Method A). Algorithm:
+- ``fixed_truth = nanmedian(fixed_xyz_in_window with jump days NaN'd)``
+- ``relative_per_day = station_xyz_i − fixed_xyz_i`` (no NaN unless
+  data missing — relative is invariant across jumps)
+- ``station_truth = nanmedian(relative_per_day) + fixed_truth``
+Jump filtering applies ONLY to the fixed station (per the GSI/F5
+design). Non-fixed stations have no jump filter — relative is
+already invariant.
+**Rule:** When relative-positioning frames are stable but absolute
+frames have known glitches, use per-day relative for downstream
+metrics rather than median-centered absolute. Don't rely on median
+robustness when the structure of the data lets you cancel the noise
+deterministically.
+**Tags:** #reference-coords #f5 #cmr #methodology
+
+---
+
+## [2026-05-09] data: F5 publication delay is structural
+
+**Mistake / context:** First reference-coord run for 2026-04-01
+returned a window of 7/15 fixed days because F5's 2026 archive
+(snapshot taken 2026-05-09) only covered through 2026-03-31.
+**Root cause:** GSI publishes F5 in weekly batches with a structural
+~1-month delay. For target date T, F5 covering [T, T+7d] becomes
+available roughly T+30 days later.
+**Fix applied:** Reference-coord computation accepts a
+``--allow-partial-window`` flag and a ``min_fixed_days`` threshold
+(default 7) so partial windows are explicit failures rather than
+silent. The provenance JSONL captures ``n_fixed_days_used`` so
+downstream consumers can see which days were available. For monthly
+reports, run reference_coords AFTER F5 catches up (typically the
+month following the target month).
+**Rule:** Whenever an external publication has a structural delay,
+make the delay explicit in CLI behaviour: fail loudly by default,
+require an opt-in flag for partial data, record the realised
+coverage in provenance. Do not paper over the delay with
+"best-effort silently shifted window" semantics — that hides the
+real-world data dependency from operators.
+**Tags:** #f5 #publication-delay #provenance
+
+---
+
 ## [2026-05-09] benchmark: TTFF DOY adds zero overhead vs non-TTFF
 
 **Mistake / context:** Concern that adding `misc-regularly = 900` (15-min
