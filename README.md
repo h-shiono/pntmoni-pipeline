@@ -49,17 +49,39 @@ processing can run.
 
 ```bash
 # CLASLIB engine (pntmoni-claslib fork)
-make -C vendor/pntmoni-claslib/util/rnx2rtkp
-# Requires liblapack and libblas to be installed (Linux: apt install
-# liblapack-dev libblas-dev; macOS: brew install lapack openblas).
-
-# MRTKLIB (when added)
-# Build instructions per MRTKLIB README
+scripts/build_claslib.sh             # production: -DLAPACK + Accelerate (macOS) or liblapack (Linux)
+scripts/build_claslib.sh --no-lapack # debug: internal matrix routines, ~30% slower
 ```
+
+The script bypasses the upstream Makefile because the latter uses
+`-ansi -pedantic -llapack -lblas`, which does not build cleanly on
+macOS clang and assumes Homebrew LAPACK is installed. On Apple
+Silicon the LAPACK build links against the built-in Accelerate
+framework (no install required, hardware-accelerated). On Linux
+the script falls back to system `-llapack -lblas`.
+
+The clean-Makefile fix is a candidate fork-side modification (see
+`tasks/lessons.md` "macOS build issues") that will become a `MOD-NNN`
+once the verification protocol is met.
 
 Modifications to the CLASLIB fork are documented in
 `vendor/pntmoni-claslib/PNTMONI_CHANGES.md` per the protocol in
 ADR 0004.
+
+### Production benchmark
+
+A first full-DOY processing run (1298 GEONET stations × 30s sampling
+× kinematic PPP-RTK) on a 10-core workstation completes in:
+
+| Build | Wall time | Per-station p50 | FIX rate (Q=4) |
+|---|---|---|---|
+| LAPACK (Accelerate) | **42.7 min** | 19.7 s | 92.95% |
+| no-LAPACK | 55.2 min | 25.4 s | 93.24% |
+
+LAPACK is recommended for production runs (≈30% faster, equivalent
+quality). See `tasks/lessons.md` for the comparison record. The
+trend baseline accumulates automatically in
+`data/metadata/processing.jsonl`.
 
 ## Repository Structure
 

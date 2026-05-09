@@ -154,6 +154,64 @@ separate measurement worth doing once that aux data is staged.
 
 ---
 
+## [2026-05-09] benchmark: LAPACK (Apple Accelerate) cuts DOY wall time by ~30%
+
+**Mistake / context:** First full-DOY benchmark used CLASLIB's internal
+matrix routines (no `-DLAPACK`). The added TTFF processing planned for
+Phase 0 will increase per-station compute, so we wanted production
+headroom.
+**Result:** Rebuilt rnx2rtkp with `-DLAPACK` linked against Apple
+Accelerate framework via [scripts/build_claslib.sh](../scripts/build_claslib.sh).
+Re-ran the same DOY 091 / kinematic_p30_verify on identical inputs.
+- Wall time: **42.7 min vs 55.2 min** (1.29× speedup)
+- Per-station p50: **19.7 s vs 25.4 s** (1.29×)
+- Per-station p95: **21.3 s vs 29.1 s** (1.37× — bigger improvement
+  on the slower stations; suggests their bottleneck was matrix work)
+- Global PPP-RTK active rate (Q=4 + Q=5): **99.63% in both builds**
+  (perfect agreement on whether PPP-RTK converged)
+- Global FIX rate (Q=4): 92.95% (LAPACK) vs 93.24% (no-LAPACK) —
+  0.29 percentage point shift between FIX and FLOAT, expected
+  numerical-precision noise across LAPACK implementations
+- Q=1 (single-point) rate identical: 0.37% (limited to 2 stations
+  — `1098`, `1140` — that fall back regardless of build, so this
+  is a station-specific data issue not a LAPACK regression)
+**Implications:**
+- Monthly batch projection drops from ~28 h/month to ~21 h/month
+- p95 headroom of ~8 s/station available for adding TTFF processing
+- LAPACK should be the default production build
+**Rule:** Always build with `-DLAPACK + Accelerate` on macOS for
+production runs (`scripts/build_claslib.sh` defaults to this). The
+no-LAPACK path remains for debugging via `--no-lapack`. When
+benchmarking changes, isolate variables: do not change LAPACK and
+config simultaneously between two runs.
+**Tags:** #benchmark #lapack #accelerate #performance #macos
+
+---
+
+## [2026-05-09] data: two GEONET stations fall to Q=1 regardless of build
+
+**Mistake / context:** While reviewing FIX-rate distribution after
+the LAPACK build, found stations `1098` and `1140` reporting 0% Q=4
+and 100% Q=1 across all 2880 epochs of DOY 091.
+**Root cause:** Confirmed by re-checking the no-LAPACK output for
+the same stations — both show 100% Q=1 there too. The PPP-RTK
+filter never converges on these stations on this DOY. Likely
+causes (untested): CLAS network-cluster coverage gap, antenna/
+receiver mismatch unhandled by config, or an OBS data quality
+issue specific to these stations on this date.
+**Fix applied:** None yet — this is a finding, not a regression.
+Documented as a known outlier so the global FIX-rate metric is not
+mistaken for a per-station guarantee.
+**Rule:** When summarising a DOY's FIX rate, report both the global
+percentage AND the count of stations with anomalously low FIX rate
+(threshold to be tuned, e.g. <50%). Single-station outliers should
+not skew the global narrative, but they should be tracked for
+follow-up. If the same stations repeat across multiple DOYs, escalate
+into an investigation task.
+**Tags:** #claslib #ppp-rtk #data-quality #geonet
+
+---
+
 ## [2026-05-09] benchmark: first full-DOY processing on 2026-04-01
 
 **Mistake / context:** First-ever full-DOY (1298-station) CLASLIB
