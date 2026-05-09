@@ -1,0 +1,3 @@
+[submodule "vendor/claslib"]
+	path = vendor/claslib
+	url = https://github.com/QZSS-Strategy-Office/claslib.git
