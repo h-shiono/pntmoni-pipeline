@@ -77,8 +77,8 @@ cd pntmoni-pipeline
 # Install Python environment
 uv sync
 
-# Verify CLASLIB submodule
-ls vendor/claslib/
+# Verify CLASLIB engine submodule (fork — see ADR 0004)
+ls vendor/pntmoni-claslib/
 
 # Verify Quarto installation
 quarto check
@@ -92,12 +92,11 @@ CLASLIB directly. The fork repository is at
 `https://github.com/h-shiono/pntmoni-claslib` and is referenced
 as a git submodule under `vendor/pntmoni-claslib/`.
 
-During the transition period (May 2026), the submodule may still
-reference upstream CLASLIB. Migration to the fork is tracked in
-`tasks/todo.md`.
-
-For the modification list and verification protocol, see
-`vendor/pntmoni-claslib/PNTMONI_CHANGES.md` (after migration).
+The fork currently mirrors upstream verbatim and is tracked tag-for-tag.
+PNT Moni-specific modifications follow the `MOD-NNN` protocol from
+ADR 0004 and are documented in `vendor/pntmoni-claslib/PNTMONI_CHANGES.md`.
+The first such modification (`MOD-001`: TTFF reset interval rounding for
+sub-minute sampled data) is planned but not yet applied.
 
 ### MRTKLIB submodule (to be added)
 

@@ -54,7 +54,7 @@ def cmd_claslib(
     data_dir: Annotated[
         Path,
         typer.Option("--data-dir", help="CLASLIB aux data directory (atx, blq, erp ...)."),
-    ] = Path("vendor/claslib/data"),
+    ] = Path("vendor/pntmoni-claslib/data"),
     config_dir: Annotated[
         Path, typer.Option("--config-dir", help="Mode template config directory.")
     ] = Path("configs"),

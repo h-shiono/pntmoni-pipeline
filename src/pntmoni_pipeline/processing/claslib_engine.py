@@ -254,7 +254,7 @@ def process_doy(
     output_root: Path = Path("data/processed"),
     workspace: Path | None = None,
     binary: Path | None = None,
-    data_dir: Path = Path("vendor/claslib/data"),
+    data_dir: Path = Path("vendor/pntmoni-claslib/data"),
     config_dir: Path = Path("configs"),
     stations: Iterable[str] | None = None,
     interval: int = DEFAULT_INTERVAL_SEC,

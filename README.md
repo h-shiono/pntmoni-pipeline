@@ -34,8 +34,8 @@ cd pntmoni-pipeline
 uv sync
 
 # Verify submodules
-ls vendor/claslib/    # CLASLIB submodule
-ls vendor/mrtklib/    # MRTKLIB submodule (to be added)
+ls vendor/pntmoni-claslib/    # CLASLIB engine (transparent fork — see ADR 0004)
+ls vendor/mrtklib/            # MRTKLIB submodule (to be added)
 
 # Verify Quarto installation
 quarto check
@@ -43,20 +43,23 @@ quarto check
 
 ### Build Processing Engines
 
-CLASLIB and MRTKLIB are included as git submodules and must be
-built before processing can run.
+The CLASLIB engine (via `pntmoni-claslib` fork — see ADR 0004) and
+MRTKLIB are included as git submodules and must be built before
+processing can run.
 
 ```bash
-# CLASLIB
-cd vendor/claslib
-# Build instructions per CLASLIB README
-cd ../..
+# CLASLIB engine (pntmoni-claslib fork)
+make -C vendor/pntmoni-claslib/util/rnx2rtkp
+# Requires liblapack and libblas to be installed (Linux: apt install
+# liblapack-dev libblas-dev; macOS: brew install lapack openblas).
 
 # MRTKLIB (when added)
-cd vendor/mrtklib
 # Build instructions per MRTKLIB README
-cd ../..
 ```
+
+Modifications to the CLASLIB fork are documented in
+`vendor/pntmoni-claslib/PNTMONI_CHANGES.md` per the protocol in
+ADR 0004.
 
 ## Repository Structure
 
@@ -66,7 +69,7 @@ reports/                 # Quarto project (templates, styles)
 notebooks/               # Exploratory analysis
 tasks/                   # todo.md, lessons.md
 vendor/                  # Submodules
-  claslib/               # Official QSS/CAO/MELCO implementation
+  pntmoni-claslib/       # CLASLIB engine (transparent fork; ADR 0004)
   mrtklib/               # Parallel validation engine (planned)
 ```
 
@@ -94,7 +97,10 @@ This pipeline uses several upstream resources:
   with attribution.
 - **CLASLIB**: BSD 2-Clause license with explicit commercial use
   permission. Copyright (c) 2007-, T. Takasu; (c) 2014-, GSI;
-  (c) 2017-, Mitsubishi Electric Corp.
+  (c) 2017-, Mitsubishi Electric Corp. PNT Moni runs CLASLIB via
+  the transparent fork `pntmoni-claslib` (see ADR 0004); the fork
+  inherits the same BSD 2-Clause license and documents every
+  modification in `PNTMONI_CHANGES.md`.
 - **MRTKLIB**: Open-source modernized fork of RTKLIB.
 
 Output reports include full data provenance and acknowledgements.

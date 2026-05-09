@@ -223,41 +223,61 @@ template and sample processed data.
 
 ### Goal
 Replace the upstream CLASLIB submodule reference with the
-`pntmoni-claslib` fork created per ADR 0004, enabling TTFF
-measurement on 30-second GEONET data.
-
-This task depends on the fork repository being created and
-MOD-001 (TTFF reset interval rounding) being implemented and
-verified in the fork. See cross-repo todo:
-`pntmoni-docs/tasks/cross-repo-todo.md`.
+`pntmoni-claslib` fork created per ADR 0004, establishing the
+foundation for TTFF measurement on 30-second GEONET data via
+the planned `MOD-001` modification.
 
 ### Plan
-- [ ] Wait for `pntmoni-claslib` fork to have at least one
-      tagged release with MOD-001
-- [ ] Update `.gitmodules`:
+- [x] `pntmoni-claslib` fork repository created at
+      `https://github.com/h-shiono/pntmoni-claslib` (currently a
+      verbatim mirror of upstream; `MOD-001` to be applied later)
+- [x] Update `.gitmodules`:
       - Remove `vendor/claslib` entry
       - Add `vendor/pntmoni-claslib` entry pointing to fork
-- [ ] Run `git submodule sync && git submodule update --init`
-- [ ] Update build instructions in CLAUDE.md and README.md
-- [ ] Verify CLASLIB processing still works (existing behavior)
-- [ ] Verify TTFF measurement now works on 30-second test data
-- [ ] Update any internal path references in source code
-      (`vendor/claslib/` → `vendor/pntmoni-claslib/`)
+- [x] Deinit + remove old submodule, register new submodule
+      (`git submodule add ... vendor/pntmoni-claslib`)
+- [x] Update build instructions in CLAUDE.md and README.md
+- [x] Update internal path references in source code:
+      - `processing/_binary.py` default search order
+      - `processing/claslib_engine.py` default `data_dir`
+      - `cli/process.py` default `--data-dir`
+- [x] Tests pass against new layout (14/14)
+- [ ] Apply `MOD-001` (TTFF reset interval rounding) to the fork
+      and tag a release (separate task, blocked on fork-side work)
+- [ ] Verify CLASLIB processing still produces identical
+      positioning solutions as upstream (1-second test data)
+- [ ] Verify TTFF measurement triggers at expected reset
+      boundaries on 30-second test data once MOD-001 is applied
 - [ ] Update lessons.md with any submodule migration gotchas
 
 ### Phase Guard
-[ ] Confirmed Phase 0 scope (technical foundation, ADR 0004)
+[x] Confirmed Phase 0 scope (technical foundation, ADR 0004)
 
 ### Done Criteria
-- `vendor/pntmoni-claslib/` is the active CLASLIB submodule
-- Existing positioning processing is unchanged (same outputs)
-- TTFF measurement works on 30-second sampled data
-- Documentation references are updated
+- [x] `vendor/pntmoni-claslib/` is the active engine submodule
+- [x] Documentation references updated; pipeline tests still pass
+- [ ] Existing positioning processing produces same outputs
+      as upstream (verified after first live integration run)
+- [ ] TTFF measurement works on 30-second sampled data (after
+      MOD-001 lands)
 
 ### Open Issues
-- Fork repository must exist before this task can begin
-- Verify build process changes (if any) between upstream
-  CLASLIB and the fork
+- MOD-001 implementation is the next step (separate fork-side
+  task tracked in `pntmoni-docs/tasks/cross-repo-todo.md`)
+- Aux data files referenced by `kinematic_p30.conf` not shipped
+  with CLASLIB (`igs20.atx`, `clas_grid_003.def`) — to be staged
+  in `configs/aux_data/` or similar before first live run
+
+### Result
+- Submodule swap completed 2026-05-09. `vendor/claslib` removed
+  cleanly via `git submodule deinit + git rm + rm .git/modules/...`;
+  `vendor/pntmoni-claslib` registered via `git submodule add`. Fork
+  HEAD = `23cfd363` (same as upstream — verbatim mirror with tag
+  `082` ahead). All path-reference updates concentrated in 5 files
+  (`_binary.py`, `claslib_engine.py`, `process.py`, `CLAUDE.md`,
+  `README.md`); 14 unit tests still pass. The `vendor/claslib`
+  fallback in `_binary._DEFAULT_LOCATIONS` is retained for
+  environments still on the pre-fork layout.
 
 ---
 

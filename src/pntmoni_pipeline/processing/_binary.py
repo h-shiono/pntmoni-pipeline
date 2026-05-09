@@ -8,13 +8,14 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Search order for an unpacked CLASLIB tree (POSIX). The legacy upstream
-# Makefile in ``util/rnx2rtkp/`` builds the binary in place; some forks
-# build into ``bin/``. Override via the ``--binary`` CLI flag.
+# Search order for an unpacked CLASLIB tree (POSIX). Per ADR 0004 the
+# active engine is `pntmoni-claslib`; the upstream `claslib` path is
+# kept as a fallback for environments still on the pre-fork submodule.
+# Override via the ``--binary`` CLI flag.
 _DEFAULT_LOCATIONS = (
-    Path("vendor/claslib/util/rnx2rtkp/rnx2rtkp"),
     Path("vendor/pntmoni-claslib/util/rnx2rtkp/rnx2rtkp"),
-    Path("vendor/claslib/bin/rnx2rtkp"),
+    Path("vendor/pntmoni-claslib/bin/rnx2rtkp"),
+    Path("vendor/claslib/util/rnx2rtkp/rnx2rtkp"),
 )
 
 
@@ -30,8 +31,8 @@ def find_binary(repo_root: Path | None = None) -> Path:
         if candidate.is_file():
             return candidate
     raise FileNotFoundError(
-        "rnx2rtkp binary not found. Build CLASLIB first:\n"
-        "  cd vendor/claslib/util/rnx2rtkp && make\n"
+        "rnx2rtkp binary not found. Build the engine first:\n"
+        "  cd vendor/pntmoni-claslib/util/rnx2rtkp && make\n"
         f"Searched: {[str(base / p) for p in _DEFAULT_LOCATIONS]}"
     )
 
