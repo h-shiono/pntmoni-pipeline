@@ -154,6 +154,99 @@ separate measurement worth doing once that aux data is staged.
 
 ---
 
+## [2026-05-09] benchmark: TTFF DOY adds zero overhead vs non-TTFF
+
+**Mistake / context:** Concern that adding `misc-regularly = 900` (15-min
+periodic filter reset, ADR 0005 primary period) on top of LAPACK build
+might significantly extend wall time. We need TTFF for the monthly
+report, but not at the expense of monthly batch budget.
+**Result:** Same DOY (2026-04-01, 1298 stations, LAPACK + Accelerate):
+- Without TTFF: 42.7 min wall, p50=19.7s, p95=21.3s
+- With TTFF (misc-regularly=900): **41.85 min** wall, p50=19.4s, p95=21.1s
+- Difference is within measurement noise (≤2%); resets zero out
+  filter state but don't add per-epoch compute
+**TTFF metric (1298 stations × 96 windows = 124,608 samples)**:
+- Median per-station TTFF p50: **180 s (3 minutes)**
+- Median per-station TTFF p95: 300 s (5 minutes)
+- Raw mean fix-success-rate: 94.26%; excluding 0-fix outliers
+  (1098, 1140): 94.40%
+- 1297/1298 stations have at least one fixed window
+**Rule:** TTFF processing can run on the full GEONET network within
+the same monthly-batch budget as the non-TTFF baseline. No need to
+separate the workflows. Dual-period strategy (ADR 0005: 900 s primary,
+3600 s secondary in Phase 1) remains feasible — running both periods
+sequentially would still complete in ~1.4 h/day, ~42 h/month wall.
+**Tags:** #benchmark #ttff #ppp-rtk #performance #adr-0005
+
+---
+
+## [2026-05-09] bug: TTFF analyzer drifted on .pos files with observation gaps
+
+**Mistake:** First TTFF aggregator reported `ttff_p50 = 0 s` for 4
+stations (0085, 0285, 0454, P218) — meaning the median window appeared
+to fix on its very first epoch. That can't happen physically when
+``misc-regularly`` resets the filter at each window start.
+**Root cause:** First implementation of `extract_events` assumed
+`epoch_idx == file_line_index`, i.e. that the .pos contains exactly
+one entry per `ti` second from the start of the run. In reality some
+GEONET stations have observation gaps, so .pos files can be 1987–2879
+lines (vs the full 2880). With CLASLIB's MOD-001 fix triggering resets
+on TOW-modulo (not file position), my line-based windowing drifts away
+from the actual reset boundaries — windows can land in the middle of
+the next reconvergence sequence, where Q=4 is already established.
+**Fix applied:** Replaced `parse_pos_quality` (line-ordered list) with
+`parse_pos_epochs` (NMEA UTC → GPST seconds-of-day → `epoch_idx //
+ti` map). `extract_events` now operates on a sparse `dict[int, int]`
+and accepts an explicit `n_windows` (= 86400 / R for a full day) so
+trailing missing windows are still reported as unfixed. Added gap-
+handling unit tests (`test_extract_events_dict_with_gap_does_not_drift`,
+`test_parse_pos_epochs_aligns_to_gpst_day`,
+`test_parse_pos_epochs_handles_observation_gap`). Re-ran on the
+existing .pos files (no re-processing needed): 0085, 0454 etc. now
+report sensible p50=180s. `n_observed_epochs` is now part of the
+ttff.jsonl metadata so future qualification criteria can filter on
+data completeness directly.
+**Rule:** When a metric depends on a time-aligned reset, never
+collapse "epoch index in time" with "line index in file". Always
+align via GPST/TOW. Watch for any metric that produces 0 or other
+edge values when the answer should be non-zero — that's a strong
+signal of an off-by-N alignment bug. Validate aggregators on at
+least one station with known observation gaps before publishing
+numbers.
+**Tags:** #ttff #bug #alignment #observation-gaps
+
+---
+
+## [2026-05-09] design: CLAS evaluation qualification belongs at aggregation, not processing
+
+**Mistake / context:** While reviewing why stations 1098 and 1140
+report 100% Q=1 (single point), proposed adding a
+`configs/stations/excluded.toml` that the processing layer would honour
+to skip these stations. User flagged that this is the wrong shape: in
+the previous toolbox, station qualification was handled at the
+**aggregation** stage based on observation-quality criteria, not by
+hardcoded exclusion at processing.
+**Root cause:** "Skip at processing" loses raw evidence and bakes in
+a subjective coverage assumption. "Filter at aggregation" preserves
+all .pos files, lets multiple criteria be applied to the same data
+without re-processing, and matches PNT Moni's transparency/audit
+posture (raw outputs available; criteria explicit in the report).
+**Fix applied:** Did NOT add `configs/stations/excluded.toml`. Added
+[tasks/todo.md](tasks/todo.md) item: "Station qualification +
+dual-aggregate (raw + qualified)". Stations 1098 (Minamitorishima)
+and 1140 (Okinotorishima) — confirmed via F5 J_NAME — are CLAS
+out-of-coverage Pacific remote islands and will be excluded by a
+future `qualification` step using observation-quality + coverage
+criteria, applied at the analysis layer.
+**Rule:** When a station looks like an outlier, do not hardcode an
+exclusion. Document the cause, defer to a `analysis/qualification`
+component (planned), and report aggregates twice: "raw N stations"
++ "qualified subset N' stations meeting criteria X, Y, Z". This
+keeps the methodology auditable and reusable.
+**Tags:** #methodology #qualification #design #transparency
+
+---
+
 ## [2026-05-09] benchmark: LAPACK (Apple Accelerate) cuts DOY wall time by ~30%
 
 **Mistake / context:** First full-DOY benchmark used CLASLIB's internal

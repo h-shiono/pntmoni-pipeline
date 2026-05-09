@@ -14,6 +14,7 @@ wheels/
 
 # Quarto
 reports/output/
+reports/.quarto/
 
 # Local data and acquisition artifacts
 data/

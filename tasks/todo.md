@@ -198,6 +198,111 @@ rebases or `MOD-NNN` modifications.
 
 ---
 
+## [2026-05-09] Task: TTFF analyzer (15-min primary, ADR 0005)
+
+### Goal
+Extract Time-To-First-Fix per reset window from CLASLIB ``.pos``
+output produced with ``misc-regularly = 900`` (Phase 0 primary period).
+Persist per-station summaries to ``data/metadata/ttff.jsonl`` for
+trend tracking.
+
+### Plan
+- [x] `configs/kinematic_p30_ttff_verify.conf` (TTFF + verify aux data)
+- [x] `analysis/_ttff.py`:
+  - [x] `parse_pos_epochs` — UTC→GPST→`epoch_idx_of_day` map
+        (gap-tolerant)
+  - [x] `extract_events` — per reset window first-Q=4 detection
+  - [x] `summarize` — fix success rate, p50/p95/min/max TTFF
+  - [x] `record` — JSONL append
+  - [x] `analyze_doy` — auto-detect `misc-regularly` from per-station
+        config; full-DOY walk
+- [x] `cli/analyze.py`: `pntmoni-pipeline analyze ttff` subcommand
+- [x] Unit tests for percentile, summarize, JSONL, gap-handling
+      (10 tests, all passing — 34/34 total)
+- [x] Live verified: DOY 091 / 1298 stations / 124,608 TTFF samples
+  - Wall-time impact vs non-TTFF: within noise (< 2%)
+  - Median per-station p50: **180 s**
+  - Median per-station p95: **300 s**
+  - Mean fix-success-rate: 94.26% raw / 94.40% excluding 0-fix outliers
+- [x] Bug fix: alignment by line index broke on stations with
+      observation gaps (e.g. 0085, 0454) — now aligned via GPST TOW
+      so window boundaries match CLASLIB MOD-001's TOW-modulo reset
+
+### Phase Guard
+[x] Confirmed Phase 0 scope (ADR 0005 primary period)
+
+### Done Criteria
+- [x] `pntmoni-pipeline analyze ttff` produces sensible per-station
+  TTFF summaries with no zero-percentile artefacts on gap-affected
+  stations
+- [x] `data/metadata/ttff.jsonl` accumulates one record per
+  (station, date, mode) for trend tracking
+- [x] 34/34 unit tests pass
+
+### Open Issues / next
+- 60-min secondary period (ADR 0005) is Phase 1 work; no design
+  blocker — same `--reset-period 3600 --mode kinematic_p30_ttff_h1`
+  pattern. Pending fork-side hourly mode config.
+
+---
+
+## [Phase 0–1] Task: Station qualification + dual-aggregate
+
+### Goal
+Establish the analysis-layer mechanism that decides which GEONET
+stations qualify as "CLAS evaluation reference" stations, applying
+observation-quality criteria at aggregation time (not by hardcoded
+exclusion at processing). Produce two parallel aggregate metrics
+in monthly reports: raw across all 1298 stations, and qualified
+subset across stations meeting the criteria.
+
+### Motivation
+- 1098 (南鳥島) and 1140 (沖ノ鳥島) report 100% Q=1 because they are
+  outside CLAS coverage. They drag the global FIX rate down by a
+  small but methodologically meaningful amount.
+- The previous toolbox handled this by qualifying stations at the
+  aggregation stage based on observation quality. PNT Moni inherits
+  that approach — see lessons.md "CLAS evaluation qualification belongs
+  at aggregation, not processing".
+- The same mechanism becomes the basis for monthly report's
+  methodology section: "evaluated against N stations meeting criteria
+  X, Y, Z".
+
+### Plan (sketch — refine when picked up)
+- [ ] Define qualification criteria. Candidates:
+  - Observation completeness (e.g. ≥95% of expected epochs present —
+    `n_observed_epochs / 2880` for 30s daily)
+  - SNR / multipath quality (VIF method, planned `qc/` module)
+  - F5 coordinate stability (use the F5 archive we already acquire)
+  - CLAS coverage check (any matching `inet=N` from trace) — implicit
+    via fix-rate threshold
+- [ ] Persist per-station QC metrics alongside TTFF (e.g.
+  `data/metadata/qc.jsonl`)
+- [ ] Implement `analysis/qualification.py` that joins QC + coverage
+  + criteria into a `qualified: bool` flag per (station, date)
+- [ ] Update aggregate scripts to report dual metrics (raw + qualified)
+- [ ] Document the criteria in
+  `pntmoni-docs/30-evaluation-methodology/` (or write the methodology
+  doc if not yet present)
+
+### Phase Guard
+[ ] Phase 0–1 (begins once monthly report scaffolding lands; the
+    aggregate output schema feeds report templates)
+
+### Done Criteria
+- A single station can be flagged qualified or not based on a TOML
+  criteria file
+- Monthly report shows BOTH raw N=1298 and qualified subset metrics
+- Criteria are auditable and reproducible from raw .pos + provenance
+
+### Open Issues
+- Specific thresholds (95% completeness? 90%?) need to be empirically
+  set after a few months of trend data
+- "Qualified" definition may evolve — tie versioning to the
+  methodology doc to keep cross-report comparability
+
+---
+
 ## [Phase 0] Task: Common Parquet schema for processing output
 
 ### Goal
