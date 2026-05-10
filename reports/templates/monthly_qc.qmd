@@ -1,0 +1,541 @@
+---
+title: "PNT Moni Monthly QC Report"
+subtitle: "GEONET Observation Quality — Free Tier"
+date: today
+author: "PNT Moni"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    code-fold: true
+    embed-resources: true
+    smooth-scroll: true
+    number-sections: true
+    theme: [cosmo, ../styles/pntmoni.scss]
+execute:
+  echo: false
+  warning: false
+params:
+  year: 2026
+  month: 4
+  methodology_version: "1.0.0"
+  qc_tool: "teqc"
+  qc_version: "2019Feb25"
+  convbin_version: "RTKLIB 2.4.2"
+  data_root: "../../data/processed/qc_summary"
+jupyter: python3
+---
+
+```{python}
+#| label: setup
+#| include: false
+
+import math
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+from matplotlib.colors import LinearSegmentedColormap
+
+# ---- Brand (mirrors reports/_brand.yml) -------------------------------
+COLOR_PRIMARY = "#10b981"
+COLOR_SECONDARY = "#1f2937"
+COLOR_SUCCESS = "#10b981"
+COLOR_WARNING = "#f59e0b"
+COLOR_DANGER = "#ef4444"
+COLOR_NEUTRAL = "#6b7280"
+
+CMAP_PERFORMANCE = LinearSegmentedColormap.from_list(
+    "pntmoni_perf", ["#10b981", "#f59e0b", "#ef4444"], N=256,
+)
+
+mpl.rcParams['axes.spines.top'] = False
+mpl.rcParams['axes.spines.right'] = False
+mpl.rcParams['axes.grid'] = True
+mpl.rcParams['grid.alpha'] = 0.3
+mpl.rcParams['figure.dpi'] = 100
+mpl.rcParams['font.family'] = "Inter"
+
+# ---- Reporting period -----------------------------------------------
+YEAR = 2026
+MONTH = 4
+PERIOD_LABEL = pd.Timestamp(YEAR, MONTH, 1).strftime("%B %Y")
+METHODOLOGY_VERSION = "1.0.0"
+QC_TOOL = "teqc"
+QC_VERSION = "2019Feb25"
+CONVBIN_VERSION = "RTKLIB 2.4.2"
+
+# ---- Data loading: stack the month's per-DOY QC parquets ------------
+# Each parquet is one DOY × ~1298 stations × 639 columns. Stack along a
+# `date` column so we can compute both per-station-monthly aggregates
+# and per-day-national aggregates.
+DATA_ROOT = Path("../../data/processed/qc_summary") / f"{YEAR}"
+month_glob = f"{YEAR}{MONTH:02d}*.parquet"
+
+def load_month(root: Path, pattern: str) -> pd.DataFrame:
+    files = sorted(root.glob(pattern))
+    if not files:
+        raise FileNotFoundError(f"no parquets at {root}/{pattern}")
+    frames = []
+    for p in files:
+        df = pd.read_parquet(p)
+        df["date"] = pd.to_datetime(df["date"])
+        frames.append(df)
+    return pd.concat(frames, ignore_index=True)
+
+stack = load_month(DATA_ROOT, month_glob)
+N_DAYS = stack["date"].nunique()
+N_STATIONS = stack["id"].nunique()
+
+# ---- ECEF → geodetic (lat, lon) for the spatial plots ---------------
+# WGS-84 closed-form (Bowring) is fine for the ~1,300 GEONET points.
+WGS84_A = 6378137.0
+WGS84_F = 1.0 / 298.257223563
+WGS84_B = WGS84_A * (1 - WGS84_F)
+WGS84_E2 = 1 - (WGS84_B / WGS84_A) ** 2
+WGS84_EP2 = (WGS84_A / WGS84_B) ** 2 - 1
+
+def ecef_to_geodetic(x: np.ndarray, y: np.ndarray, z: np.ndarray):
+    p = np.sqrt(x ** 2 + y ** 2)
+    theta = np.arctan2(z * WGS84_A, p * WGS84_B)
+    sin_t, cos_t = np.sin(theta), np.cos(theta)
+    lat = np.arctan2(z + WGS84_EP2 * WGS84_B * sin_t ** 3,
+                     p - WGS84_E2 * WGS84_A * cos_t ** 3)
+    lon = np.arctan2(y, x)
+    return np.degrees(lat), np.degrees(lon)
+
+stations = (
+    stack.groupby("id", as_index=False)
+         .first()[["id", "approx_pos_x", "approx_pos_y", "approx_pos_z",
+                   "rec_type", "ant_type"]]
+)
+stations["lat"], stations["lon"] = ecef_to_geodetic(
+    stations["approx_pos_x"].to_numpy(dtype=float),
+    stations["approx_pos_y"].to_numpy(dtype=float),
+    stations["approx_pos_z"].to_numpy(dtype=float),
+)
+
+# ---- Aggregate helpers ---------------------------------------------
+ELEVATION_WINDOWS = (
+    "85_-_90","80_-_85","75_-_80","70_-_75","65_-_70","60_-_65",
+    "55_-_60","50_-_55","45_-_50","40_-_45","35_-_40","30_-_35",
+    "25_-_30","20_-_25","15_-_20","10_-_15","_5_-_10","_0_-__5","____<__0",
+)
+
+def metric_weighted_mean(df: pd.DataFrame, metric: str, stat: str = "rms") -> pd.Series:
+    """obs-count weighted mean of ``{metric}_{window}_{stat}`` across windows.
+
+    Used for MP/ION (rms) and SN (sig|mean): weight by ``{metric}_{w}_tot``.
+    Returns one value per row. NaN if total obs == 0.
+    """
+    num = pd.Series(0.0, index=df.index)
+    den = pd.Series(0.0, index=df.index)
+    for w in ELEVATION_WINDOWS:
+        v = df.get(f"{metric}_{w}_{stat}")
+        n = df.get(f"{metric}_{w}_tot")
+        if v is None or n is None:
+            continue
+        v_, n_ = pd.to_numeric(v, errors="coerce"), pd.to_numeric(n, errors="coerce")
+        ok = v_.notna() & n_.notna() & (n_ > 0)
+        num = num.add(v_.where(ok, 0) * n_.where(ok, 0), fill_value=0)
+        den = den.add(n_.where(ok, 0), fill_value=0)
+    return (num / den).where(den > 0)
+
+# Headline metrics: per (date, station) → one number each.
+for metric, stat in [
+    ("MP12", "rms"), ("MP21", "rms"), ("MP15", "rms"), ("MP51", "rms"),
+    ("SN1", "mean"), ("SN2", "mean"), ("SN5", "mean"),
+]:
+    stack[f"{metric}_mean"] = metric_weighted_mean(stack, metric, stat)
+
+# Daily national aggregates (1 row per day, mean across stations).
+daily_national = (
+    stack.groupby("date")
+         .agg(visibility_mean=("visibility", "mean"),
+              MP12_mean=("MP12_mean", "mean"),
+              MP21_mean=("MP21_mean", "mean"),
+              MP15_mean=("MP15_mean", "mean"),
+              SN1_mean=("SN1_mean", "mean"),
+              SN2_mean=("SN2_mean", "mean"),
+              n_stations=("id", "nunique"))
+         .reset_index()
+)
+
+# Monthly per-station aggregates (1 row per station, mean across days).
+station_monthly = (
+    stack.groupby("id")
+         .agg(visibility=("visibility", "mean"),
+              MP12=("MP12_mean", "mean"),
+              MP21=("MP21_mean", "mean"),
+              MP15=("MP15_mean", "mean"),
+              SN1=("SN1_mean", "mean"),
+              SN2=("SN2_mean", "mean"),
+              SN5=("SN5_mean", "mean"))
+         .reset_index()
+         .merge(stations[["id", "lat", "lon", "rec_type", "ant_type"]], on="id")
+)
+
+# Headline numbers for the executive summary.
+NATIONAL_AVAIL = daily_national["visibility_mean"].mean()
+MP12_MEDIAN = station_monthly["MP12"].median()
+SN1_MEDIAN = station_monthly["SN1"].median()
+N_STATIONS_REPORTED = len(station_monthly)
+N_DAILY_FILES = N_DAYS
+```
+
+::: {.callout-note collapse="true"}
+**Methodology Version:** `{python} METHODOLOGY_VERSION` &nbsp;·&nbsp;
+**QC Tool:** `{python} f"{QC_TOOL} {QC_VERSION}"` &nbsp;·&nbsp;
+**convbin:** `{python} CONVBIN_VERSION` &nbsp;·&nbsp;
+**Stations:** `{python} f"{N_STATIONS_REPORTED:,}"` &nbsp;·&nbsp;
+**Days covered:** `{python} N_DAILY_FILES`
+:::
+
+# Revision History
+
+| Version | Date | Notes |
+|---|---|---|
+| 1.0 | `{python} pd.Timestamp.today().strftime('%Y-%m-%d')` | Initial publication. |
+
+# Introduction
+
+This monthly report summarises the **observation-quality** state of
+the GEONET (GNSS Earth Observation Network) reference-station network
+operated by the Geospatial Information Authority of Japan (GSI),
+for `{python} PERIOD_LABEL`. It is the **free-tier deliverable** of
+the PNT Moni monitoring service: a national, aggregate view that lets
+operators, researchers and users of GNSS-augmentation services see
+how the underlying observation infrastructure performed.
+
+The report is intentionally limited in scope. It does **not** include:
+
+- Per-station drill-downs or named station lists (Pro-tier).
+- Positioning-domain accuracy or TTFF results — those appear in the
+  full Monthly Report.
+- Integrity indicators, ionospheric/tropospheric correction
+  diagnostics, or cross-engine comparisons (Phase 1+).
+
+The data and methods used to produce this report are openly
+documented (see [§Methodology](#methodology)) and reproducible from
+publicly available GEONET inputs.
+
+# Methodology
+
+## Data sources
+
+- **GEONET RINEX 3.02** observation and broadcast-navigation files,
+  retrieved from GSI's archive under the
+  [Public Data License 1.0](https://www.gsi.go.jp/kibanjouhou/kibanjouhou60017.html).
+  All `{python} f"{N_STATIONS_REPORTED:,}"` continuously-operating
+  GEONET reference stations active for `{python} PERIOD_LABEL` are
+  included.
+- 30-second sampling, 24-hour daily files.
+
+## QC pipeline
+
+```
+RINEX 3 (GEONET)
+  ↓ convbin (RTKLIB 2.4.2)            v3 → v2.11 conversion
+  ↓ teqc 2019Feb25                    +qc -R +L2C_L2 +L5
+  → .{yy}S summary per station/day
+  ↓ pntmoni-pipeline qc summarize     parse + wide Parquet
+  → data/processed/qc_summary/...     1 row × 639 cols per station-day
+```
+
+QZSS LNAV broadcasts use the post-2024 health-flag encoding defined
+in [IS-QZSS-PNT-006 §4.1.2.3(4)](https://qzss.go.jp/en/technical/download/pdf/ps-is-qzss/is-qzss-pnt-006.pdf):
+the L1C/B health bit (LSB) is set on every L1C/A-broadcasting
+satellite. The pipeline masks this bit before passing the QNAV to
+teqc so that L1C/A-broadcasting QZS satellites are correctly QC'd.
+QZS-1R (currently broadcasting L1C/B) remains correctly excluded
+from L1C/A-based QC.
+
+## Metric definitions
+
+| Metric | Symbol | Description |
+|---|---|---|
+| Data availability | `visibility` | Fraction of expected 30-second epochs with at least one valid observation. |
+| L1 C/A multipath | `MP12` | RMS of the standard L1 multipath combination, in metres. |
+| L2 P-code multipath | `MP21` | RMS of the standard L2 multipath combination, in metres. |
+| L1–L5 multipath | `MP15` | RMS of the L1-L5 multipath combination (where L5 is observed), in metres. |
+| L1 C/A SNR | `SN1` | Mean signal-to-noise ratio on L1 C/A, in dB-Hz. |
+| L2 SNR | `SN2` | Mean signal-to-noise ratio on L2, in dB-Hz. |
+
+All multipath/SNR figures are obs-count weighted across teqc's 19
+elevation bins (90° down to <0°), so dense low-elevation tracks are
+not over-weighted.
+
+## Evaluation Network
+
+```{python}
+#| label: fig-network
+#| fig-cap: "GEONET reference stations covered in this report."
+fig, ax = plt.subplots(figsize=(7, 7))
+ax.scatter(station_monthly["lon"], station_monthly["lat"],
+           s=4, c=COLOR_PRIMARY, alpha=0.6, edgecolors="none")
+ax.set_xlim(127, 147)
+ax.set_ylim(24, 46)
+ax.set_xlabel("Longitude (°E)")
+ax.set_ylabel("Latitude (°N)")
+ax.set_aspect("equal")
+ax.grid(True, alpha=0.3)
+ax.set_title(f"{N_STATIONS_REPORTED:,} GEONET stations reporting in {PERIOD_LABEL}",
+             loc="left", fontweight=600, fontsize=11)
+plt.tight_layout()
+plt.show()
+```
+
+# Executive Summary
+
+```{python}
+#| label: tbl-executive
+#| echo: false
+
+def fmt_pct(x): return f"{x*100:.2f} %"
+def fmt_m(x):   return f"{x:.3f} m"
+def fmt_dbhz(x):return f"{x:.1f} dB-Hz"
+
+summary = pd.DataFrame([
+    ["National data availability (mean of daily means)", fmt_pct(NATIONAL_AVAIL)],
+    ["L1 C/A multipath — station-month median",          fmt_m(MP12_MEDIAN)],
+    ["L1 C/A SNR — station-month median",                fmt_dbhz(SN1_MEDIAN)],
+    ["Stations reporting",                               f"{N_STATIONS_REPORTED:,}"],
+    ["Days covered",                                     f"{N_DAILY_FILES}"],
+], columns=["Metric", PERIOD_LABEL])
+summary.style.hide(axis="index")
+```
+
+::: {.callout-tip}
+**Bottom line.** The GEONET network operated at high observation
+fidelity throughout `{python} PERIOD_LABEL`, with the headline
+metrics tracking expectations for a healthy reference network. See
+[§National Overview](#national-overview-observation-quality) for the
+distributions and trends behind these summary numbers.
+:::
+
+# National Overview — Observation Quality {#national-overview-observation-quality}
+
+## Data Availability
+
+```{python}
+#| label: fig-availability
+#| fig-cap: "Daily national availability (mean across stations) and station-monthly availability distribution."
+fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+
+# left: 30-day daily national mean
+ax = axes[0]
+ax.plot(daily_national["date"], daily_national["visibility_mean"] * 100,
+        color=COLOR_PRIMARY, marker="o", markersize=4, linewidth=1.5)
+ax.set_ylabel("Availability (%)")
+ax.set_xlabel("Date")
+ax.set_ylim(95, 100)
+ax.set_title("Daily national mean", loc="left", fontweight=600)
+fig.autofmt_xdate()
+
+# right: ECDF of station-monthly availability
+ax = axes[1]
+v = np.sort(station_monthly["visibility"].dropna() * 100)
+y = np.arange(1, len(v) + 1) / len(v) * 100
+ax.plot(v, y, color=COLOR_PRIMARY, linewidth=2)
+ax.set_xlabel("Station-monthly availability (%)")
+ax.set_ylabel("Cumulative share of stations (%)")
+ax.set_title("Distribution across stations", loc="left", fontweight=600)
+ax.set_xlim(80, 101)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: tbl-availability-quantiles
+q = station_monthly["visibility"].quantile([0.05, 0.50, 0.95]).to_dict()
+pd.DataFrame([
+    ["5th percentile",  fmt_pct(q[0.05])],
+    ["Median",          fmt_pct(q[0.50])],
+    ["95th percentile", fmt_pct(q[0.95])],
+    ["Best station",    fmt_pct(station_monthly["visibility"].max())],
+    ["Worst station",   fmt_pct(station_monthly["visibility"].min())],
+], columns=["Statistic", "Station-monthly availability"]
+).style.hide(axis="index")
+```
+
+## Distribution of Metrics
+
+```{python}
+#| label: fig-distributions
+#| fig-cap: "Across-station distributions of the headline QC metrics, station-monthly means."
+fig, axes = plt.subplots(2, 2, figsize=(11, 7))
+
+panels = [
+    (axes[0, 0], "MP12", "L1 C/A multipath RMS (m)", "m",   COLOR_PRIMARY),
+    (axes[0, 1], "MP21", "L2 P-code multipath RMS (m)", "m", COLOR_SECONDARY),
+    (axes[1, 0], "SN1",  "L1 C/A SNR mean (dB-Hz)",   "dB-Hz", COLOR_PRIMARY),
+    (axes[1, 1], "SN2",  "L2 SNR mean (dB-Hz)",       "dB-Hz", COLOR_SECONDARY),
+]
+for ax, col, title, unit, color in panels:
+    s = station_monthly[col].dropna()
+    ax.hist(s, bins=40, color=color, alpha=0.75, edgecolor="white", linewidth=0.4)
+    ax.axvline(s.median(), color=COLOR_DANGER, linestyle="--", linewidth=1, label=f"median = {s.median():.2f} {unit}")
+    ax.set_xlabel(title)
+    ax.set_ylabel("Stations")
+    ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
+plt.tight_layout()
+plt.show()
+```
+
+## Recent Trends
+
+```{python}
+#| label: fig-trends
+#| fig-cap: "Daily national means across the reporting month."
+fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+
+ax = axes[0]
+ax.plot(daily_national["date"], daily_national["MP12_mean"],
+        color=COLOR_PRIMARY, marker="o", markersize=4, label="MP12 (L1 C/A)")
+ax.plot(daily_national["date"], daily_national["MP21_mean"],
+        color=COLOR_SECONDARY, marker="s", markersize=4, label="MP21 (L2 P)")
+ax.set_ylabel("Multipath RMS (m)")
+ax.legend(loc="upper right", fontsize=9)
+ax.set_title("Multipath", loc="left", fontweight=600)
+
+ax = axes[1]
+ax.plot(daily_national["date"], daily_national["SN1_mean"],
+        color=COLOR_PRIMARY, marker="o", markersize=4, label="SN1 (L1 C/A)")
+ax.plot(daily_national["date"], daily_national["SN2_mean"],
+        color=COLOR_SECONDARY, marker="s", markersize=4, label="SN2 (L2)")
+ax.set_ylabel("Mean SNR (dB-Hz)")
+ax.legend(loc="upper right", fontsize=9)
+ax.set_title("Signal strength", loc="left", fontweight=600)
+ax.set_xlabel("Date")
+fig.autofmt_xdate()
+plt.tight_layout()
+plt.show()
+```
+
+## Spatial Distribution
+
+```{python}
+#| label: fig-spatial
+#| fig-cap: "Geographic distribution of L1 C/A multipath and SNR; markers binned by quartile."
+fig, axes = plt.subplots(1, 2, figsize=(13, 6))
+
+# Bin into quartiles for color-mapped, station-anonymous plotting.
+def quartile_colors(values: pd.Series, cmap):
+    q = values.quantile([0, 0.25, 0.50, 0.75, 1.0]).to_numpy()
+    bins = np.digitize(values.fillna(values.median()), q[1:-1])
+    return cmap(bins / 3.0), q
+
+for ax, (col, title, cmap) in zip(
+    axes,
+    [("MP12", "L1 C/A multipath (m)", CMAP_PERFORMANCE),
+     ("SN1",  "L1 C/A SNR (dB-Hz)",  CMAP_PERFORMANCE.reversed())],
+):
+    colors, edges = quartile_colors(station_monthly[col], cmap)
+    ax.scatter(station_monthly["lon"], station_monthly["lat"],
+               s=8, c=colors, alpha=0.85, edgecolors="none")
+    ax.set_xlim(127, 147)
+    ax.set_ylim(24, 46)
+    ax.set_xlabel("Longitude (°E)")
+    ax.set_ylabel("Latitude (°N)")
+    ax.set_aspect("equal")
+    ax.set_title(title, loc="left", fontweight=600)
+    qlabels = [f"≤ {edges[1]:.2f}", f"≤ {edges[2]:.2f}",
+               f"≤ {edges[3]:.2f}", f"> {edges[3]:.2f}"]
+    handles = [plt.Line2D([0], [0], marker="o", markersize=6, linestyle="",
+                          markerfacecolor=cmap(i / 3.0), markeredgecolor="none",
+                          label=q) for i, q in enumerate(qlabels)]
+    ax.legend(handles=handles, loc="lower left", fontsize=8, framealpha=0.9,
+              title="Quartile")
+plt.tight_layout()
+plt.show()
+```
+
+::: {.callout-note}
+Per free-tier scope, only quartile bins are shown — individual
+station identifiers are reserved for the Pro-tier report.
+:::
+
+## Receiver / Antenna Inventory
+
+```{python}
+#| label: tbl-equipment
+top_rec = (station_monthly["rec_type"].value_counts().head(8)
+                                       .rename_axis("Receiver type")
+                                       .reset_index(name="Stations"))
+top_ant = (station_monthly["ant_type"].value_counts().head(8)
+                                       .rename_axis("Antenna type")
+                                       .reset_index(name="Stations"))
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+for ax, (df, title, color) in zip(
+    axes,
+    [(top_rec, "Top receiver types",   COLOR_PRIMARY),
+     (top_ant, "Top antenna types",    COLOR_SECONDARY)],
+):
+    ax.barh(df.iloc[::-1, 0], df.iloc[::-1, 1], color=color)
+    ax.set_xlabel("Stations")
+    ax.set_title(title, loc="left", fontweight=600)
+    ax.grid(True, alpha=0.3, axis="x")
+plt.tight_layout()
+plt.show()
+```
+
+::: {.callout-note}
+**Equipment changes vs. previous month** are tracked via aggregated
+counts only (e.g. *"N stations changed receiver, M stations changed
+antenna"*); individual station identities are reserved for the
+Pro-tier report. Month-over-month deltas will appear once a baseline
+month is established.
+:::
+
+# Appendix
+
+## GNSS System Events: NAGU / NANU / NAQU
+
+::: {.callout-note}
+**Coming Soon.** This appendix will summarise the
+QZSS, GPS and Galileo notice-to-users events
+(NAQU, NANU, NAGU) that fell within the reporting period, sourced
+directly from QSS / USCG-NAVCEN / EUSPA. Implementation is part of
+the Phase 1 anomaly-monitoring rollout.
+:::
+
+## List of Earthquakes
+
+::: {.callout-note}
+**Coming Soon.** Earthquakes felt during the reporting period that
+may be relevant for interpreting GEONET observation anomalies will
+be listed here, sourced from the Japan Meteorological Agency (JMA).
+Implementation pending source-feed integration.
+:::
+
+## List of Satellites
+
+```{python}
+#| label: tbl-satellites
+sats = pd.DataFrame([
+    ["G",  "GPS",          "31 active SVs across Block IIR / IIR-M / IIF / III; signals: L1 C/A, L1C, L2C, L5"],
+    ["R",  "GLONASS",       "Excluded from this report's QC pipeline (per methodology)"],
+    ["E",  "Galileo",       "Approx. 26 active SVs across IOV / FOC; signals: E1, E5a, E5b, E6"],
+    ["J",  "QZSS",          "4 active operational SVs (J01–J03, J07) plus QZS-1R; L1 C/A on most, L1C/B on QZS-1R"],
+], columns=["Sys ID", "Constellation", "Notes"])
+sats.style.hide(axis="index")
+```
+
+::: {.callout-note}
+A complete reference dictionary of GNSS satellites — including PRN
+mapping, launch dates, and decommissioning notes — will be added in a
+future release.
+:::
+
+---
+
+::: {.callout-tip}
+**Reproducibility.** This report is generated by the open-source
+[`pntmoni-pipeline`](https://github.com/h-shiono/pntmoni-pipeline)
+toolchain from the publicly available GEONET archive. Methodology
+and configuration are versioned alongside the report.
+:::
