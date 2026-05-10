@@ -1,131 +1,621 @@
 ---
 title: "PNT Moni Monthly Report"
-subtitle: "QZSS CLAS Performance Analysis"
-date: "{{ report_month }}"
+subtitle: "QZSS CLAS Performance Evaluation"
+date: today
 author: "PNT Moni"
 format:
-  pdf:
-    documentclass: scrartcl
-    papersize: a4
-    fontsize: 10pt
-    toc: true
-    toc-depth: 2
-    number-sections: true
-    colorlinks: true
-    template-partials:
-      - styles/pdf-template.tex
   html:
     toc: true
+    toc-depth: 3
     toc-location: left
     code-fold: true
-    theme: styles/pntmoni.scss
+    embed-resources: true
+    smooth-scroll: true
+    number-sections: true
+    theme: [cosmo, styles/pntmoni.scss]
 execute:
   echo: false
   warning: false
 params:
-  report_month: "2026-04"
-  tier: "free"  # free | personal | pro | enterprise
+  year: 2026
+  month: 4
+  methodology_version: "1.0.0"
+  config_hash: "a3f9c2b1d4e7f8a9b2c3d4e5f6a7b8c9"
+  engine: "pntmoni-claslib"
+  engine_version: "v0.8.3-pntmoni-1"
+  qc_tool: "teqc"
+  qc_version: "2019Feb25"
+  data_mode: "synthetic"
+jupyter: python3
 ---
 
-# Executive Summary {-}
-{{< include shared/executive_summary.qmd >}}
+```{python}
+#| label: setup
+#| include: false
+
+# Setup: load dummy data for template preview.
+# In production, this is replaced with real data loading from
+# pntmoni-pipeline output (Parquet on local or GCS).
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+
+# PNT Moni brand colors (per _brand.yml)
+COLOR_PRIMARY = "#10b981"   # L6 Active green
+COLOR_SECONDARY = "#1f2937" # dark slate
+COLOR_SUCCESS = "#10b981"
+COLOR_WARNING = "#f59e0b"
+COLOR_DANGER = "#ef4444"
+COLOR_INSIDE = "#10b981"   # 網内
+COLOR_OUTSIDE = "#f59e0b"  # 網外
+
+mpl.rcParams['axes.spines.top'] = False
+mpl.rcParams['axes.spines.right'] = False
+mpl.rcParams['axes.grid'] = True
+mpl.rcParams['grid.alpha'] = 0.3
+mpl.rcParams['figure.dpi'] = 100
+
+# Quarto's Jupyter engine does not bind YAML `params:` to a Python
+# variable on its own — Papermill injection only happens with
+# --execute-params. Mirror the YAML defaults here so `quarto preview`
+# renders, and so production runs that do inject `params` overwrite
+# this block transparently.
+params = {
+    "year": 2026,
+    "month": 4,
+    "methodology_version": "1.0.0",
+    "config_hash": "a3f9c2b1d4e7f8a9b2c3d4e5f6a7b8c9",
+    "engine": "pntmoni-claslib",
+    "engine_version": "v0.8.3-pntmoni-1",
+    "qc_tool": "teqc",
+    "qc_version": "2019Feb25",
+    "data_mode": "synthetic",
+}
+
+YEAR = int(params["year"])
+MONTH = int(params["month"])
+PERIOD = f"{YEAR}-{MONTH:02d}"
+PERIOD_LABEL = f"April {YEAR}" if MONTH == 4 else f"{pd.Timestamp(YEAR, MONTH, 1):%B %Y}"
+
+# Synthetic data generation
+rng = np.random.default_rng(seed=42)
+N_STATIONS = 1300
+N_SAMPLES_PER_STATION = 200
+
+# Generate synthetic horizontal/vertical errors per station
+station_ids = [f"{i:04d}" for i in range(N_STATIONS)]
+horiz_errors = rng.gamma(2.0, 0.025, size=(N_STATIONS, N_SAMPLES_PER_STATION))
+vert_errors = rng.gamma(2.0, 0.040, size=(N_STATIONS, N_SAMPLES_PER_STATION))
+
+# 80% inside-network, 20% outside-network
+inside_network = rng.choice([True, False], size=N_STATIONS, p=[0.80, 0.20])
+
+# TTFF samples
+ttff_15min = rng.gamma(2.5, 12, size=12000)
+
+# All-station aggregated quantiles
+all_horiz = horiz_errors.flatten()
+all_vert = vert_errors.flatten()
+
+H50 = np.quantile(all_horiz, 0.50)
+H95 = np.quantile(all_horiz, 0.95)
+H99 = np.quantile(all_horiz, 0.99)
+V50 = np.quantile(all_vert, 0.50)
+V95 = np.quantile(all_vert, 0.95)
+V99 = np.quantile(all_vert, 0.99)
+TTFF50 = np.quantile(ttff_15min, 0.50)
+TTFF95 = np.quantile(ttff_15min, 0.95)
+AVAIL = 0.987  # synthetic national availability
+
+# Inside vs Outside network statistics
+inside_h95 = np.quantile(horiz_errors[inside_network].flatten(), 0.95)
+outside_h95 = np.quantile(horiz_errors[~inside_network].flatten(), 0.95)
+inside_v95 = np.quantile(vert_errors[inside_network].flatten(), 0.95)
+outside_v95 = np.quantile(vert_errors[~inside_network].flatten(), 0.95)
+```
+
+::: {.callout-note appearance="minimal"}
+**Template preview note**: This report is currently rendered with
+synthetic data for template development. Production reports use real
+GEONET observations processed through the pntmoni-pipeline. The
+structure shown here is the Phase 0 launch structure; sections
+marked "Coming Soon" appear in Phase 1+ per the rollout plan in
+`30-evaluation-methodology/03-monthly-report-structure.md`.
+:::
+
+# Revision History
+
+| Version | Date       | Description           |
+|---------|------------|-----------------------|
+| 1.0     | (pending)  | Initial publication   |
 
 # Introduction
-{{< include shared/methodology.qmd >}}
 
-# This Month at a Glance
-- 全国95% / 99% パーセンタイル前月比
-- "L6 Active" 全国稼働率
-- 重大イベントのハイライト
-- (Free以上で表示)
+This report covers QZSS CLAS (Centimeter Level Augmentation Service)
+performance during **`{python} PERIOD_LABEL`**, evaluated by PNT Moni
+using publicly-available data and open-source tools.
 
-# Regional Performance
+PNT Moni is an independent evaluation service for GNSS augmentation,
+providing continuous monitoring of CLAS performance at higher spatial
+and temporal resolution than the official Cabinet Office of Japan / QSS
+Performance Reports. PNT Moni's monthly reports complement the
+semi-annual official reports through monthly granularity, station-level
+drill-down, and analytical depth that addresses the practical needs of
+receiver manufacturers, system integrators, and CLAS-using operators.
+
+The methodology used to produce this report is summarized in the next
+section. Full methodology documentation is at
+[https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
+The Methodology Version Tag at the end of this report uniquely
+identifies the configuration used.
+
+# Methodology
+
+This section provides a one-page summary of the methodology. The full
+methodology document is at the link above.
+
+**Data sources**: GEONET 30-second RINEX observations from
+approximately 1,300 stations, distributed by the Geospatial Information
+Authority of Japan (GSI) under PDL 1.0
+(出典：国土地理院 電子基準点データ提供サービス).
+QSS L6 broadcast archive from Cabinet Office of Japan. IGS final SP3/CLK
+products for validation.
+
+**Processing engine**: `{python} f"{params['engine']} {params['engine_version']}"` operating in
+kinematic PPP-RTK mode with per-system clock parameterization and
+RAIM/FDE. See [ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md)
+and [ADR 0004](../../../pntmoni-docs/70-decisions/adr-0004.md).
+
+**Reference coordinate derivation**: GSI F3 daily solutions (ITRF2005)
+prior to August 2021; F5 daily solutions (ITRF2014) from August 2021
+onwards. A 2-week median filter suppresses coordinate spikes
+(methodology following Shiono & Kubo 2026, NAVIGATION).
+
+**Quality control**: `{python} f"{params['qc_tool']} {params['qc_version']}"`
+during 2026–2027 (transitioning to mrtk qc at 2027/Q4 per
+[ADR 0008](../../../pntmoni-docs/70-decisions/adr-0008.md)).
+
+**Statistical aggregation**: 95th and 99th percentile errors computed
+per station and aggregated nationally. TTFF measured with **15-minute
+reset period** (NAVIGATION 2026 continuity); 60-minute reset added in
+Phase 1. See [ADR 0005](../../../pntmoni-docs/70-decisions/adr-0005.md).
+
+**Known structural divergence from QSS official numbers**: PNT Moni's
+methodology differs from the official QSS Performance Report in four
+documented ways: sampling rate (30s vs 1s), parameter settings re-tuned
+for 30s sampling, CLASLIB version lag, and consequent Kalman filter
+behavior. See [ADR 0001 Postscript](../../../pntmoni-docs/70-decisions/adr-0001.md#postscript)
+and [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762).
+This is documented as a structural property, not an error.
+
+# Executive Summary
+
+```{python}
+#| label: tbl-executive-summary
+#| tbl-cap: "Headline performance metrics"
+exec_summary = pd.DataFrame({
+    "Metric": [
+        "Stations evaluated",
+        "Horizontal error 50% (cm)",
+        "Horizontal error 95% (cm)",
+        "Horizontal error 99% (cm)",
+        "Vertical error 95% (cm)",
+        "TTFF 50% (s, 15-min reset)",
+        "TTFF 95% (s, 15-min reset)",
+        "National availability",
+    ],
+    "Value": [
+        f"{N_STATIONS:,}",
+        f"{H50*100:.2f}",
+        f"{H95*100:.2f}",
+        f"{H99*100:.2f}",
+        f"{V95*100:.2f}",
+        f"{TTFF50:.1f}",
+        f"{TTFF95:.1f}",
+        f"{AVAIL*100:.1f} %",
+    ],
+})
+exec_summary
+```
+
+**Headlines for `{python} PERIOD_LABEL`**:
+
+- National 95th percentile horizontal error: **`{python} f"{H95*100:.2f} cm"`**
+- National 95th percentile vertical error: **`{python} f"{V95*100:.2f} cm"`**
+- TTFF (15-min reset, 95th percentile): **`{python} f"{TTFF95:.1f} s"`**
+- Inside vs outside network: 網内 95% horizontal = **`{python} f"{inside_h95*100:.2f} cm"`**, 網外 95% horizontal = **`{python} f"{outside_h95*100:.2f} cm"`**
+- National availability: **`{python} f"{AVAIL*100:.1f}%"`**
+- Tropospheric divergence events detected: **0** (this synthetic month)
+- L6 broadcast alert messages: **0** (this synthetic month)
+
+# Performance
+
 ## National Overview
-- 7地方区分での性能サマリ
-- マップ表示
 
-## Detailed Regional Analysis
-{{< include shared/personal_gate.qmd >}}
-- 都道府県別性能
-- (Personal以上で表示)
+```{python}
+#| label: fig-horiz-cdf
+#| fig-cap: "Cumulative distribution of horizontal error across all stations"
 
-## Station-Level Drill-Down  
-{{< include shared/pro_gate.qmd >}}
-- 任意座標近傍の局別評価
-- (Pro以上で表示)
+fig, ax = plt.subplots(figsize=(8, 4))
+sorted_h = np.sort(all_horiz)
+cdf = np.arange(1, len(sorted_h) + 1) / len(sorted_h)
+ax.plot(sorted_h * 100, cdf, color=COLOR_PRIMARY, linewidth=2)
 
-# Network Topology Analysis: 網内 vs 網外
-## Methodology
-- 網内/網外の定義
-- 判定方法
+# Mark percentiles
+for q, label in [(0.50, "50%"), (0.95, "95%"), (0.99, "99%")]:
+    v = np.quantile(all_horiz, q) * 100
+    ax.axvline(v, linestyle="--", color=COLOR_SECONDARY, alpha=0.4)
+    ax.annotate(f"{label} = {v:.2f} cm", xy=(v, q), xytext=(v + 1, q - 0.05),
+                fontsize=8, alpha=0.7)
 
-## National Pattern
-- 網内/網外マップ（全国）
-- 性能差の定量化
+ax.set_xlabel("Horizontal error (cm)")
+ax.set_ylabel("Cumulative probability")
+ax.set_xlim(0, max(sorted_h) * 100 * 0.6)
+ax.set_ylim(0, 1.02)
+plt.tight_layout()
+```
 
-## Boundary Effects
-{{< include shared/personal_gate.qmd >}}
-- 境界局での挙動
-- (Personal以上で表示)
+```{python}
+#| label: fig-vert-cdf
+#| fig-cap: "Cumulative distribution of vertical error across all stations"
 
-# Environmental Drivers
-## Solar Activity (F10.7)
-- 当月の太陽活動概況
-- F10.7 と性能の相関
+fig, ax = plt.subplots(figsize=(8, 4))
+sorted_v = np.sort(all_vert)
+cdf = np.arange(1, len(sorted_v) + 1) / len(sorted_v)
+ax.plot(sorted_v * 100, cdf, color=COLOR_PRIMARY, linewidth=2)
 
-## Geomagnetic Conditions  
-{{< include shared/personal_gate.qmd >}}
-- Kp index、地磁気擾乱イベント
-- (Personal以上で表示)
+for q, label in [(0.50, "50%"), (0.95, "95%"), (0.99, "99%")]:
+    v = np.quantile(all_vert, q) * 100
+    ax.axvline(v, linestyle="--", color=COLOR_SECONDARY, alpha=0.4)
+    ax.annotate(f"{label} = {v:.2f} cm", xy=(v, q), xytext=(v + 1, q - 0.05),
+                fontsize=8, alpha=0.7)
 
-## Plasma Bubble Activity
-{{< include shared/pro_gate.qmd >}}
-- 深夜帯のプラズマバブル発生状況
-- 影響評価
-- (Pro以上で表示)
+ax.set_xlabel("Vertical error (cm)")
+ax.set_ylabel("Cumulative probability")
+ax.set_xlim(0, max(sorted_v) * 100 * 0.6)
+ax.set_ylim(0, 1.02)
+plt.tight_layout()
+```
 
-# Application Readiness Assessment
-## Performance Tiers
-- 95% / 99% / 99.9% / max パーセンタイル
+```{python}
+#| label: fig-ttff-15min
+#| fig-cap: "Distribution of TTFF (15-minute reset period)"
 
-## Integrity Indicators
-{{< include shared/pro_gate.qmd >}}
-- Protection Level (PL) 達成率
-- Effective Availability
-- IASB Alert Rate
-- (Pro以上で表示)
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.hist(ttff_15min, bins=60, color=COLOR_PRIMARY, alpha=0.85, edgecolor="white")
+for q, label, c in [(0.50, "50%", COLOR_SECONDARY),
+                     (0.95, "95%", COLOR_WARNING)]:
+    v = np.quantile(ttff_15min, q)
+    ax.axvline(v, linestyle="--", color=c, label=f"{label} = {v:.1f} s")
+ax.set_xlabel("TTFF (seconds)")
+ax.set_ylabel("Frequency")
+ax.legend()
+plt.tight_layout()
+```
 
-## Application Suitability Matrix
-{{< include shared/pro_gate.qmd >}}
-- 用途別合格率（測量、ドローン、自動運転、航空）
-- (Pro以上で表示)
+## Regional Performance
 
-# Notable Incidents
-{{< include shared/incidents.qmd >}}
-- 月内の重大イベント
-- 原因推定、影響範囲
-- (Free: 概要のみ、Personal以上: 詳細)
+```{python}
+#| label: tbl-regional
+#| tbl-cap: "95th percentile horizontal error by region (synthetic)"
 
-# Cross-Validation
-## CLASLIB vs MRTKLIB Agreement
-- 並行評価サンプル局での agreement統計
-- 差分の主要因
-- 移行に向けた進捗
+regions = ["Hokkaido", "Tohoku", "Kanto", "Chubu", "Kinki", "Chugoku", "Shikoku", "Kyushu", "Okinawa"]
+n_per_region = N_STATIONS // len(regions)
+regional = []
+for i, region in enumerate(regions):
+    start, end = i * n_per_region, (i + 1) * n_per_region
+    region_horiz = horiz_errors[start:end].flatten()
+    region_vert = vert_errors[start:end].flatten()
+    regional.append({
+        "Region": region,
+        "Stations": n_per_region,
+        "H 95% (cm)": f"{np.quantile(region_horiz, 0.95)*100:.2f}",
+        "V 95% (cm)": f"{np.quantile(region_vert, 0.95)*100:.2f}",
+    })
+regional_df = pd.DataFrame(regional)
+regional_df
+```
 
-# Methodology Notes
-{{< include shared/methodology_detail.qmd >}}
-- 処理パラメータ
-- 受信機・アンテナ・補正源の詳細
-- 既知の制約
+Visualization of regional spatial heterogeneity will be added in
+Phase 1 along with full station mapping.
 
-# Data Provenance
-{{< include shared/data_provenance.qmd >}}
+## Detailed Analysis
 
-# Acknowledgements
-{{< include shared/acknowledgements.qmd >}}
+### Inside/Outside Network Analysis
 
-# Independence Statement
-{{< include shared/independence_statement.qmd >}}
+The CLAS evaluation network defines a coverage area within which
+correction quality is intended to meet specification. Stations
+outside this network ("網外") receive corrections derived through
+extrapolation, with potentially different performance characteristics.
 
-# About PNT Moni {-}
-{{< include shared/about.qmd >}}
+PNT Moni distinguishes inside-network (網内) and outside-network (網外)
+stations using the official CLAS coverage definition. The following
+analysis quantifies the performance gap.
+
+```{python}
+#| label: tbl-inside-outside
+#| tbl-cap: "Inside vs Outside Network performance (synthetic)"
+
+io_table = pd.DataFrame({
+    "Group": ["網内 (Inside)", "網外 (Outside)"],
+    "Stations": [int(inside_network.sum()), int((~inside_network).sum())],
+    "H 95% (cm)": [f"{inside_h95*100:.2f}", f"{outside_h95*100:.2f}"],
+    "V 95% (cm)": [f"{inside_v95*100:.2f}", f"{outside_v95*100:.2f}"],
+})
+io_table
+```
+
+```{python}
+#| label: fig-inside-outside-cdf
+#| fig-cap: "CDF comparison: inside vs outside network"
+
+fig, ax = plt.subplots(figsize=(8, 4))
+inside_h = horiz_errors[inside_network].flatten()
+outside_h = horiz_errors[~inside_network].flatten()
+
+for label, data, color in [
+    ("網内 (Inside)", inside_h, COLOR_INSIDE),
+    ("網外 (Outside)", outside_h, COLOR_OUTSIDE),
+]:
+    sorted_d = np.sort(data)
+    cdf = np.arange(1, len(sorted_d) + 1) / len(sorted_d)
+    ax.plot(sorted_d * 100, cdf, color=color, linewidth=2, label=label)
+
+ax.set_xlabel("Horizontal error (cm)")
+ax.set_ylabel("Cumulative probability")
+ax.set_xlim(0, max(np.max(inside_h), np.max(outside_h)) * 100 * 0.5)
+ax.set_ylim(0, 1.02)
+ax.legend()
+plt.tight_layout()
+```
+
+The performance gap between inside and outside network at the 95th
+percentile is **`{python} f"{(outside_h95 - inside_h95)*100:.2f} cm"`**
+horizontal. This gap is monitored over time and discussed in the
+context of CLAS network design considerations
+(see Shiono & Kubo 2026 NAVIGATION for foundational analysis).
+
+### Integrity Analysis
+
+::: {.callout-note appearance="default"}
+**Coming Soon (Phase 1+)**
+
+Integrity Analysis will introduce target-use-case-specific Protection
+Level (PL) reporting in Phase 1, addressing distinct integrity
+requirements for automotive lane-keeping, drone operations, surveying,
+and agricultural automation. The IASB (Inter-Augmentation SIS Bias)
+monitor, currently in peer review at GPS Solutions, will be added
+following acceptance.
+
+Phase 1 target: end of 2026 (PL distributions per target use case).
+Phase 2 target: 2027/Q4 (IASB monitor outputs, post-acceptance).
+:::
+
+## Cross Validation
+
+::: {.callout-note appearance="default"}
+**Coming Soon (Phase 1+)**
+
+Cross Validation will report agreement statistics between the
+CLASLIB-based primary engine and MRTKLIB (parallel evaluation
+engine) on a sample of approximately 100 stations. The analysis
+demonstrates the consistency of PNT Moni's evaluation across
+independent open-source implementations and prepares for the
+2027/Q4 transition to MRTKLIB primary
+(per [ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md)).
+
+Phase 1 target: parallel sample stations cross-validation.
+Phase 2 target (2027/Q4): direction reversal — MRTKLIB primary,
+CLASLIB historical reference.
+:::
+
+# Data Availability
+
+## Overview
+
+```{python}
+#| label: fig-availability
+#| fig-cap: "Station-level availability distribution"
+
+# Synthetic per-station availability
+station_avail = rng.beta(50, 1, size=N_STATIONS)
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.hist(station_avail * 100, bins=40, color=COLOR_PRIMARY, alpha=0.85, edgecolor="white")
+ax.set_xlabel("Availability (%)")
+ax.set_ylabel("Number of stations")
+ax.set_xlim(85, 100)
+plt.tight_layout()
+```
+
+National aggregate availability for `{python} PERIOD_LABEL`:
+**`{python} f"{AVAIL*100:.1f}%"`**.
+
+**GEONET maintenance events affecting availability**: No major
+maintenance events recorded in `{python} PERIOD_LABEL`.
+
+For up-to-date GEONET maintenance announcements, see the GSI
+official maintenance page at
+[https://terras.gsi.go.jp/](https://terras.gsi.go.jp/).
+
+## Message Generation Facility Switching
+
+CLAS messages are generated by multiple facilities (Hitachi-Ota,
+Kobe, Tsukuba) which may switch during operations. Switching events
+are detected from the broadcast metadata and reported here as a
+context indicator for any short-term changes in correction
+characteristics.
+
+For `{python} PERIOD_LABEL`: **No facility switching events detected.**
+
+## Data efficiency
+
+::: {.callout-note appearance="default"}
+**Coming Soon (Phase 1+)**
+
+Data efficiency analysis will report on L6 message slot efficiency,
+padding rates, and message validity statistics, providing visibility
+into the operational health of CLAS broadcast.
+
+Phase 1 target: end of 2026.
+:::
+
+## Anomalies
+
+### Alert flags
+
+L6 broadcast alert messages are flags transmitted within the CLAS
+correction stream indicating known issues at the source (CSSR
+generation level). These are tracked monthly to give subscribers
+visibility into the broadcast's self-reported health.
+
+For `{python} PERIOD_LABEL`: **0 alert messages detected.**
+
+### Divergences (Tropospheric)
+
+PNT Moni detects tropospheric divergence events—periods when CLAS
+troposphere correction values deviate physically from expected
+values, leading to performance degradation. This is the most common
+class of CLAS broadcast anomaly and a critical monitoring function
+for users.
+
+Detection methodology combines a statistical threshold (rolling
+distribution-based) with an absolute threshold (physical magnitude
+of divergence). Events are reported when both conditions are
+satisfied for sustained periods.
+
+For `{python} PERIOD_LABEL`: **0 tropospheric divergence events
+detected.** Detailed methodology will be documented in
+`30-evaluation-methodology/07-anomaly-detection.md`.
+
+# Appendix
+
+## GNSS System Events: NAGU/NANU/NAQU
+
+The following operational advisories were issued for the GNSS
+constellations during `{python} PERIOD_LABEL`. These are tracked
+for cross-reference with anomalies and signal availability.
+
+```{python}
+#| label: tbl-system-events
+#| tbl-cap: "GNSS system events for the reporting period (synthetic)"
+
+events = pd.DataFrame({
+    "Date": ["—"],
+    "Source": ["—"],
+    "Type": ["—"],
+    "Description": ["No advisories recorded for this synthetic period"],
+})
+events
+```
+
+In production, NAGU (GPS), NANU (GPS), and NAQU (QZSS) advisories
+are collected and listed here.
+
+## List of Satellites
+
+This section provides a reference snapshot of the satellite
+constellation status during `{python} PERIOD_LABEL`. The information
+helps subscribers understand which CLAS-augmented signals were
+broadcast by each satellite.
+
+### GPS
+
+```{python}
+#| label: tbl-gps-satellites
+#| tbl-cap: "GPS constellation status (synthetic)"
+
+gps = pd.DataFrame({
+    "PRN": [f"{i:02d}" for i in [1, 2, 3, 4, 5]],
+    "Block": ["IIIA", "IIR", "IIIA", "IIR-M", "IIF"],
+    "L1 C/A": ["✓"] * 5,
+    "L1C": ["✓", "—", "✓", "—", "—"],
+    "L2C": ["✓", "—", "✓", "✓", "✓"],
+    "L5": ["✓", "—", "✓", "—", "✓"],
+    "Status": ["Healthy"] * 5,
+})
+gps
+```
+
+(In production, full GPS constellation listed.)
+
+### QZSS
+
+```{python}
+#| label: tbl-qzss-satellites
+#| tbl-cap: "QZSS constellation status (synthetic)"
+
+qzss = pd.DataFrame({
+    "PRN": ["J01", "J02", "J03", "J07"],
+    "Block": ["I", "I", "I", "I"],
+    "L1 C/A": ["✓"] * 4,
+    "L1C": ["✓"] * 4,
+    "L2C": ["✓"] * 4,
+    "L5": ["✓"] * 4,
+    "L6": ["✓"] * 4,
+    "Status": ["Healthy"] * 4,
+})
+qzss
+```
+
+### Galileo
+
+```{python}
+#| label: tbl-galileo-satellites
+#| tbl-cap: "Galileo constellation status (synthetic)"
+
+galileo = pd.DataFrame({
+    "ID": [f"E{i:02d}" for i in [1, 2, 3, 4, 5]],
+    "Generation": ["FOC", "FOC", "FOC", "FOC", "FOC"],
+    "E1": ["✓"] * 5,
+    "E5a": ["✓"] * 5,
+    "E5b": ["✓"] * 5,
+    "E6": ["✓"] * 5,
+    "Status": ["Healthy"] * 5,
+})
+galileo
+```
+
+(In production, full Galileo constellation listed. PNT Moni's
+evaluation also covers Galileo signals received by GEONET stations.)
+
+### Status changes during this month
+
+For `{python} PERIOD_LABEL`: **No status changes recorded.**
+
+---
+
+## Methodology Version Tag
+
+| Field                  | Value |
+|------------------------|-------|
+| Methodology version    | `{python} params['methodology_version']`     |
+| Pipeline config hash   | `{python} params['config_hash']`             |
+| Engine                 | `{python} f"{params['engine']} {params['engine_version']}"` |
+| QC tool                | `{python} f"{params['qc_tool']} {params['qc_version']}"`     |
+| Reporting period       | `{python} PERIOD_LABEL` |
+| Data mode              | `{python} params['data_mode']`               |
+
+For full methodology details, see
+[https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
+
+---
+
+::: {.callout-note appearance="minimal"}
+**Attribution**: GEONET data provided by GSI under PDL 1.0
+(出典：国土地理院 電子基準点データ提供サービス).
+QSS official Performance Reports under
+[Government of Japan Standard Terms of Use v2.0](https://qzss.go.jp/policy/rule.html).
+
+**About PNT Moni**: PNT Moni is an independent service for continuous
+evaluation of GNSS augmentation services, beginning with QZSS CLAS.
+PNT Moni's monthly reports complement the semi-annual official QSS
+Performance Reports through monthly granularity, station-level
+drill-down, and analytical depth. Half-yearly Comparison Reports
+synchronized with the official cycle are available separately
+(see [ADR 0006](../../../pntmoni-docs/70-decisions/adr-0006.md)
+for details).
+
+**Contact**: hello@pntmoni.com · [https://pntmoni.com](https://pntmoni.com)
+:::
