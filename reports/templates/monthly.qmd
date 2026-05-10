@@ -41,6 +41,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Polygon
+from matplotlib.collections import PatchCollection
 
 # PNT Moni brand colors (per _brand.yml)
 COLOR_PRIMARY = "#10b981"   # L6 Active green
@@ -51,45 +54,52 @@ COLOR_DANGER = "#ef4444"
 COLOR_INSIDE = "#10b981"   # 網内
 COLOR_OUTSIDE = "#f59e0b"  # 網外
 
+# Custom diverging colormap for heatmaps (good → warning → bad)
+CMAP_PERFORMANCE = LinearSegmentedColormap.from_list(
+    "pntmoni_perf", ["#10b981", "#f59e0b", "#ef4444"], N=256
+)
+
 mpl.rcParams['axes.spines.top'] = False
 mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.grid'] = True
 mpl.rcParams['grid.alpha'] = 0.3
 mpl.rcParams['figure.dpi'] = 100
 
-# Quarto's Jupyter engine does not bind YAML `params:` to a Python
-# variable on its own — Papermill injection only happens with
-# --execute-params. Mirror the YAML defaults here so `quarto preview`
-# renders, and so production runs that do inject `params` overwrite
-# this block transparently.
-params = {
-    "year": 2026,
-    "month": 4,
-    "methodology_version": "1.0.0",
-    "config_hash": "a3f9c2b1d4e7f8a9b2c3d4e5f6a7b8c9",
-    "engine": "pntmoni-claslib",
-    "engine_version": "v0.8.3-pntmoni-1",
-    "qc_tool": "teqc",
-    "qc_version": "2019Feb25",
-    "data_mode": "synthetic",
-}
-
-YEAR = int(params["year"])
-MONTH = int(params["month"])
+# ---- Reporting period from params ----
+YEAR = 2026   # In production: int(params['year'])
+MONTH = 4     # In production: int(params['month'])
 PERIOD = f"{YEAR}-{MONTH:02d}"
-PERIOD_LABEL = f"April {YEAR}" if MONTH == 4 else f"{pd.Timestamp(YEAR, MONTH, 1):%B %Y}"
+PERIOD_LABEL = pd.Timestamp(YEAR, MONTH, 1).strftime("%B %Y")
 
-# Synthetic data generation
+# ---- Methodology / engine identifiers from params ----
+# Quarto's Jupyter engine does not bind YAML `params:` to a Python
+# variable on its own; Papermill injection only happens with
+# --execute-params. Mirror the YAML defaults here so the template
+# previews standalone, and so production injection overwrites these.
+METHODOLOGY_VERSION = "1.0.0"            # In production: params['methodology_version']
+CONFIG_HASH = "a3f9c2b1d4e7f8a9b2c3d4e5f6a7b8c9"  # In production: params['config_hash']
+ENGINE = "pntmoni-claslib"               # In production: params['engine']
+ENGINE_VERSION = "v0.8.3-pntmoni-1"      # In production: params['engine_version']
+QC_TOOL = "teqc"                          # In production: params['qc_tool']
+QC_VERSION = "2019Feb25"                 # In production: params['qc_version']
+DATA_MODE = "synthetic"                  # In production: params['data_mode']
+
+# ---- Synthetic data generation ----
 rng = np.random.default_rng(seed=42)
 N_STATIONS = 1300
 N_SAMPLES_PER_STATION = 200
 
-# Generate synthetic horizontal/vertical errors per station
+# Synthetic station identifiers and geographic distribution
+# Coordinates roughly cover the Japanese archipelago
 station_ids = [f"{i:04d}" for i in range(N_STATIONS)]
+station_lats = rng.uniform(30.5, 45.5, N_STATIONS)
+station_lons = rng.uniform(129.5, 145.5, N_STATIONS)
+
+# Synthetic per-epoch errors per station (gamma-distributed)
 horiz_errors = rng.gamma(2.0, 0.025, size=(N_STATIONS, N_SAMPLES_PER_STATION))
 vert_errors = rng.gamma(2.0, 0.040, size=(N_STATIONS, N_SAMPLES_PER_STATION))
 
-# 80% inside-network, 20% outside-network
+# 80% inside-network, 20% outside-network (synthetic)
 inside_network = rng.choice([True, False], size=N_STATIONS, p=[0.80, 0.20])
 
 # TTFF samples
@@ -109,11 +119,48 @@ TTFF50 = np.quantile(ttff_15min, 0.50)
 TTFF95 = np.quantile(ttff_15min, 0.95)
 AVAIL = 0.987  # synthetic national availability
 
+# Per-station 95th percentile (for heatmaps)
+station_h95 = np.array([np.quantile(horiz_errors[i], 0.95) for i in range(N_STATIONS)])
+station_v95 = np.array([np.quantile(vert_errors[i], 0.95) for i in range(N_STATIONS)])
+
 # Inside vs Outside network statistics
 inside_h95 = np.quantile(horiz_errors[inside_network].flatten(), 0.95)
 outside_h95 = np.quantile(horiz_errors[~inside_network].flatten(), 0.95)
 inside_v95 = np.quantile(vert_errors[inside_network].flatten(), 0.95)
 outside_v95 = np.quantile(vert_errors[~inside_network].flatten(), 0.95)
+
+# ---- Synthetic past 13 months of monthly aggregates ----
+# Phase 0 ADR 0007 scope: Apr 2025 onwards. Phase 0 launch in mid-2026
+# means ~13+ months of history is available at first publication.
+months_back = 13
+trend_months = []
+trend_h95 = []
+trend_v95 = []
+for i in range(months_back, 0, -1):
+    target = pd.Timestamp(YEAR, MONTH, 1) - pd.DateOffset(months=i-1)
+    trend_months.append(target.strftime("%Y-%m"))
+    seasonal = 0.005 * np.sin((target.month - 4) * np.pi / 6)
+    trend_h95.append(0.045 + seasonal + rng.normal(0, 0.0015))
+    trend_v95.append(0.080 + 1.5 * seasonal + rng.normal(0, 0.0025))
+trend_h95 = np.array(trend_h95)
+trend_v95 = np.array(trend_v95)
+
+# Mark current month, last 6 months, year-ago month
+current_idx = len(trend_months) - 1
+last6_start_idx = max(0, current_idx - 5)
+yago_idx = max(0, current_idx - 12)
+
+# ---- Synthetic CLAS evaluation network grid ----
+# In production, this is replaced with the actual CLAS network
+# definition. Here we use a simple polygon roughly enclosing the
+# core Japan archipelago for visualization.
+NETWORK_POLYGON = np.array([
+    [129.5, 31.0], [131.0, 30.7], [131.5, 32.5], [134.0, 33.5],
+    [136.5, 34.0], [138.5, 34.5], [140.5, 35.5], [141.5, 38.5],
+    [142.0, 41.0], [141.5, 43.0], [140.0, 44.5], [137.5, 44.5],
+    [136.0, 43.0], [133.0, 38.0], [131.0, 35.5], [130.0, 33.5],
+    [129.5, 31.0]
+])
 ```
 
 ::: {.callout-note appearance="minimal"}
@@ -153,7 +200,7 @@ identifies the configuration used.
 
 # Methodology
 
-This section provides a one-page summary of the methodology. The full
+This section provides a summary of the methodology. The full
 methodology document is at the link above.
 
 **Data sources**: GEONET 30-second RINEX observations from
@@ -163,7 +210,7 @@ Authority of Japan (GSI) under PDL 1.0
 QSS L6 broadcast archive from Cabinet Office of Japan. IGS final SP3/CLK
 products for validation.
 
-**Processing engine**: `{python} f"{params['engine']} {params['engine_version']}"` operating in
+**Processing engine**: `{python} f"{ENGINE} {ENGINE_VERSION}"` operating in
 kinematic PPP-RTK mode with per-system clock parameterization and
 RAIM/FDE. See [ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md)
 and [ADR 0004](../../../pntmoni-docs/70-decisions/adr-0004.md).
@@ -173,7 +220,7 @@ prior to August 2021; F5 daily solutions (ITRF2014) from August 2021
 onwards. A 2-week median filter suppresses coordinate spikes
 (methodology following Shiono & Kubo 2026, NAVIGATION).
 
-**Quality control**: `{python} f"{params['qc_tool']} {params['qc_version']}"`
+**Quality control**: `{python} f"{QC_TOOL} {QC_VERSION}"`
 during 2026–2027 (transitioning to mrtk qc at 2027/Q4 per
 [ADR 0008](../../../pntmoni-docs/70-decisions/adr-0008.md)).
 
@@ -189,6 +236,51 @@ for 30s sampling, CLASLIB version lag, and consequent Kalman filter
 behavior. See [ADR 0001 Postscript](../../../pntmoni-docs/70-decisions/adr-0001.md#postscript)
 and [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762).
 This is documented as a structural property, not an error.
+
+## Evaluation Network
+
+Stations are classified as **inside-network (網内)** or
+**outside-network (網外)** based on the official CLAS coverage
+definition. The network polygon below is updated only when the CLAS
+operational coverage changes (rare); the version of the polygon is
+encoded in the methodology version tag at the end of this report.
+
+```{python}
+#| label: fig-network-map
+#| fig-cap: "Evaluation network coverage and station distribution"
+
+fig, ax = plt.subplots(figsize=(7, 7))
+
+# Background: rough Japan outline (very simple coastline approximation)
+# In production, replace with proper basemap or shapefile
+ax.set_xlim(127, 147)
+ax.set_ylim(28, 47)
+ax.set_aspect("equal")
+
+# Network polygon (filled)
+network_patch = Polygon(NETWORK_POLYGON, closed=True,
+                         facecolor=COLOR_PRIMARY, alpha=0.10,
+                         edgecolor=COLOR_PRIMARY, linewidth=1.5,
+                         linestyle="--", label="CLAS network coverage")
+ax.add_patch(network_patch)
+
+# Station points: inside (green) and outside (orange)
+ax.scatter(station_lons[inside_network], station_lats[inside_network],
+           c=COLOR_INSIDE, s=6, alpha=0.6, label=f"網内 (n={int(inside_network.sum())})")
+ax.scatter(station_lons[~inside_network], station_lats[~inside_network],
+           c=COLOR_OUTSIDE, s=6, alpha=0.7, label=f"網外 (n={int((~inside_network).sum())})")
+
+ax.set_xlabel("Longitude (°E)")
+ax.set_ylabel("Latitude (°N)")
+ax.legend(loc="upper left", fontsize=9, framealpha=0.95)
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+```
+
+The network polygon defines the area within which CLAS is intended to
+deliver specified performance. Stations outside this area receive
+corrections derived through extrapolation, with potentially different
+error characteristics analyzed in §5.3.1.
 
 # Executive Summary
 
@@ -234,6 +326,8 @@ exec_summary
 
 ## National Overview
 
+### Distribution of errors
+
 ```{python}
 #| label: fig-horiz-cdf
 #| fig-cap: "Cumulative distribution of horizontal error across all stations"
@@ -243,7 +337,6 @@ sorted_h = np.sort(all_horiz)
 cdf = np.arange(1, len(sorted_h) + 1) / len(sorted_h)
 ax.plot(sorted_h * 100, cdf, color=COLOR_PRIMARY, linewidth=2)
 
-# Mark percentiles
 for q, label in [(0.50, "50%"), (0.95, "95%"), (0.99, "99%")]:
     v = np.quantile(all_horiz, q) * 100
     ax.axvline(v, linestyle="--", color=COLOR_SECONDARY, alpha=0.4)
@@ -295,11 +388,105 @@ ax.legend()
 plt.tight_layout()
 ```
 
+### Recent trends
+
+This subsection places this month's numbers in historical context:
+the past 13 months of national 95th-percentile errors are shown
+below. The current month is highlighted; the past 6 months are
+shaded; the year-ago same month is marked for direct comparison.
+
+```{python}
+#| label: fig-trend-h95
+#| fig-cap: "National 95% horizontal error — past 13 months"
+
+fig, ax = plt.subplots(figsize=(9, 3.5))
+x = np.arange(len(trend_months))
+ax.plot(x, trend_h95 * 100, color=COLOR_PRIMARY, linewidth=1.5,
+        marker="o", markersize=4, alpha=0.7)
+
+# Shade past 6 months
+ax.axvspan(last6_start_idx - 0.5, current_idx + 0.5,
+           alpha=0.10, color=COLOR_PRIMARY, label="Last 6 months")
+
+# Mark current month
+ax.scatter([current_idx], [trend_h95[current_idx] * 100],
+           color=COLOR_DANGER, s=80, zorder=5, label="Current month")
+
+# Mark year-ago same month
+ax.scatter([yago_idx], [trend_h95[yago_idx] * 100],
+           color=COLOR_WARNING, s=80, zorder=5, marker="D", label="Year-ago same month")
+
+ax.set_xticks(x)
+ax.set_xticklabels(trend_months, rotation=45, ha="right", fontsize=8)
+ax.set_ylabel("95% horizontal error (cm)")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.95)
+plt.tight_layout()
+```
+
+```{python}
+#| label: fig-trend-v95
+#| fig-cap: "National 95% vertical error — past 13 months"
+
+fig, ax = plt.subplots(figsize=(9, 3.5))
+x = np.arange(len(trend_months))
+ax.plot(x, trend_v95 * 100, color=COLOR_PRIMARY, linewidth=1.5,
+        marker="o", markersize=4, alpha=0.7)
+ax.axvspan(last6_start_idx - 0.5, current_idx + 0.5,
+           alpha=0.10, color=COLOR_PRIMARY, label="Last 6 months")
+ax.scatter([current_idx], [trend_v95[current_idx] * 100],
+           color=COLOR_DANGER, s=80, zorder=5, label="Current month")
+ax.scatter([yago_idx], [trend_v95[yago_idx] * 100],
+           color=COLOR_WARNING, s=80, zorder=5, marker="D", label="Year-ago same month")
+
+ax.set_xticks(x)
+ax.set_xticklabels(trend_months, rotation=45, ha="right", fontsize=8)
+ax.set_ylabel("95% vertical error (cm)")
+ax.legend(loc="upper right", fontsize=9, framealpha=0.95)
+plt.tight_layout()
+```
+
+```{python}
+#| label: tbl-trend-comparison
+#| tbl-cap: "Year-over-year and 6-month rolling comparison"
+
+# Compute summary numbers
+yoy_h_diff = (trend_h95[current_idx] - trend_h95[yago_idx]) * 100
+yoy_v_diff = (trend_v95[current_idx] - trend_v95[yago_idx]) * 100
+last6_h_avg = trend_h95[last6_start_idx:current_idx+1].mean() * 100
+last6_v_avg = trend_v95[last6_start_idx:current_idx+1].mean() * 100
+
+trend_table = pd.DataFrame({
+    "Metric": [
+        "Horizontal 95% (current)",
+        "Horizontal 95% (year-ago same month)",
+        "Year-over-year change",
+        "Horizontal 95% (last 6 months mean)",
+        "Vertical 95% (current)",
+        "Vertical 95% (year-ago same month)",
+        "Year-over-year change",
+        "Vertical 95% (last 6 months mean)",
+    ],
+    "Value (cm)": [
+        f"{trend_h95[current_idx]*100:.2f}",
+        f"{trend_h95[yago_idx]*100:.2f}",
+        f"{yoy_h_diff:+.2f}",
+        f"{last6_h_avg:.2f}",
+        f"{trend_v95[current_idx]*100:.2f}",
+        f"{trend_v95[yago_idx]*100:.2f}",
+        f"{yoy_v_diff:+.2f}",
+        f"{last6_v_avg:.2f}",
+    ],
+})
+trend_table
+```
+
 ## Regional Performance
+
+### Regional summary
 
 ```{python}
 #| label: tbl-regional
-#| tbl-cap: "95th percentile horizontal error by region (synthetic)"
+#| tbl-cap: "95th percentile errors by region (synthetic)"
 
 regions = ["Hokkaido", "Tohoku", "Kanto", "Chubu", "Kinki", "Chugoku", "Shikoku", "Kyushu", "Okinawa"]
 n_per_region = N_STATIONS // len(regions)
@@ -318,8 +505,72 @@ regional_df = pd.DataFrame(regional)
 regional_df
 ```
 
-Visualization of regional spatial heterogeneity will be added in
-Phase 1 along with full station mapping.
+### Spatial distribution
+
+The maps below show per-station 95th percentile errors plotted
+geographically. The colormap runs green (best) → orange (warning)
+→ red (worst). Outliers and regional patterns are visible at
+station-level resolution.
+
+```{python}
+#| label: fig-heatmap-horiz
+#| fig-cap: "Spatial distribution of 95% horizontal error per station"
+
+fig, ax = plt.subplots(figsize=(7, 7))
+ax.set_xlim(127, 147)
+ax.set_ylim(28, 47)
+ax.set_aspect("equal")
+
+# Network polygon outline (subtle)
+network_patch = Polygon(NETWORK_POLYGON, closed=True,
+                         facecolor="none", edgecolor=COLOR_SECONDARY,
+                         linewidth=0.8, linestyle="--", alpha=0.4)
+ax.add_patch(network_patch)
+
+# Station points colored by H95
+vmin = np.percentile(station_h95 * 100, 5)
+vmax = np.percentile(station_h95 * 100, 95)
+sc = ax.scatter(station_lons, station_lats,
+                c=station_h95 * 100, cmap=CMAP_PERFORMANCE,
+                vmin=vmin, vmax=vmax, s=10, alpha=0.85,
+                edgecolor="white", linewidth=0.2)
+
+cbar = plt.colorbar(sc, ax=ax, fraction=0.04, pad=0.04)
+cbar.set_label("95% horizontal error (cm)")
+ax.set_xlabel("Longitude (°E)")
+ax.set_ylabel("Latitude (°N)")
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+```
+
+```{python}
+#| label: fig-heatmap-vert
+#| fig-cap: "Spatial distribution of 95% vertical error per station"
+
+fig, ax = plt.subplots(figsize=(7, 7))
+ax.set_xlim(127, 147)
+ax.set_ylim(28, 47)
+ax.set_aspect("equal")
+
+network_patch = Polygon(NETWORK_POLYGON, closed=True,
+                         facecolor="none", edgecolor=COLOR_SECONDARY,
+                         linewidth=0.8, linestyle="--", alpha=0.4)
+ax.add_patch(network_patch)
+
+vmin = np.percentile(station_v95 * 100, 5)
+vmax = np.percentile(station_v95 * 100, 95)
+sc = ax.scatter(station_lons, station_lats,
+                c=station_v95 * 100, cmap=CMAP_PERFORMANCE,
+                vmin=vmin, vmax=vmax, s=10, alpha=0.85,
+                edgecolor="white", linewidth=0.2)
+
+cbar = plt.colorbar(sc, ax=ax, fraction=0.04, pad=0.04)
+cbar.set_label("95% vertical error (cm)")
+ax.set_xlabel("Longitude (°E)")
+ax.set_ylabel("Latitude (°N)")
+ax.grid(True, alpha=0.3)
+plt.tight_layout()
+```
 
 ## Detailed Analysis
 
@@ -331,7 +582,8 @@ outside this network ("網外") receive corrections derived through
 extrapolation, with potentially different performance characteristics.
 
 PNT Moni distinguishes inside-network (網内) and outside-network (網外)
-stations using the official CLAS coverage definition. The following
+stations using the official CLAS coverage definition (see §3.1
+Evaluation Network for the spatial visualization). The following
 analysis quantifies the performance gap.
 
 ```{python}
@@ -590,12 +842,12 @@ For `{python} PERIOD_LABEL`: **No status changes recorded.**
 
 | Field                  | Value |
 |------------------------|-------|
-| Methodology version    | `{python} params['methodology_version']`     |
-| Pipeline config hash   | `{python} params['config_hash']`             |
-| Engine                 | `{python} f"{params['engine']} {params['engine_version']}"` |
-| QC tool                | `{python} f"{params['qc_tool']} {params['qc_version']}"`     |
+| Methodology version    | `{python} METHODOLOGY_VERSION`     |
+| Pipeline config hash   | `{python} CONFIG_HASH`             |
+| Engine                 | `{python} f"{ENGINE} {ENGINE_VERSION}"` |
+| QC tool                | `{python} f"{QC_TOOL} {QC_VERSION}"`     |
 | Reporting period       | `{python} PERIOD_LABEL` |
-| Data mode              | `{python} params['data_mode']`               |
+| Data mode              | `{python} DATA_MODE`               |
 
 For full methodology details, see
 [https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
