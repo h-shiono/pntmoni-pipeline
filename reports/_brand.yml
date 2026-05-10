@@ -3,10 +3,13 @@ meta:
   name: PNT Moni
   link: https://pntmoni.com
 
-logo:
-  small: assets/logo/pntmoni-small.png
-  medium: assets/logo/pntmoni.png
-  large: assets/logo/pntmoni-large.png
+# Logo assets are not yet vendored. Re-enable once the PNGs exist
+# under assets/logo/ — Quarto fails the build if a referenced file
+# is missing.
+# logo:
+#   small: assets/logo/pntmoni-small.png
+#   medium: assets/logo/pntmoni.png
+#   large: assets/logo/pntmoni-large.png
 
 color:
   palette:
@@ -20,18 +23,20 @@ color:
   
 typography:
   fonts:
-    - family: "Inter"
-      source: file
-      files:
-        - path: assets/fonts/Inter.ttf
-    - family: "Source Han Sans"
-      source: file
-      files:
-        - path: assets/fonts/SourceHanSansJP.ttf
+    - family: Inter
+      source: google
+      weight: [400, 500, 600, 700]
+      style: [normal, italic]
+    - family: Noto Sans JP
+      source: google
+      weight: [400, 500, 700]
+    - family: JetBrains Mono
+      source: google
+      weight: [400, 500]
   base:
     family: Inter
   headings:
     family: Inter
     weight: 600
   monospace:
-    family: "JetBrains Mono"
+    family: JetBrains Mono
