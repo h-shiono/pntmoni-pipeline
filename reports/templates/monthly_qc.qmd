@@ -122,17 +122,64 @@ stations["lat"], stations["lon"] = ecef_to_geodetic(
 )
 
 # ---- Aggregate helpers ---------------------------------------------
-ELEVATION_WINDOWS = (
+# teqc emits 19 elevation bins; we apply an elmask of 15° so only bins
+# whose lower bound is ≥15° contribute to the headline metrics. This
+# matches the elmask used by most positioning engines (CLASLIB,
+# RTKLIB) and avoids the very-low-elevation tracks that dominate
+# multipath in raw teqc output.
+ELMASK_DEG = 15
+ELEVATION_WINDOWS_FULL = (
     "85_-_90","80_-_85","75_-_80","70_-_75","65_-_70","60_-_65",
     "55_-_60","50_-_55","45_-_50","40_-_45","35_-_40","30_-_35",
     "25_-_30","20_-_25","15_-_20","10_-_15","_5_-_10","_0_-__5","____<__0",
 )
+ELEVATION_WINDOWS = (
+    "85_-_90","80_-_85","75_-_80","70_-_75","65_-_70","60_-_65",
+    "55_-_60","50_-_55","45_-_50","40_-_45","35_-_40","30_-_35",
+    "25_-_30","20_-_25","15_-_20",
+)
 
-def metric_weighted_mean(df: pd.DataFrame, metric: str, stat: str = "rms") -> pd.Series:
-    """obs-count weighted mean of ``{metric}_{window}_{stat}`` across windows.
+# Metric definitions (label, stat suffix, family).
+SN_METRICS = [("SN1", "mean"), ("SN2", "mean"), ("SN5", "mean"), ("SN7", "mean")]
+MP_METRICS = [("MP12", "rms"), ("MP21", "rms"), ("MP15", "rms"),
+              ("MP51", "rms"), ("MP17", "rms"), ("MP71", "rms")]
 
-    Used for MP/ION (rms) and SN (sig|mean): weight by ``{metric}_{w}_tot``.
-    Returns one value per row. NaN if total obs == 0.
+# Per-signal display ranges, chosen to bracket the bulk of the
+# population (~5–95 % of station-monthly values across recent months)
+# so successive reports stay visually comparable.
+METRIC_RANGES = {
+    "SN1":  (38, 48),
+    "SN2":  (35, 45),
+    "SN5":  (42, 52),
+    "SN7":  (42, 52),
+    "MP12": (0.10, 0.50),
+    "MP21": (0.10, 0.55),
+    "MP15": (0.10, 0.45),
+    "MP51": (0.05, 0.35),
+    "MP17": (1.0, 3.5),
+    "MP71": (1.0, 3.5),
+    "cycle_slips_total": (1, 1000),     # log scale
+}
+
+# Display labels (used in panel titles and legends).
+METRIC_LABELS = {
+    "SN1":  "L1 C/A SNR",
+    "SN2":  "L2 SNR",
+    "SN5":  "L5 SNR",
+    "SN7":  "Galileo E5b SNR",
+    "MP12": "L1 MP (×L2)",
+    "MP21": "L2 MP (×L1)",
+    "MP15": "L1 MP (×L5)",
+    "MP51": "L5 MP (×L1)",
+    "MP17": "L1 MP (×E5b)",
+    "MP71": "E5b MP (×L1)",
+}
+METRIC_UNITS = {**{m: "dB-Hz" for m, _ in SN_METRICS},
+                **{m: "m"     for m, _ in MP_METRICS}}
+
+def metric_weighted_mean(df: pd.DataFrame, metric: str, stat: str) -> pd.Series:
+    """obs-count weighted mean of ``{metric}_{window}_{stat}`` across the
+    elmask-filtered elevation bins. NaN if total obs == 0.
     """
     num = pd.Series(0.0, index=df.index)
     den = pd.Series(0.0, index=df.index)
@@ -147,37 +194,44 @@ def metric_weighted_mean(df: pd.DataFrame, metric: str, stat: str = "rms") -> pd
         den = den.add(n_.where(ok, 0), fill_value=0)
     return (num / den).where(den > 0)
 
-# Headline metrics: per (date, station) → one number each.
-for metric, stat in [
-    ("MP12", "rms"), ("MP21", "rms"), ("MP15", "rms"), ("MP51", "rms"),
-    ("SN1", "mean"), ("SN2", "mean"), ("SN5", "mean"),
-]:
-    stack[f"{metric}_mean"] = metric_weighted_mean(stack, metric, stat)
+def metric_window_sum(df: pd.DataFrame, metric: str, stat: str) -> pd.Series:
+    """sum across elmask-filtered elevation bins (slip counts)."""
+    out = pd.Series(0.0, index=df.index)
+    for w in ELEVATION_WINDOWS:
+        v = df.get(f"{metric}_{w}_{stat}")
+        if v is None:
+            continue
+        out = out.add(pd.to_numeric(v, errors="coerce").fillna(0), fill_value=0)
+    return out
 
-# Daily national aggregates (1 row per day, mean across stations).
+# Per (date, station) headline metrics — elmask=15 applied throughout.
+for m, stat in SN_METRICS + MP_METRICS:
+    stack[f"{m}_mean"] = metric_weighted_mean(stack, m, stat)
+
+# Cycle slips per station-day = ION slips + Σ MPxx slips (elmask-filtered).
+slip_total = metric_window_sum(stack, "ION", "slps")
+for m, _ in MP_METRICS:
+    slip_total = slip_total + metric_window_sum(stack, m, "slps")
+stack["cycle_slips_total"] = slip_total
+
+# Daily national aggregates: 1 row per day, mean across stations.
+metric_means = {f"{m}_mean": (f"{m}_mean", "mean") for m, _ in SN_METRICS + MP_METRICS}
 daily_national = (
     stack.groupby("date")
          .agg(visibility_mean=("visibility", "mean"),
-              MP12_mean=("MP12_mean", "mean"),
-              MP21_mean=("MP21_mean", "mean"),
-              MP15_mean=("MP15_mean", "mean"),
-              SN1_mean=("SN1_mean", "mean"),
-              SN2_mean=("SN2_mean", "mean"),
-              SN5_mean=("SN5_mean", "mean"),
-              n_stations=("id", "nunique"))
+              cycle_slips_total=("cycle_slips_total", "mean"),
+              n_stations=("id", "nunique"),
+              **metric_means)
          .reset_index()
 )
 
-# Monthly per-station aggregates (1 row per station, mean across days).
+# Monthly per-station aggregates: 1 row per station, mean across days.
+station_metric_means = {m: (f"{m}_mean", "mean") for m, _ in SN_METRICS + MP_METRICS}
 station_monthly = (
     stack.groupby("id")
          .agg(visibility=("visibility", "mean"),
-              MP12=("MP12_mean", "mean"),
-              MP21=("MP21_mean", "mean"),
-              MP15=("MP15_mean", "mean"),
-              SN1=("SN1_mean", "mean"),
-              SN2=("SN2_mean", "mean"),
-              SN5=("SN5_mean", "mean"))
+              cycle_slips_total=("cycle_slips_total", "mean"),
+              **station_metric_means)
          .reset_index()
          .merge(stations[["id", "lat", "lon", "rec_type", "ant_type"]], on="id")
 )
@@ -189,11 +243,18 @@ SN1_MEDIAN = station_monthly["SN1"].median()
 N_STATIONS_REPORTED = len(station_monthly)
 N_DAILY_FILES = N_DAYS
 
-# Fixed visualization ranges. Stable across months → reports comparable.
-MP_VMIN, MP_VMAX = 0.10, 0.50   # metres; covers ~5–99 % of station-month means
-SN_VMIN, SN_VMAX = 35.0, 55.0   # dB-Hz; conventional "low / very-good" envelope
-
-JAPAN_EXTENT = (127.0, 147.0, 24.0, 46.0)   # lon_min, lon_max, lat_min, lat_max
+# Map projection. We use Lambert Conformal Conic centred on the
+# Japanese archipelago — the cartographic convention for mid-latitude
+# whole-country maps (used by GSI 1:200,000 series and academic GNSS
+# papers covering Japan). Mercator works for web tiles but visibly
+# stretches Hokkaido at this latitude; PlateCarree (equirectangular)
+# is the default cartopy "no projection" mode and shows a similar
+# stretch.
+JAPAN_PROJECTION = ccrs.LambertConformal(
+    central_longitude=137.0, central_latitude=36.0,
+    standard_parallels=(30, 43),
+)
+JAPAN_EXTENT = (122.0, 150.0, 22.0, 47.0)   # lon_min, lon_max, lat_min, lat_max
 
 def japan_axes(ax):
     """Style a cartopy GeoAxes for the Japan archipelago."""
@@ -205,7 +266,8 @@ def japan_axes(ax):
     ax.add_feature(cfeature.COASTLINE.with_scale("10m"),
                    linewidth=0.4, edgecolor="#9ca3af", zorder=1)
     gl = ax.gridlines(draw_labels=True, linewidth=0.3, color="#d1d5db",
-                      alpha=0.6, x_inline=False, y_inline=False)
+                      alpha=0.6, x_inline=False, y_inline=False,
+                      crs=ccrs.PlateCarree())
     gl.top_labels = gl.right_labels = False
     gl.xlabel_style = gl.ylabel_style = {"size": 8, "color": "#6b7280"}
     return ax
@@ -283,23 +345,34 @@ from L1C/A-based QC.
 | Metric | Symbol | Description |
 |---|---|---|
 | Data availability | `visibility` | Fraction of expected 30-second epochs with at least one valid observation. |
-| L1 C/A multipath | `MP12` | RMS of the standard L1 multipath combination, in metres. |
-| L2 P-code multipath | `MP21` | RMS of the standard L2 multipath combination, in metres. |
-| L1–L5 multipath | `MP15` | RMS of the L1-L5 multipath combination (where L5 is observed), in metres. |
+| Multipath (L1, L2 partner) | `MP12` | RMS of the L1 multipath combination using L2 as partner, in metres. |
+| Multipath (L2, L1 partner) | `MP21` | RMS of the L2 multipath combination using L1 as partner, in metres. |
+| Multipath (L1, L5 partner) | `MP15` | RMS of the L1 multipath combination using L5 as partner, in metres. |
+| Multipath (L5, L1 partner) | `MP51` | RMS of the L5 multipath combination using L1 as partner, in metres. |
+| Multipath (L1, E5b partner) | `MP17` | RMS of the L1 multipath combination using Galileo E5b as partner, in metres. The `2/(α-1)` coefficient in the multipath formula is large for the L1/E5b frequency pair, hence the larger numerical values. |
+| Multipath (E5b, L1 partner) | `MP71` | RMS of the E5b (Galileo) multipath combination using L1 as partner, in metres. |
 | L1 C/A SNR | `SN1` | Mean signal-to-noise ratio on L1 C/A, in dB-Hz. |
-| L2 SNR | `SN2` | Mean signal-to-noise ratio on L2, in dB-Hz. |
+| L2 SNR | `SN2` | Mean signal-to-noise ratio on L2 (P-code or L2C), in dB-Hz. |
+| L5 SNR | `SN5` | Mean signal-to-noise ratio on L5, in dB-Hz. |
+| Galileo E5b SNR | `SN7` | Mean signal-to-noise ratio on E5b (1207.140 MHz), in dB-Hz. |
+| Cycle slips (per station-day) | `cycle_slips_total` | Sum of teqc-reported ION slips and all multipath-combination slips. |
 
-All multipath/SNR figures are obs-count weighted across teqc's 19
-elevation bins (90° down to <0°), so dense low-elevation tracks are
-not over-weighted.
+All multipath, SNR and slip figures are computed from teqc's
+elevation bins with an **elevation mask of `{python} ELMASK_DEG`°**
+applied — only bins with lower bound ≥ `{python} ELMASK_DEG`° are
+included (15 of 19 bins). Multipath/SNR aggregate values are
+obs-count weighted across the kept bins; slip totals are summed.
+This matches the elmask used by the positioning engines (CLASLIB,
+RTKLIB) so the QC figures correspond to the bins the engines
+actually use.
 
 ## Evaluation Network
 
 ```{python}
 #| label: fig-network
 #| fig-cap: "GEONET reference stations covered in this report."
-fig = plt.figure(figsize=(7, 7))
-ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+fig = plt.figure(figsize=(8, 7))
+ax = fig.add_subplot(1, 1, 1, projection=JAPAN_PROJECTION)
 japan_axes(ax)
 ax.scatter(station_monthly["lon"], station_monthly["lat"],
            s=5, c=COLOR_PRIMARY, alpha=0.7, edgecolors="none",
@@ -391,27 +464,43 @@ pd.DataFrame([
 
 ```{python}
 #| label: fig-distributions
-#| fig-cap: "Across-station distributions of the headline QC metrics, station-monthly means."
-fig, axes = plt.subplots(2, 3, figsize=(13, 7))
-
-panels = [
-    # multipath (top row)
-    (axes[0, 0], "MP12", "L1 C/A multipath RMS (m)", "m",     COLOR_PRIMARY),
-    (axes[0, 1], "MP21", "L2 P-code multipath RMS (m)", "m",  COLOR_PRIMARY),
-    (axes[0, 2], "MP15", "L1-L5 multipath RMS (m)", "m",      COLOR_PRIMARY),
-    # signal strength (bottom row)
-    (axes[1, 0], "SN1",  "L1 C/A SNR mean (dB-Hz)", "dB-Hz",  COLOR_SECONDARY),
-    (axes[1, 1], "SN2",  "L2 SNR mean (dB-Hz)", "dB-Hz",      COLOR_SECONDARY),
-    (axes[1, 2], "SN5",  "L5 SNR mean (dB-Hz)", "dB-Hz",      COLOR_SECONDARY),
+#| fig-cap: "Station-monthly distributions across the full SN/MP family and the cycle-slip total. Median annotated."
+fig, axes = plt.subplots(3, 4, figsize=(15, 10))
+panel_specs = [
+    # row 1 (SN family) — secondary colour
+    ((0, 0), "SN1", COLOR_SECONDARY), ((0, 1), "SN2", COLOR_SECONDARY),
+    ((0, 2), "SN5", COLOR_SECONDARY), ((0, 3), "SN7", COLOR_SECONDARY),
+    # row 2 (MP low-magnitude family) — primary colour
+    ((1, 0), "MP12", COLOR_PRIMARY),  ((1, 1), "MP21", COLOR_PRIMARY),
+    ((1, 2), "MP15", COLOR_PRIMARY),  ((1, 3), "MP51", COLOR_PRIMARY),
+    # row 3 (MP-Galileo + cycle slips) — warning colour for high-magnitude MP, danger for slips
+    ((2, 0), "MP17", COLOR_WARNING),  ((2, 1), "MP71", COLOR_WARNING),
+    ((2, 2), "cycle_slips_total", COLOR_DANGER),
 ]
-for ax, col, title, unit, color in panels:
+for (r, c), col, color in panel_specs:
+    ax = axes[r, c]
     s = station_monthly[col].dropna()
-    ax.hist(s, bins=40, color=color, alpha=0.75, edgecolor="white", linewidth=0.4)
-    ax.axvline(s.median(), color=COLOR_DANGER, linestyle="--", linewidth=1,
-               label=f"median = {s.median():.2f} {unit}")
-    ax.set_xlabel(title)
+    if col == "cycle_slips_total":
+        # heavy right tail → log binning
+        s_pos = s[s > 0]
+        bins = np.logspace(np.log10(max(s_pos.min(), 1)), np.log10(s_pos.max()), 40)
+        ax.hist(s_pos, bins=bins, color=color, alpha=0.75,
+                edgecolor="white", linewidth=0.4)
+        ax.set_xscale("log")
+        ax.set_xlabel("Cycle slips per station-day")
+        ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
+                   linewidth=1, label=f"median = {s.median():.0f}")
+    else:
+        ax.hist(s, bins=40, color=color, alpha=0.75,
+                edgecolor="white", linewidth=0.4)
+        unit = METRIC_UNITS[col]
+        ax.set_xlabel(f"{METRIC_LABELS[col]} ({unit})")
+        ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
+                   linewidth=1, label=f"median = {s.median():.2f} {unit}")
     ax.set_ylabel("Stations")
-    ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
+    ax.legend(loc="upper right", framealpha=0.9, fontsize=8)
+# Hide the unused 4th cell of row 3.
+axes[2, 3].set_visible(False)
 plt.tight_layout()
 plt.show()
 ```
@@ -420,31 +509,46 @@ plt.show()
 
 ```{python}
 #| label: fig-trends
-#| fig-cap: "Daily national means across the reporting month."
-fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+#| fig-cap: "Daily national means across the reporting month, by signal family."
+fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=True)
 
-ax = axes[0]
-ax.plot(daily_national["date"], daily_national["MP12_mean"],
-        color=COLOR_PRIMARY, marker="o", markersize=4, label="MP12 (L1 C/A)")
-ax.plot(daily_national["date"], daily_national["MP21_mean"],
-        color=COLOR_SECONDARY, marker="s", markersize=4, label="MP21 (L2 P)")
-ax.plot(daily_national["date"], daily_national["MP15_mean"],
-        color=COLOR_WARNING, marker="^", markersize=4, label="MP15 (L1-L5)")
-ax.set_ylabel("Multipath RMS (m)")
-ax.legend(loc="upper right", fontsize=9, ncol=3)
-ax.set_title("Multipath", loc="left", fontweight=600)
+# Re-usable colours per signal index.
+SIGNAL_COLOURS = {
+    "1": COLOR_PRIMARY, "2": COLOR_SECONDARY,
+    "5": COLOR_WARNING, "7": COLOR_DANGER,
+}
+MARKERS = {"1": "o", "2": "s", "5": "^", "7": "D"}
 
-ax = axes[1]
-ax.plot(daily_national["date"], daily_national["SN1_mean"],
-        color=COLOR_PRIMARY, marker="o", markersize=4, label="SN1 (L1 C/A)")
-ax.plot(daily_national["date"], daily_national["SN2_mean"],
-        color=COLOR_SECONDARY, marker="s", markersize=4, label="SN2 (L2)")
-ax.plot(daily_national["date"], daily_national["SN5_mean"],
-        color=COLOR_WARNING, marker="^", markersize=4, label="SN5 (L5)")
-ax.set_ylabel("Mean SNR (dB-Hz)")
-ax.legend(loc="lower right", fontsize=9, ncol=3)
-ax.set_title("Signal strength", loc="left", fontweight=600)
+def trend_panel(ax, metrics, ylabel, title):
+    for m in metrics:
+        sig = m[-1] if m.startswith("SN") else m[-1]   # final signal digit
+        col = SIGNAL_COLOURS.get(sig, COLOR_NEUTRAL)
+        marker = MARKERS.get(sig, "o")
+        ax.plot(daily_national["date"], daily_national[f"{m}_mean"],
+                color=col, marker=marker, markersize=4,
+                label=METRIC_LABELS[m], linewidth=1.4)
+    ax.set_ylabel(ylabel)
+    ax.legend(loc="best", fontsize=8, ncol=2, framealpha=0.9)
+    ax.set_title(title, loc="left", fontweight=600)
+
+trend_panel(axes[0, 0], ["SN1", "SN2", "SN5", "SN7"],
+            "Mean SNR (dB-Hz)", "Signal strength")
+
+trend_panel(axes[0, 1], ["MP12", "MP21", "MP15", "MP51"],
+            "Multipath RMS (m)", "Multipath — L1/L2/L5 family")
+
+trend_panel(axes[1, 0], ["MP17", "MP71"],
+            "Multipath RMS (m)", "Multipath — Galileo E5b family")
+
+# Cycle slips per station-day, mean across stations
+ax = axes[1, 1]
+ax.bar(daily_national["date"], daily_national["cycle_slips_total"],
+       color=COLOR_DANGER, width=0.8, edgecolor="white", linewidth=0.4)
+ax.set_ylabel("Mean cycle slips per station")
+ax.set_title("Cycle slips (ION + MP)", loc="left", fontweight=600)
 ax.set_xlabel("Date")
+
+axes[1, 0].set_xlabel("Date")
 fig.autofmt_xdate()
 plt.tight_layout()
 plt.show()
@@ -453,29 +557,79 @@ plt.show()
 ## Spatial Distribution
 
 ```{python}
-#| label: fig-spatial
-#| fig-cap: "Geographic distribution of station-monthly multipath (L1 C/A and L1-L5) and SNR (L1 and L5). Color scales are fixed across reports for month-over-month comparability."
-# Fixed colorbar ranges so reports are visually comparable across months
-# (see MP_VMIN/VMAX and SN_VMIN/VMAX in setup).
-panels = [
-    ("MP12", "L1 C/A multipath (m)", MP_VMIN, MP_VMAX, CMAP_PERFORMANCE),
-    ("MP15", "L1-L5 multipath (m)",  MP_VMIN, MP_VMAX, CMAP_PERFORMANCE),
-    ("SN1",  "L1 C/A SNR (dB-Hz)",   SN_VMIN, SN_VMAX, CMAP_PERFORMANCE.reversed()),
-    ("SN5",  "L5 SNR (dB-Hz)",       SN_VMIN, SN_VMAX, CMAP_PERFORMANCE.reversed()),
-]
-fig = plt.figure(figsize=(13, 12))
-for i, (col, title, vmin, vmax, cmap) in enumerate(panels):
-    ax = fig.add_subplot(2, 2, i + 1, projection=ccrs.PlateCarree())
-    japan_axes(ax)
-    norm = Normalize(vmin=vmin, vmax=vmax)
-    ax.scatter(station_monthly["lon"], station_monthly["lat"],
-               s=8, c=station_monthly[col], cmap=cmap, norm=norm,
-               alpha=0.9, edgecolors="none",
-               transform=ccrs.PlateCarree(), zorder=3)
-    ax.set_title(title, loc="left", fontweight=600, fontsize=11)
-    cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
-                        ax=ax, fraction=0.04, pad=0.04, shrink=0.85)
-    cbar.ax.tick_params(labelsize=8)
+#| label: helpers-spatial
+#| include: false
+
+from matplotlib.colors import LogNorm
+
+def map_grid(metrics, n_rows, n_cols, fig_size, cmap, norm_factory, *, title_fn=None):
+    """Render a grid of cartopy maps for the given station_monthly metrics.
+
+    norm_factory(metric) → matplotlib Normalize-like; cmap is shared.
+    """
+    fig = plt.figure(figsize=fig_size)
+    for i, m in enumerate(metrics):
+        ax = fig.add_subplot(n_rows, n_cols, i + 1, projection=JAPAN_PROJECTION)
+        japan_axes(ax)
+        norm = norm_factory(m)
+        sc = ax.scatter(station_monthly["lon"], station_monthly["lat"],
+                        s=8, c=station_monthly[m], cmap=cmap, norm=norm,
+                        alpha=0.9, edgecolors="none",
+                        transform=ccrs.PlateCarree(), zorder=3)
+        title = title_fn(m) if title_fn else f"{METRIC_LABELS.get(m, m)} ({METRIC_UNITS.get(m, '')})"
+        ax.set_title(title, loc="left", fontweight=600, fontsize=11)
+        cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
+                            ax=ax, fraction=0.04, pad=0.04, shrink=0.85)
+        cbar.ax.tick_params(labelsize=8)
+    plt.tight_layout()
+    plt.show()
+    plt.close(fig)
+```
+
+### Signal-to-noise ratio
+
+```{python}
+#| label: fig-spatial-sn
+#| fig-cap: "Station-monthly SNR by signal. Color scales are signal-specific (see legends) so reports are comparable month over month."
+sn_cmap = CMAP_PERFORMANCE.reversed()
+def sn_norm(m):
+    vmin, vmax = METRIC_RANGES[m]
+    return Normalize(vmin=vmin, vmax=vmax)
+map_grid(["SN1", "SN2", "SN5", "SN7"], 2, 2, (12, 11), sn_cmap, sn_norm)
+```
+
+### Multipath
+
+```{python}
+#| label: fig-spatial-mp
+#| fig-cap: "Station-monthly multipath RMS by signal pair. Note that MP17/MP71 (Galileo E5b family) sit on a much larger scale due to the L1/E5b frequency-pair coefficient in the multipath formula."
+def mp_norm(m):
+    vmin, vmax = METRIC_RANGES[m]
+    return Normalize(vmin=vmin, vmax=vmax)
+map_grid(["MP12", "MP21", "MP15", "MP51", "MP17", "MP71"],
+         2, 3, (15, 11), CMAP_PERFORMANCE, mp_norm)
+```
+
+### Cycle slips
+
+```{python}
+#| label: fig-spatial-slips
+#| fig-cap: "Station-monthly cycle-slip total (ION + MP slips, summed across the elmask-15 elevation bins, daily mean). Logarithmic colour scale."
+fig = plt.figure(figsize=(8, 7))
+ax = fig.add_subplot(1, 1, 1, projection=JAPAN_PROJECTION)
+japan_axes(ax)
+vmin, vmax = METRIC_RANGES["cycle_slips_total"]
+norm = LogNorm(vmin=vmin, vmax=vmax)
+ax.scatter(station_monthly["lon"], station_monthly["lat"],
+           s=8, c=station_monthly["cycle_slips_total"].clip(lower=vmin),
+           cmap=CMAP_PERFORMANCE, norm=norm,
+           alpha=0.9, edgecolors="none",
+           transform=ccrs.PlateCarree(), zorder=3)
+ax.set_title("Cycle slips per station-day (mean over month)",
+             loc="left", fontweight=600, fontsize=11)
+cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=CMAP_PERFORMANCE),
+                    ax=ax, fraction=0.04, pad=0.04, shrink=0.85)
+cbar.ax.tick_params(labelsize=8)
 plt.tight_layout()
 plt.show()
 ```
@@ -483,15 +637,14 @@ plt.show()
 ::: {.callout-note}
 Per free-tier scope, only color-mapped values are shown — individual
 station identifiers are reserved for the Pro-tier report. Color
-scales are fixed (`{python} f"MP {MP_VMIN}–{MP_VMAX} m"`,
-`{python} f"SN {SN_VMIN:.0f}–{SN_VMAX:.0f} dB-Hz"`) so successive
-months can be compared at a glance.
+scales are fixed per signal (see [§Methodology](#metric-definitions))
+so successive months can be compared at a glance.
 :::
 
 ## Receiver / Antenna Inventory
 
 ```{python}
-#| label: tbl-equipment
+#| label: fig-equipment
 top_rec = (station_monthly["rec_type"].value_counts().head(8)
                                        .rename_axis("Receiver type")
                                        .reset_index(name="Stations"))
@@ -512,6 +665,23 @@ for ax, (df, title, color) in zip(
 plt.tight_layout()
 plt.show()
 ```
+
+```{python}
+#| label: tbl-equipment-combo
+combo = (station_monthly.assign(
+            combination=lambda d: d["rec_type"].str.strip()
+                + " │ " + d["ant_type"].str.strip())
+                       .value_counts("combination")
+                       .head(10)
+                       .reset_index()
+                       .rename(columns={"combination": "Receiver │ Antenna",
+                                        "count": "Stations"}))
+n_combos = station_monthly[["rec_type", "ant_type"]].drop_duplicates().shape[0]
+combo_share = combo["Stations"].sum() / N_STATIONS_REPORTED * 100
+combo.style.hide(axis="index").format({"Stations": "{:,}"})
+```
+
+`{python} f"Top 10 receiver × antenna combinations cover {combo_share:.1f} % of {N_STATIONS_REPORTED:,} reporting stations; {n_combos} distinct combinations exist in total."`{=html}
 
 ::: {.callout-note}
 **Equipment changes vs. previous month** are tracked via aggregated
