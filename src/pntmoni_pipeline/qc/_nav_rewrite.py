@@ -45,6 +45,31 @@ def _str2rnx_d(s: str) -> str:
     return (" " + v[1:]) if v[0] == "+" else v
 
 
+def _mask_qzs_lncb_health(s: str) -> str:
+    """Clear the L1C/B health bit (LSB) from a QZSS LNAV SV-health field.
+
+    Per IS-QZSS-PNT-006 §4.1.2.3(4) the 6-bit SV-health word is:
+        bit 5 (MSB)  L1 Health     (L1C/A or L1C/B, whichever transmitted)
+        bit 4        L1C/A Health
+        bit 3        L2 Health
+        bit 2        L5 Health
+        bit 1        L1C Health
+        bit 0 (LSB)  L1C/B Health
+    L1C/A and L1C/B are exclusively transmitted, so the bit corresponding
+    to the *not-currently-transmitted* signal is set to 1 by design.
+    QZSS satellites broadcasting L1C/A (the majority) therefore set
+    health=1 — which teqc, written before this convention, treats as
+    "SV unhealthy" and excludes from QC. Clearing only the LSB recovers
+    those SVs while leaving QZS-1R (which broadcasts L1C/B and so has
+    L1C/A bit set, value ≥16) correctly marked unhealthy for L1C/A QC.
+    """
+    try:
+        h = int(float(s))
+    except ValueError:
+        return _str2rnx_d(s)
+    return _str2rnx_d(f"{h & ~0b00001:d}")
+
+
 def _is_passthrough_header(line: str) -> bool:
     return any(label in line for label in _PASSTHROUGH_HEADER_LABELS)
 
@@ -81,7 +106,12 @@ def rewrite_lnav_to_gal(lnav_path: Path, out_path: Path) -> None:
 
 
 def rewrite_qnav_to_qzs(qnav_path: Path, out_path: Path) -> None:
-    """Rewrite a convbin QNAV file as a teqc-compatible QZSS NAV file."""
+    """Rewrite a convbin QNAV file as a teqc-compatible QZSS NAV file.
+
+    Broadcast orbit 6 carries the SV-health word; the L1C/B bit is
+    masked there per :func:`_mask_qzs_lncb_health`.
+    """
+    bo_idx = -1   # -1 = not yet inside an ephemeris; 0..6 = data line of current eph.
     with qnav_path.open("r") as fin, out_path.open("w") as fout:
         for line in fin:
             if "RINEX VERSION / TYPE" in line:
@@ -97,14 +127,22 @@ def rewrite_qnav_to_qzs(qnav_path: Path, out_path: Path) -> None:
                     f"{_str2rnx_d(line[43:61])}"
                     f"{_str2rnx_d(line[62:80])}\n"
                 )
+                bo_idx = 0
             else:
+                # broadcast orbit 6 (the 6th data line, 0-indexed = 5) carries
+                # SV health as field 2 (cols 24..42 of the convbin .qnav)
+                if bo_idx == 5:
+                    health = _mask_qzs_lncb_health(line[24:42])
+                else:
+                    health = _str2rnx_d(line[24:42])
                 fout.write(
                     "   "
                     f"{_str2rnx_d(line[5:23])}"
-                    f"{_str2rnx_d(line[24:42])}"
+                    f"{health}"
                     f"{_str2rnx_d(line[43:61])}"
                     f"{_str2rnx_d(line[62:80])}\n"
                 )
+                bo_idx = bo_idx + 1 if bo_idx >= 0 else bo_idx
 
 
 __all__ = [

@@ -46,6 +46,50 @@ def test_rewrite_lnav_to_gal_replaces_header_and_data(tmp_path: Path) -> None:
     assert "5.678901234567D-12" in out
 
 
+def test_mask_qzs_lncb_health_clears_lsb_only() -> None:
+    # health = 1 (only L1C/B bit set, the dominant case for QZS broadcasting
+    # L1C/A) → 0 so teqc treats the SV as healthy.
+    assert _nav_rewrite._mask_qzs_lncb_health("1.000000000000e+00") == " 0.000000000000D+00"
+    # health = 0 (everything healthy) stays 0.
+    assert _nav_rewrite._mask_qzs_lncb_health("0.000000000000e+00") == " 0.000000000000D+00"
+    # health = 16 (L1C/A bit set, e.g. QZS-1R broadcasting L1C/B): preserved.
+    assert _nav_rewrite._mask_qzs_lncb_health("1.600000000000e+01") == " 1.600000000000D+01"
+    # health = 17 (L1C/A bit set + L1C/B bit set) → 16; teqc still excludes.
+    assert _nav_rewrite._mask_qzs_lncb_health("1.700000000000e+01") == " 1.600000000000D+01"
+    # health = 62 (legacy J01 in 2022, all signals unhealthy except L1C/B): preserved.
+    assert _nav_rewrite._mask_qzs_lncb_health("6.200000000000e+01") == " 6.200000000000D+01"
+    # health = 63 → 62 (LSB cleared, others preserved).
+    assert _nav_rewrite._mask_qzs_lncb_health("6.300000000000e+01") == " 6.200000000000D+01"
+
+
+def test_rewrite_qnav_to_qzs_masks_l1cb_health_in_bo6(tmp_path: Path) -> None:
+    """Broadcast orbit 6 field 2 = SV health; LSB must be cleared."""
+    src = tmp_path / "x.qnav"
+    # One full ephemeris: epoch + 7 broadcast orbits. BO6 has health=1.
+    src.write_text(textwrap.dedent("""\
+        2.12              N: GNSS NAV DATA    J: QZSS             RINEX VERSION / TYPE
+        convbin             RTKLIB              20260401 12:00:00 PGM / RUN BY / DATE
+                                                                    END OF HEADER
+        J03 26  4  1  0  0  0.0 1.000000000000e-06 2.000000000000e-13 0.000000000000e+00
+             6.100000000000e+01 1.000000000000e+02 3.000000000000e-09 4.000000000000e+00
+             5.000000000000e-05 7.000000000000e-02 8.000000000000e-05 6.000000000000e+03
+             2.000000000000e+05 9.000000000000e-07 1.000000000000e+00 2.000000000000e-07
+             3.000000000000e-01 4.000000000000e+02 5.000000000000e+00 6.000000000000e-09
+             7.000000000000e-10 2.000000000000e+00 2.000000000000e+03 0.000000000000e+00
+             2.800000000000e+00 1.000000000000e+00 4.000000000000e-10 8.000000000000e+02
+             2.000000000000e+05 0.000000000000e+00
+    """))
+    dst = tmp_path / "x.qzs"
+    _nav_rewrite.rewrite_qnav_to_qzs(src, dst)
+    out_lines = dst.read_text().splitlines()
+    # Find the epoch line (starts with PRN "03"), BO6 is 6 lines below.
+    eph_idx = next(i for i, l in enumerate(out_lines) if l.startswith("03 "))
+    bo6 = out_lines[eph_idx + 6]
+    # SV accuracy (field 1) untouched; SV health (field 2) must be masked to 0.
+    assert "2.800000000000D+00" in bo6[3:22], f"SV accuracy mutated: {bo6!r}"
+    assert "0.000000000000D+00" in bo6[22:41], f"health not masked: {bo6!r}"
+
+
 def test_rewrite_qnav_to_qzs_replaces_header(tmp_path: Path) -> None:
     # QNAV body line is fixed-width: PRN at cols 0-2, epoch at 3-22, three
     # 19-char floats from col 23 onward. Use the exact column layout
