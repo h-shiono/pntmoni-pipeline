@@ -204,6 +204,19 @@ def metric_window_sum(df: pd.DataFrame, metric: str, stat: str) -> pd.Series:
         out = out.add(pd.to_numeric(v, errors="coerce").fillna(0), fill_value=0)
     return out
 
+# Two distinct uptime/coverage metrics — both already derivable from
+# the wide Parquet, no reprocessing needed.
+#   data_availability  =  epochs_w_obs / expected_epochs
+#                         (epoch-level coverage: was the station up?)
+#   visibility         =  Complete obs >10° / Possible obs >10°
+#                         (sat-track completeness above teqc's 10° mask:
+#                         when the station was up, did it actually
+#                         track every satellite it should have seen?)
+# A station can have 100 % availability with low visibility (RF / antenna
+# obstruction) or low availability with 99 % visibility (was offline).
+EXPECTED_EPOCHS_PER_DAY = 24 * 3600 // 30   # 30-second sampling, 24-hour file
+stack["data_availability"] = stack["epochs_w_obs"] / EXPECTED_EPOCHS_PER_DAY
+
 # Per (date, station) headline metrics — elmask=15 applied throughout.
 for m, stat in SN_METRICS + MP_METRICS:
     stack[f"{m}_mean"] = metric_weighted_mean(stack, m, stat)
@@ -218,7 +231,8 @@ stack["cycle_slips_total"] = slip_total
 metric_means = {f"{m}_mean": (f"{m}_mean", "mean") for m, _ in SN_METRICS + MP_METRICS}
 daily_national = (
     stack.groupby("date")
-         .agg(visibility_mean=("visibility", "mean"),
+         .agg(data_availability_mean=("data_availability", "mean"),
+              visibility_mean=("visibility", "mean"),
               cycle_slips_total=("cycle_slips_total", "mean"),
               n_stations=("id", "nunique"),
               **metric_means)
@@ -229,7 +243,8 @@ daily_national = (
 station_metric_means = {m: (f"{m}_mean", "mean") for m, _ in SN_METRICS + MP_METRICS}
 station_monthly = (
     stack.groupby("id")
-         .agg(visibility=("visibility", "mean"),
+         .agg(data_availability=("data_availability", "mean"),
+              visibility=("visibility", "mean"),
               cycle_slips_total=("cycle_slips_total", "mean"),
               **station_metric_means)
          .reset_index()
@@ -237,7 +252,8 @@ station_monthly = (
 )
 
 # Headline numbers for the executive summary.
-NATIONAL_AVAIL = daily_national["visibility_mean"].mean()
+NATIONAL_DATA_AVAIL = daily_national["data_availability_mean"].mean()
+NATIONAL_VISIBILITY = daily_national["visibility_mean"].mean()
 MP12_MEDIAN = station_monthly["MP12"].median()
 SN1_MEDIAN = station_monthly["SN1"].median()
 N_STATIONS_REPORTED = len(station_monthly)
@@ -344,7 +360,8 @@ from L1C/A-based QC.
 
 | Metric | Symbol | Description |
 |---|---|---|
-| Data availability | `visibility` | Fraction of expected 30-second epochs with at least one valid observation. |
+| Data availability | `data_availability` | `epochs_w_obs / expected_epochs` — fraction of the day's 2,880 nominal 30-second epochs where the station logged at least one observation. Measures whether the station was up and recording. |
+| Visibility (可視率) | `visibility` | `Complete obs >10° / Possible obs >10°` — fraction of expected satellite-epoch tracks above teqc's 10° elevation mask that were actually obtained. Measures track completeness when the station was operating: low values indicate antenna obstructions, RF interference, or receiver issues even on a station that logs data every epoch. |
 | Multipath (L1, L2 partner) | `MP12` | RMS of the L1 multipath combination using L2 as partner, in metres. |
 | Multipath (L2, L1 partner) | `MP21` | RMS of the L2 multipath combination using L1 as partner, in metres. |
 | Multipath (L1, L5 partner) | `MP15` | RMS of the L1 multipath combination using L5 as partner, in metres. |
@@ -394,11 +411,12 @@ def fmt_m(x):   return f"{x:.3f} m"
 def fmt_dbhz(x):return f"{x:.1f} dB-Hz"
 
 summary = pd.DataFrame([
-    ["National data availability (mean of daily means)", fmt_pct(NATIONAL_AVAIL)],
-    ["L1 C/A multipath — station-month median",          fmt_m(MP12_MEDIAN)],
-    ["L1 C/A SNR — station-month median",                fmt_dbhz(SN1_MEDIAN)],
-    ["Stations reporting",                               f"{N_STATIONS_REPORTED:,}"],
-    ["Days covered",                                     f"{N_DAILY_FILES}"],
+    ["National data availability (epoch coverage, daily mean)",   fmt_pct(NATIONAL_DATA_AVAIL)],
+    ["National visibility (>10° track completeness, daily mean)", fmt_pct(NATIONAL_VISIBILITY)],
+    ["L1 C/A multipath — station-month median",                   fmt_m(MP12_MEDIAN)],
+    ["L1 C/A SNR — station-month median",                         fmt_dbhz(SN1_MEDIAN)],
+    ["Stations reporting",                                        f"{N_STATIONS_REPORTED:,}"],
+    ["Days covered",                                              f"{N_DAILY_FILES}"],
 ], columns=["Metric", PERIOD_LABEL])
 summary.style.hide(axis="index")
 ```
@@ -413,51 +431,82 @@ distributions and trends behind these summary numbers.
 
 # National Overview — Observation Quality {#national-overview-observation-quality}
 
-## Data Availability
+## Data Availability & Visibility
 
 ```{python}
-#| label: fig-availability
-#| fig-cap: "Daily national availability (mean across stations) and station-monthly availability distribution."
-fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+#| label: helpers-uptime
+#| include: false
 
-# left: 30-day daily national mean as bars (one bar per day).
-ax = axes[0]
-ax.bar(daily_national["date"], daily_national["visibility_mean"] * 100,
-       color=COLOR_PRIMARY, width=0.8, edgecolor="white", linewidth=0.4)
-mean_pct = daily_national["visibility_mean"].mean() * 100
-ax.axhline(mean_pct, color=COLOR_DANGER, linestyle="--", linewidth=1,
-           label=f"monthly mean = {mean_pct:.2f} %")
-ax.set_ylabel("Availability (%)")
-ax.set_xlabel("Date")
-ax.set_ylim(90, 100)
-ax.legend(loc="lower right", framealpha=0.9, fontsize=9)
-ax.set_title("Daily national mean", loc="left", fontweight=600)
-fig.autofmt_xdate()
+def uptime_pair(col_daily: str, col_station: str, label: str, ylim_low: int):
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+    # left: daily national bar
+    ax = axes[0]
+    ax.bar(daily_national["date"], daily_national[col_daily] * 100,
+           color=COLOR_PRIMARY, width=0.8, edgecolor="white", linewidth=0.4)
+    mean_pct = daily_national[col_daily].mean() * 100
+    ax.axhline(mean_pct, color=COLOR_DANGER, linestyle="--", linewidth=1,
+               label=f"monthly mean = {mean_pct:.2f} %")
+    ax.set_ylabel(f"{label} (%)")
+    ax.set_xlabel("Date")
+    ax.set_ylim(ylim_low, 100)
+    ax.legend(loc="lower right", framealpha=0.9, fontsize=9)
+    ax.set_title("Daily national mean", loc="left", fontweight=600)
+    fig.autofmt_xdate()
+    # right: ECDF of station-monthly values
+    ax = axes[1]
+    v = np.sort(station_monthly[col_station].dropna() * 100)
+    y = np.arange(1, len(v) + 1) / len(v) * 100
+    ax.plot(v, y, color=COLOR_PRIMARY, linewidth=2)
+    ax.set_xlabel(f"Station-monthly {label.lower()} (%)")
+    ax.set_ylabel("Cumulative share of stations (%)")
+    ax.set_title("Distribution across stations", loc="left", fontweight=600)
+    ax.set_xlim(ylim_low, 101)
+    plt.tight_layout()
+    plt.show()
+    plt.close(fig)
 
-# right: ECDF of station-monthly availability.
-ax = axes[1]
-v = np.sort(station_monthly["visibility"].dropna() * 100)
-y = np.arange(1, len(v) + 1) / len(v) * 100
-ax.plot(v, y, color=COLOR_PRIMARY, linewidth=2)
-ax.set_xlabel("Station-monthly availability (%)")
-ax.set_ylabel("Cumulative share of stations (%)")
-ax.set_title("Distribution across stations", loc="left", fontweight=600)
-ax.set_xlim(50, 101)
-plt.tight_layout()
-plt.show()
+def uptime_quantiles(col_station: str, label: str):
+    s = station_monthly[col_station].dropna()
+    q = s.quantile([0.05, 0.50, 0.95]).to_dict()
+    return pd.DataFrame([
+        ["5th percentile",  fmt_pct(q[0.05])],
+        ["Median",          fmt_pct(q[0.50])],
+        ["95th percentile", fmt_pct(q[0.95])],
+        ["Best station",    fmt_pct(s.max())],
+        ["Worst station",   fmt_pct(s.min())],
+    ], columns=["Statistic", f"Station-monthly {label.lower()}"]
+    ).style.hide(axis="index")
+```
+
+### Data Availability
+
+Epoch-level coverage: did the station log data every 30 seconds?
+
+```{python}
+#| label: fig-data-availability
+#| fig-cap: "Data availability — fraction of the 2,880 nominal daily epochs with logged observations."
+uptime_pair("data_availability_mean", "data_availability", "Data availability", 80)
 ```
 
 ```{python}
-#| label: tbl-availability-quantiles
-q = station_monthly["visibility"].quantile([0.05, 0.50, 0.95]).to_dict()
-pd.DataFrame([
-    ["5th percentile",  fmt_pct(q[0.05])],
-    ["Median",          fmt_pct(q[0.50])],
-    ["95th percentile", fmt_pct(q[0.95])],
-    ["Best station",    fmt_pct(station_monthly["visibility"].max())],
-    ["Worst station",   fmt_pct(station_monthly["visibility"].min())],
-], columns=["Statistic", "Station-monthly availability"]
-).style.hide(axis="index")
+#| label: tbl-data-availability-quantiles
+uptime_quantiles("data_availability", "data availability")
+```
+
+### Visibility (可視率)
+
+Sat-track completeness above 10° elevation: when the station was up,
+did it actually track the satellites it should have seen?
+
+```{python}
+#| label: fig-visibility
+#| fig-cap: "Visibility — Complete obs / Possible obs above 10° elevation, per teqc."
+uptime_pair("visibility_mean", "visibility", "Visibility", 50)
+```
+
+```{python}
+#| label: tbl-visibility-quantiles
+uptime_quantiles("visibility", "visibility")
 ```
 
 ## Distribution of Metrics
