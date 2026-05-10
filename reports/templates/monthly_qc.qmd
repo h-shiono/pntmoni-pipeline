@@ -463,44 +463,73 @@ pd.DataFrame([
 ## Distribution of Metrics
 
 ```{python}
-#| label: fig-distributions
-#| fig-cap: "Station-monthly distributions across the full SN/MP family and the cycle-slip total. Median annotated."
-fig, axes = plt.subplots(3, 4, figsize=(15, 10))
-panel_specs = [
-    # row 1 (SN family) — secondary colour
-    ((0, 0), "SN1", COLOR_SECONDARY), ((0, 1), "SN2", COLOR_SECONDARY),
-    ((0, 2), "SN5", COLOR_SECONDARY), ((0, 3), "SN7", COLOR_SECONDARY),
-    # row 2 (MP low-magnitude family) — primary colour
-    ((1, 0), "MP12", COLOR_PRIMARY),  ((1, 1), "MP21", COLOR_PRIMARY),
-    ((1, 2), "MP15", COLOR_PRIMARY),  ((1, 3), "MP51", COLOR_PRIMARY),
-    # row 3 (MP-Galileo + cycle slips) — warning colour for high-magnitude MP, danger for slips
-    ((2, 0), "MP17", COLOR_WARNING),  ((2, 1), "MP71", COLOR_WARNING),
-    ((2, 2), "cycle_slips_total", COLOR_DANGER),
-]
-for (r, c), col, color in panel_specs:
-    ax = axes[r, c]
+#| label: helpers-distribution
+#| include: false
+
+def hist_panel(ax, col, color):
+    """Draw a histogram for one station-monthly metric column."""
     s = station_monthly[col].dropna()
-    if col == "cycle_slips_total":
-        # heavy right tail → log binning
-        s_pos = s[s > 0]
-        bins = np.logspace(np.log10(max(s_pos.min(), 1)), np.log10(s_pos.max()), 40)
-        ax.hist(s_pos, bins=bins, color=color, alpha=0.75,
-                edgecolor="white", linewidth=0.4)
-        ax.set_xscale("log")
-        ax.set_xlabel("Cycle slips per station-day")
-        ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
-                   linewidth=1, label=f"median = {s.median():.0f}")
-    else:
-        ax.hist(s, bins=40, color=color, alpha=0.75,
-                edgecolor="white", linewidth=0.4)
-        unit = METRIC_UNITS[col]
-        ax.set_xlabel(f"{METRIC_LABELS[col]} ({unit})")
-        ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
-                   linewidth=1, label=f"median = {s.median():.2f} {unit}")
+    unit = METRIC_UNITS.get(col, "")
+    ax.hist(s, bins=40, color=color, alpha=0.75,
+            edgecolor="white", linewidth=0.4)
+    ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
+               linewidth=1, label=f"median = {s.median():.2f} {unit}")
+    ax.set_xlabel(f"{METRIC_LABELS[col]} ({unit})")
     ax.set_ylabel("Stations")
-    ax.legend(loc="upper right", framealpha=0.9, fontsize=8)
-# Hide the unused 4th cell of row 3.
-axes[2, 3].set_visible(False)
+    ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
+```
+
+### Signal-to-noise ratio
+
+```{python}
+#| label: fig-distributions-sn
+#| fig-cap: "Station-monthly SNR distributions across L1 C/A, L2, L5 and Galileo E5b."
+fig, axes = plt.subplots(2, 2, figsize=(12, 7))
+for ax, m in zip(axes.flat, ["SN1", "SN2", "SN5", "SN7"]):
+    hist_panel(ax, m, COLOR_SECONDARY)
+plt.tight_layout()
+plt.show()
+```
+
+### Multipath
+
+```{python}
+#| label: fig-distributions-mp-l1l2l5
+#| fig-cap: "Station-monthly multipath RMS for the L1/L2/L5 signal pairs."
+fig, axes = plt.subplots(2, 2, figsize=(12, 7))
+for ax, m in zip(axes.flat, ["MP12", "MP21", "MP15", "MP51"]):
+    hist_panel(ax, m, COLOR_PRIMARY)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-distributions-mp-e5b
+#| fig-cap: "Station-monthly multipath RMS for the Galileo E5b signal pair (MP17/MP71). Note the larger numerical scale relative to L1/L2/L5 due to the L1/E5b frequency-pair coefficient."
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+for ax, m in zip(axes, ["MP17", "MP71"]):
+    hist_panel(ax, m, COLOR_WARNING)
+plt.tight_layout()
+plt.show()
+```
+
+### Cycle slips
+
+```{python}
+#| label: fig-distributions-slips
+#| fig-cap: "Station-monthly cycle-slip total (ION + MP slips, summed across the elmask-15 elevation bins). Logarithmic binning."
+fig, ax = plt.subplots(figsize=(8, 4))
+s = station_monthly["cycle_slips_total"].dropna()
+s_pos = s[s > 0]
+bins = np.logspace(np.log10(max(s_pos.min(), 1)), np.log10(s_pos.max()), 40)
+ax.hist(s_pos, bins=bins, color=COLOR_DANGER, alpha=0.75,
+        edgecolor="white", linewidth=0.4)
+ax.set_xscale("log")
+ax.set_xlabel("Cycle slips per station-day")
+ax.set_ylabel("Stations")
+ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
+           linewidth=1, label=f"median = {s.median():.0f}")
+ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
 plt.tight_layout()
 plt.show()
 ```
@@ -601,13 +630,24 @@ map_grid(["SN1", "SN2", "SN5", "SN7"], 2, 2, (12, 11), sn_cmap, sn_norm)
 ### Multipath
 
 ```{python}
-#| label: fig-spatial-mp
-#| fig-cap: "Station-monthly multipath RMS by signal pair. Note that MP17/MP71 (Galileo E5b family) sit on a much larger scale due to the L1/E5b frequency-pair coefficient in the multipath formula."
+#| label: fig-spatial-mp-l1l2
+#| fig-cap: "Station-monthly multipath RMS — L1/L2 standard pair (MP12 = L1 multipath using L2 partner; MP21 = L2 multipath using L1 partner)."
 def mp_norm(m):
     vmin, vmax = METRIC_RANGES[m]
     return Normalize(vmin=vmin, vmax=vmax)
-map_grid(["MP12", "MP21", "MP15", "MP51", "MP17", "MP71"],
-         2, 3, (15, 11), CMAP_PERFORMANCE, mp_norm)
+map_grid(["MP12", "MP21"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
+```
+
+```{python}
+#| label: fig-spatial-mp-l1l5
+#| fig-cap: "Station-monthly multipath RMS — L1/L5 pair (MP15 = L1 multipath using L5 partner; MP51 = L5 multipath using L1 partner). MP51 typically lower than MP12 — modern L5 signals see less multipath at GEONET sites."
+map_grid(["MP15", "MP51"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
+```
+
+```{python}
+#| label: fig-spatial-mp-e5b
+#| fig-cap: "Station-monthly multipath RMS — L1/Galileo E5b pair (MP17 = L1 multipath using E5b partner; MP71 = E5b multipath using L1 partner). The numerical scale is much larger than L1/L2/L5 because the L1/E5b frequency ratio yields a large 2/(α-1) coefficient in the multipath formula."
+map_grid(["MP17", "MP71"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
 ```
 
 ### Cycle slips
@@ -667,18 +707,23 @@ plt.show()
 ```
 
 ```{python}
-#| label: tbl-equipment-combo
+#| label: fig-equipment-combo
+#| fig-cap: "Top 10 receiver × antenna combinations across the network."
 combo = (station_monthly.assign(
             combination=lambda d: d["rec_type"].str.strip()
                 + " │ " + d["ant_type"].str.strip())
                        .value_counts("combination")
-                       .head(10)
-                       .reset_index()
-                       .rename(columns={"combination": "Receiver │ Antenna",
-                                        "count": "Stations"}))
+                       .head(10))
 n_combos = station_monthly[["rec_type", "ant_type"]].drop_duplicates().shape[0]
-combo_share = combo["Stations"].sum() / N_STATIONS_REPORTED * 100
-combo.style.hide(axis="index").format({"Stations": "{:,}"})
+combo_share = combo.sum() / N_STATIONS_REPORTED * 100
+
+fig, ax = plt.subplots(figsize=(11, 5.5))
+ax.barh(combo.index[::-1], combo.values[::-1], color=COLOR_NEUTRAL)
+ax.set_xlabel("Stations")
+ax.set_title("Receiver │ Antenna", loc="left", fontweight=600)
+ax.grid(True, alpha=0.3, axis="x")
+plt.tight_layout()
+plt.show()
 ```
 
 `{python} f"Top 10 receiver × antenna combinations cover {combo_share:.1f} % of {N_STATIONS_REPORTED:,} reporting stations; {n_combos} distinct combinations exist in total."`{=html}
