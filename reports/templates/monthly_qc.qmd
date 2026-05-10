@@ -140,9 +140,20 @@ ELEVATION_WINDOWS = (
 )
 
 # Metric definitions (label, stat suffix, family).
-SN_METRICS = [("SN1", "mean"), ("SN2", "mean"), ("SN5", "mean"), ("SN7", "mean")]
-MP_METRICS = [("MP12", "rms"), ("MP21", "rms"), ("MP15", "rms"),
-              ("MP51", "rms"), ("MP17", "rms"), ("MP71", "rms")]
+# "Core" set follows the absolute-evaluation baseline of Shiono & Kubo
+# (2025) ION GNSS+ Table 1: SN1/SN2/SN5 + MP12/MP21/MP15/MP51 + ION
+# and MP-combination cycle slips. The Galileo E5b family (SN7, MP17,
+# MP71) is shown as Reference / supplementary monitoring — informative
+# but not part of the absolute-qualification baseline (E5b exhibited
+# too much site-to-site variance in the 2021–2024 study to function
+# as a qualification metric).
+SN_CORE   = [("SN1", "mean"), ("SN2", "mean"), ("SN5", "mean")]
+SN_REF    = [("SN7", "mean")]
+MP_CORE   = [("MP12", "rms"), ("MP21", "rms"), ("MP15", "rms"),
+             ("MP51", "rms")]
+MP_REF    = [("MP17", "rms"), ("MP71", "rms")]
+SN_METRICS = SN_CORE + SN_REF
+MP_METRICS = MP_CORE + MP_REF
 
 # Per-signal display ranges, chosen to bracket the bulk of the
 # population (~5–95 % of station-monthly values across recent months)
@@ -158,7 +169,8 @@ METRIC_RANGES = {
     "MP51": (0.05, 0.35),
     "MP17": (1.0, 3.5),
     "MP71": (1.0, 3.5),
-    "cycle_slips_total": (1, 1000),     # log scale
+    "cycle_slips_core":     (1, 1000),  # log scale; paper-aligned (4 MP + ION)
+    "cycle_slips_extended": (1, 1000),  # log scale; broader (6 MP + ION)
 }
 
 # Display labels (used in panel titles and legends).
@@ -221,11 +233,18 @@ stack["data_availability"] = stack["epochs_w_obs"] / EXPECTED_EPOCHS_PER_DAY
 for m, stat in SN_METRICS + MP_METRICS:
     stack[f"{m}_mean"] = metric_weighted_mean(stack, m, stat)
 
-# Cycle slips per station-day = ION slips + Σ MPxx slips (elmask-filtered).
-slip_total = metric_window_sum(stack, "ION", "slps")
-for m, _ in MP_METRICS:
-    slip_total = slip_total + metric_window_sum(stack, m, "slps")
-stack["cycle_slips_total"] = slip_total
+# Cycle slips per station-day. Two definitions:
+#   cycle_slips_core     = ION slips + Σ slps over MP_CORE   (paper-aligned)
+#   cycle_slips_extended = ION slips + Σ slps over MP_METRICS (incl. Galileo E5b)
+ion_slips = metric_window_sum(stack, "ION", "slps")
+slips_core = ion_slips.copy()
+for m, _ in MP_CORE:
+    slips_core = slips_core + metric_window_sum(stack, m, "slps")
+slips_extended = slips_core.copy()
+for m, _ in MP_REF:
+    slips_extended = slips_extended + metric_window_sum(stack, m, "slps")
+stack["cycle_slips_core"] = slips_core
+stack["cycle_slips_extended"] = slips_extended
 
 # Daily national aggregates: 1 row per day, mean across stations.
 metric_means = {f"{m}_mean": (f"{m}_mean", "mean") for m, _ in SN_METRICS + MP_METRICS}
@@ -233,7 +252,8 @@ daily_national = (
     stack.groupby("date")
          .agg(data_availability_mean=("data_availability", "mean"),
               visibility_mean=("visibility", "mean"),
-              cycle_slips_total=("cycle_slips_total", "mean"),
+              cycle_slips_core=("cycle_slips_core", "mean"),
+              cycle_slips_extended=("cycle_slips_extended", "mean"),
               n_stations=("id", "nunique"),
               **metric_means)
          .reset_index()
@@ -245,7 +265,8 @@ station_monthly = (
     stack.groupby("id")
          .agg(data_availability=("data_availability", "mean"),
               visibility=("visibility", "mean"),
-              cycle_slips_total=("cycle_slips_total", "mean"),
+              cycle_slips_core=("cycle_slips_core", "mean"),
+              cycle_slips_extended=("cycle_slips_extended", "mean"),
               **station_metric_means)
          .reset_index()
          .merge(stations[["id", "lat", "lon", "rec_type", "ant_type"]], on="id")
@@ -358,30 +379,60 @@ from L1C/A-based QC.
 
 ## Metric definitions
 
+The QC framework follows the absolute-evaluation methodology
+established in **Shiono & Kubo (2025)** "Comprehensive Performance
+Evaluation of QZSS CLAS Over Four Years (2021–2024)" (ION GNSS+
+2025) and extended in **Shiono & Kubo (2026)** "Navigating the
+Storm: A Five-Year Diagnostic of QZSS CLAS Through Solar Cycle 25"
+(NAVIGATION, [doi:10.33012/navi.762](https://doi.org/10.33012/navi.762)).
+Those papers define the four headline metrics — **Visibility, SNR,
+Multipath, and Cycle Slips** — evaluated in 5° elevation bins for
+satellites observed above 15° elevation.
+
+### Core metrics (absolute-evaluation baseline)
+
+These are the four families used in the paper's Table 1 station
+selection and are the **basis for the planned absolute station
+qualification** (see [§5.6](#absolute-station-qualification-coming-soon)).
+
 | Metric | Symbol | Description |
 |---|---|---|
 | Data availability | `data_availability` | `epochs_w_obs / expected_epochs` — fraction of the day's 2,880 nominal 30-second epochs where the station logged at least one observation. Measures whether the station was up and recording. |
 | Visibility (可視率) | `visibility` | `Complete obs >10° / Possible obs >10°` — fraction of expected satellite-epoch tracks above teqc's 10° elevation mask that were actually obtained. Measures track completeness when the station was operating: low values indicate antenna obstructions, RF interference, or receiver issues even on a station that logs data every epoch. |
+| L1 C/A SNR | `SN1` | Mean signal-to-noise ratio on L1 C/A, in dB-Hz. |
+| L2 SNR | `SN2` | Mean signal-to-noise ratio on L2 (P-code or L2C), in dB-Hz. |
+| L5 SNR | `SN5` | Mean signal-to-noise ratio on L5, in dB-Hz. |
 | Multipath (L1, L2 partner) | `MP12` | RMS of the L1 multipath combination using L2 as partner, in metres. |
 | Multipath (L2, L1 partner) | `MP21` | RMS of the L2 multipath combination using L1 as partner, in metres. |
 | Multipath (L1, L5 partner) | `MP15` | RMS of the L1 multipath combination using L5 as partner, in metres. |
 | Multipath (L5, L1 partner) | `MP51` | RMS of the L5 multipath combination using L1 as partner, in metres. |
-| Multipath (L1, E5b partner) | `MP17` | RMS of the L1 multipath combination using Galileo E5b as partner, in metres. The `2/(α-1)` coefficient in the multipath formula is large for the L1/E5b frequency pair, hence the larger numerical values. |
-| Multipath (E5b, L1 partner) | `MP71` | RMS of the E5b (Galileo) multipath combination using L1 as partner, in metres. |
-| L1 C/A SNR | `SN1` | Mean signal-to-noise ratio on L1 C/A, in dB-Hz. |
-| L2 SNR | `SN2` | Mean signal-to-noise ratio on L2 (P-code or L2C), in dB-Hz. |
-| L5 SNR | `SN5` | Mean signal-to-noise ratio on L5, in dB-Hz. |
+| Cycle slips (core) | `cycle_slips_core` | Sum of teqc-reported ION slips and the four core MP-combination slips (`MP12 + MP21 + MP15 + MP51`). Paper-aligned definition. |
+
+### Reference / supplementary monitoring (Galileo E5b)
+
+These are reported as **informational reference**. They are *not*
+part of the absolute-qualification baseline because the L1/E5b
+frequency pair exhibits considerably larger site-to-site variance
+than the L1/L2/L5 pairs and was therefore not adopted as a
+qualification metric in Shiono & Kubo (2025).
+
+| Metric | Symbol | Description |
+|---|---|---|
 | Galileo E5b SNR | `SN7` | Mean signal-to-noise ratio on E5b (1207.140 MHz), in dB-Hz. |
-| Cycle slips (per station-day) | `cycle_slips_total` | Sum of teqc-reported ION slips and all multipath-combination slips. |
+| Multipath (L1, E5b partner) | `MP17` | RMS of the L1 multipath combination using E5b as partner, in metres. The `2/(α-1)` coefficient in the multipath formula is large for the L1/E5b frequency pair, hence the larger numerical values. |
+| Multipath (E5b, L1 partner) | `MP71` | RMS of the E5b multipath combination using L1 as partner, in metres. |
+| Cycle slips (extended) | `cycle_slips_extended` | `cycle_slips_core` plus `MP17` and `MP71` slips. Useful when assessing receivers that track Galileo E5b; not used in qualification. |
+
+### Aggregation
 
 All multipath, SNR and slip figures are computed from teqc's
-elevation bins with an **elevation mask of `{python} ELMASK_DEG`°**
+**5° elevation bins** with an **elevation mask of `{python} ELMASK_DEG`°**
 applied — only bins with lower bound ≥ `{python} ELMASK_DEG`° are
 included (15 of 19 bins). Multipath/SNR aggregate values are
 obs-count weighted across the kept bins; slip totals are summed.
-This matches the elmask used by the positioning engines (CLASLIB,
-RTKLIB) so the QC figures correspond to the bins the engines
-actually use.
+This matches both the methodology of Shiono & Kubo (2025) and the
+elmask used by the positioning engines (CLASLIB, RTKLIB), so the
+QC figures correspond to the bins the engines actually use.
 
 ## Evaluation Network
 
@@ -531,11 +582,20 @@ def hist_panel(ax, col, color):
 ### Signal-to-noise ratio
 
 ```{python}
-#| label: fig-distributions-sn
-#| fig-cap: "Station-monthly SNR distributions across L1 C/A, L2, L5 and Galileo E5b."
-fig, axes = plt.subplots(2, 2, figsize=(12, 7))
-for ax, m in zip(axes.flat, ["SN1", "SN2", "SN5", "SN7"]):
+#| label: fig-distributions-sn-core
+#| fig-cap: "Core SNR distributions — L1 C/A, L2, and L5 (Shiono & Kubo 2025 baseline)."
+fig, axes = plt.subplots(1, 3, figsize=(14, 4))
+for ax, m in zip(axes, ["SN1", "SN2", "SN5"]):
     hist_panel(ax, m, COLOR_SECONDARY)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-distributions-sn-ref
+#| fig-cap: "Reference SNR — Galileo E5b. Shown for monitoring; not part of the absolute-qualification baseline."
+fig, ax = plt.subplots(figsize=(6, 4))
+hist_panel(ax, "SN7", COLOR_NEUTRAL)
 plt.tight_layout()
 plt.show()
 ```
@@ -543,8 +603,8 @@ plt.show()
 ### Multipath
 
 ```{python}
-#| label: fig-distributions-mp-l1l2l5
-#| fig-cap: "Station-monthly multipath RMS for the L1/L2/L5 signal pairs."
+#| label: fig-distributions-mp-core
+#| fig-cap: "Core multipath RMS — L1/L2/L5 signal pairs (Shiono & Kubo 2025 baseline)."
 fig, axes = plt.subplots(2, 2, figsize=(12, 7))
 for ax, m in zip(axes.flat, ["MP12", "MP21", "MP15", "MP51"]):
     hist_panel(ax, m, COLOR_PRIMARY)
@@ -553,11 +613,11 @@ plt.show()
 ```
 
 ```{python}
-#| label: fig-distributions-mp-e5b
-#| fig-cap: "Station-monthly multipath RMS for the Galileo E5b signal pair (MP17/MP71). Note the larger numerical scale relative to L1/L2/L5 due to the L1/E5b frequency-pair coefficient."
+#| label: fig-distributions-mp-ref
+#| fig-cap: "Reference multipath — Galileo E5b pair (MP17/MP71). Larger numerical scale due to the L1/E5b frequency-pair coefficient. Shown for monitoring; not part of the absolute-qualification baseline (E5b exhibited too much site-to-site variance to function as a qualification metric in Shiono & Kubo 2025)."
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, m in zip(axes, ["MP17", "MP71"]):
-    hist_panel(ax, m, COLOR_WARNING)
+    hist_panel(ax, m, COLOR_NEUTRAL)
 plt.tight_layout()
 plt.show()
 ```
@@ -566,15 +626,15 @@ plt.show()
 
 ```{python}
 #| label: fig-distributions-slips
-#| fig-cap: "Station-monthly cycle-slip total (ION + MP slips, summed across the elmask-15 elevation bins). Logarithmic binning."
+#| fig-cap: "Station-monthly cycle slips (ION + core MP-combination slips, summed across the elmask-15 elevation bins). Paper-aligned definition (Shiono & Kubo 2025 Table 1). Logarithmic binning."
 fig, ax = plt.subplots(figsize=(8, 4))
-s = station_monthly["cycle_slips_total"].dropna()
+s = station_monthly["cycle_slips_core"].dropna()
 s_pos = s[s > 0]
 bins = np.logspace(np.log10(max(s_pos.min(), 1)), np.log10(s_pos.max()), 40)
 ax.hist(s_pos, bins=bins, color=COLOR_DANGER, alpha=0.75,
         edgecolor="white", linewidth=0.4)
 ax.set_xscale("log")
-ax.set_xlabel("Cycle slips per station-day")
+ax.set_xlabel("Cycle slips per station-day (core: ION + MP12/21/15/51)")
 ax.set_ylabel("Stations")
 ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
            linewidth=1, label=f"median = {s.median():.0f}")
@@ -610,20 +670,20 @@ def trend_panel(ax, metrics, ylabel, title):
     ax.set_title(title, loc="left", fontweight=600)
 
 trend_panel(axes[0, 0], ["SN1", "SN2", "SN5", "SN7"],
-            "Mean SNR (dB-Hz)", "Signal strength")
+            "Mean SNR (dB-Hz)", "Signal strength (SN7 = reference)")
 
 trend_panel(axes[0, 1], ["MP12", "MP21", "MP15", "MP51"],
-            "Multipath RMS (m)", "Multipath — L1/L2/L5 family")
+            "Multipath RMS (m)", "Multipath — L1/L2/L5 (core)")
 
 trend_panel(axes[1, 0], ["MP17", "MP71"],
-            "Multipath RMS (m)", "Multipath — Galileo E5b family")
+            "Multipath RMS (m)", "Multipath — Galileo E5b (reference)")
 
-# Cycle slips per station-day, mean across stations
+# Core cycle slips per station-day, mean across stations.
 ax = axes[1, 1]
-ax.bar(daily_national["date"], daily_national["cycle_slips_total"],
+ax.bar(daily_national["date"], daily_national["cycle_slips_core"],
        color=COLOR_DANGER, width=0.8, edgecolor="white", linewidth=0.4)
-ax.set_ylabel("Mean cycle slips per station")
-ax.set_title("Cycle slips (ION + MP)", loc="left", fontweight=600)
+ax.set_ylabel("Mean cycle slips per station (core)")
+ax.set_title("Cycle slips — ION + MP12/21/15/51 (core)", loc="left", fontweight=600)
 ax.set_xlabel("Date")
 
 axes[1, 0].set_xlabel("Date")
@@ -667,13 +727,19 @@ def map_grid(metrics, n_rows, n_cols, fig_size, cmap, norm_factory, *, title_fn=
 ### Signal-to-noise ratio
 
 ```{python}
-#| label: fig-spatial-sn
-#| fig-cap: "Station-monthly SNR by signal. Color scales are signal-specific (see legends) so reports are comparable month over month."
+#| label: fig-spatial-sn-core
+#| fig-cap: "Core SNR — station-monthly L1 C/A, L2, and L5. Signal-specific colour scales."
 sn_cmap = CMAP_PERFORMANCE.reversed()
 def sn_norm(m):
     vmin, vmax = METRIC_RANGES[m]
     return Normalize(vmin=vmin, vmax=vmax)
-map_grid(["SN1", "SN2", "SN5", "SN7"], 2, 2, (12, 11), sn_cmap, sn_norm)
+map_grid(["SN1", "SN2", "SN5"], 1, 3, (15, 6), sn_cmap, sn_norm)
+```
+
+```{python}
+#| label: fig-spatial-sn-ref
+#| fig-cap: "Reference SNR — station-monthly Galileo E5b. Shown for monitoring; not part of the absolute-qualification baseline."
+map_grid(["SN7"], 1, 1, (8, 7), sn_cmap, sn_norm)
 ```
 
 ### Multipath
@@ -695,7 +761,7 @@ map_grid(["MP15", "MP51"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
 
 ```{python}
 #| label: fig-spatial-mp-e5b
-#| fig-cap: "Station-monthly multipath RMS — L1/Galileo E5b pair (MP17 = L1 multipath using E5b partner; MP71 = E5b multipath using L1 partner). The numerical scale is much larger than L1/L2/L5 because the L1/E5b frequency ratio yields a large 2/(α-1) coefficient in the multipath formula."
+#| fig-cap: "Reference multipath — L1/Galileo E5b pair (MP17/MP71). Larger numerical scale due to the L1/E5b frequency-pair coefficient. Shown for monitoring; not part of the absolute-qualification baseline."
 map_grid(["MP17", "MP71"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
 ```
 
@@ -703,18 +769,18 @@ map_grid(["MP17", "MP71"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
 
 ```{python}
 #| label: fig-spatial-slips
-#| fig-cap: "Station-monthly cycle-slip total (ION + MP slips, summed across the elmask-15 elevation bins, daily mean). Logarithmic colour scale."
+#| fig-cap: "Core cycle slips per station-day (ION + MP12/21/15/51 slips, elmask-15, daily mean over month). Paper-aligned definition. Logarithmic colour scale."
 fig = plt.figure(figsize=(8, 7))
 ax = fig.add_subplot(1, 1, 1, projection=JAPAN_PROJECTION)
 japan_axes(ax)
-vmin, vmax = METRIC_RANGES["cycle_slips_total"]
+vmin, vmax = METRIC_RANGES["cycle_slips_core"]
 norm = LogNorm(vmin=vmin, vmax=vmax)
 ax.scatter(station_monthly["lon"], station_monthly["lat"],
-           s=8, c=station_monthly["cycle_slips_total"].clip(lower=vmin),
+           s=8, c=station_monthly["cycle_slips_core"].clip(lower=vmin),
            cmap=CMAP_PERFORMANCE, norm=norm,
            alpha=0.9, edgecolors="none",
            transform=ccrs.PlateCarree(), zorder=3)
-ax.set_title("Cycle slips per station-day (mean over month)",
+ax.set_title("Core cycle slips per station-day (ION + MP12/21/15/51)",
              loc="left", fontweight=600, fontsize=11)
 cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=CMAP_PERFORMANCE),
                     ax=ax, fraction=0.04, pad=0.04, shrink=0.85)
@@ -783,6 +849,35 @@ counts only (e.g. *"N stations changed receiver, M stations changed
 antenna"*); individual station identities are reserved for the
 Pro-tier report. Month-over-month deltas will appear once a baseline
 month is established.
+:::
+
+## Absolute Station Qualification {#absolute-station-qualification-coming-soon}
+
+::: {.callout-note}
+**Coming Soon.** Absolute station qualification — i.e. classifying
+each GEONET station as passing or failing the four core QC criteria
+defined in Shiono & Kubo (2025) — will appear here once the
+moving-window infrastructure (53-week annual rolling aggregates) is
+in place. The qualification criterion is the **99.73rd percentile**
+(3σ) of weekly metrics over the rolling year for each of:
+
+1. **Visibility** — `Complete obs / Possible obs > 10°`
+2. **SNR** — mean SNR for L1, L2, L5 (`SN1`, `SN2`, `SN5`)
+3. **Multipath** — RMS of `MP12`, `MP21`, `MP15`, `MP51`
+4. **Cycle slips** — `cycle_slips_core` (ION + MP12/21/15/51 slips)
+
+Per the original study, the **Galileo E5b family (`SN7`, `MP17`,
+`MP71`) is intentionally excluded** from the qualification set: at
+the time of the four-year baseline (2021–2024), L1/E5b values
+exhibited considerably larger site-to-site variance than the
+L1/L2/L5 pairs, making them unreliable as a pass/fail threshold.
+They remain in the report as **reference / supplementary
+monitoring**.
+
+The output of this section will be a national pass-rate (e.g.
+*"1,055 of 1,298 stations passed all four core criteria"*) with
+**aggregate counts only** — individual station names are reserved
+for the Pro-tier report.
 :::
 
 # Appendix
