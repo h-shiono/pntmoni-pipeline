@@ -38,7 +38,10 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.cm import ScalarMappable
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
 
 # ---- Brand (mirrors reports/_brand.yml) -------------------------------
 COLOR_PRIMARY = "#10b981"
@@ -160,6 +163,7 @@ daily_national = (
               MP15_mean=("MP15_mean", "mean"),
               SN1_mean=("SN1_mean", "mean"),
               SN2_mean=("SN2_mean", "mean"),
+              SN5_mean=("SN5_mean", "mean"),
               n_stations=("id", "nunique"))
          .reset_index()
 )
@@ -184,6 +188,27 @@ MP12_MEDIAN = station_monthly["MP12"].median()
 SN1_MEDIAN = station_monthly["SN1"].median()
 N_STATIONS_REPORTED = len(station_monthly)
 N_DAILY_FILES = N_DAYS
+
+# Fixed visualization ranges. Stable across months → reports comparable.
+MP_VMIN, MP_VMAX = 0.10, 0.50   # metres; covers ~5–99 % of station-month means
+SN_VMIN, SN_VMAX = 35.0, 55.0   # dB-Hz; conventional "low / very-good" envelope
+
+JAPAN_EXTENT = (127.0, 147.0, 24.0, 46.0)   # lon_min, lon_max, lat_min, lat_max
+
+def japan_axes(ax):
+    """Style a cartopy GeoAxes for the Japan archipelago."""
+    ax.set_extent(JAPAN_EXTENT, crs=ccrs.PlateCarree())
+    ax.add_feature(cfeature.LAND.with_scale("10m"),
+                   facecolor="#f3f4f6", edgecolor="none", zorder=0)
+    ax.add_feature(cfeature.OCEAN.with_scale("10m"),
+                   facecolor="#dbeafe", edgecolor="none", zorder=0)
+    ax.add_feature(cfeature.COASTLINE.with_scale("10m"),
+                   linewidth=0.4, edgecolor="#9ca3af", zorder=1)
+    gl = ax.gridlines(draw_labels=True, linewidth=0.3, color="#d1d5db",
+                      alpha=0.6, x_inline=False, y_inline=False)
+    gl.top_labels = gl.right_labels = False
+    gl.xlabel_style = gl.ylabel_style = {"size": 8, "color": "#6b7280"}
+    return ax
 ```
 
 ::: {.callout-note collapse="true"}
@@ -273,15 +298,12 @@ not over-weighted.
 ```{python}
 #| label: fig-network
 #| fig-cap: "GEONET reference stations covered in this report."
-fig, ax = plt.subplots(figsize=(7, 7))
+fig = plt.figure(figsize=(7, 7))
+ax = fig.add_subplot(1, 1, 1, projection=ccrs.PlateCarree())
+japan_axes(ax)
 ax.scatter(station_monthly["lon"], station_monthly["lat"],
-           s=4, c=COLOR_PRIMARY, alpha=0.6, edgecolors="none")
-ax.set_xlim(127, 147)
-ax.set_ylim(24, 46)
-ax.set_xlabel("Longitude (°E)")
-ax.set_ylabel("Latitude (°N)")
-ax.set_aspect("equal")
-ax.grid(True, alpha=0.3)
+           s=5, c=COLOR_PRIMARY, alpha=0.7, edgecolors="none",
+           transform=ccrs.PlateCarree(), zorder=3)
 ax.set_title(f"{N_STATIONS_REPORTED:,} GEONET stations reporting in {PERIOD_LABEL}",
              loc="left", fontweight=600, fontsize=11)
 plt.tight_layout()
@@ -325,17 +347,21 @@ distributions and trends behind these summary numbers.
 #| fig-cap: "Daily national availability (mean across stations) and station-monthly availability distribution."
 fig, axes = plt.subplots(1, 2, figsize=(11, 4))
 
-# left: 30-day daily national mean
+# left: 30-day daily national mean as bars (one bar per day).
 ax = axes[0]
-ax.plot(daily_national["date"], daily_national["visibility_mean"] * 100,
-        color=COLOR_PRIMARY, marker="o", markersize=4, linewidth=1.5)
+ax.bar(daily_national["date"], daily_national["visibility_mean"] * 100,
+       color=COLOR_PRIMARY, width=0.8, edgecolor="white", linewidth=0.4)
+mean_pct = daily_national["visibility_mean"].mean() * 100
+ax.axhline(mean_pct, color=COLOR_DANGER, linestyle="--", linewidth=1,
+           label=f"monthly mean = {mean_pct:.2f} %")
 ax.set_ylabel("Availability (%)")
 ax.set_xlabel("Date")
-ax.set_ylim(95, 100)
+ax.set_ylim(90, 100)
+ax.legend(loc="lower right", framealpha=0.9, fontsize=9)
 ax.set_title("Daily national mean", loc="left", fontweight=600)
 fig.autofmt_xdate()
 
-# right: ECDF of station-monthly availability
+# right: ECDF of station-monthly availability.
 ax = axes[1]
 v = np.sort(station_monthly["visibility"].dropna() * 100)
 y = np.arange(1, len(v) + 1) / len(v) * 100
@@ -343,7 +369,7 @@ ax.plot(v, y, color=COLOR_PRIMARY, linewidth=2)
 ax.set_xlabel("Station-monthly availability (%)")
 ax.set_ylabel("Cumulative share of stations (%)")
 ax.set_title("Distribution across stations", loc="left", fontweight=600)
-ax.set_xlim(80, 101)
+ax.set_xlim(50, 101)
 plt.tight_layout()
 plt.show()
 ```
@@ -366,18 +392,23 @@ pd.DataFrame([
 ```{python}
 #| label: fig-distributions
 #| fig-cap: "Across-station distributions of the headline QC metrics, station-monthly means."
-fig, axes = plt.subplots(2, 2, figsize=(11, 7))
+fig, axes = plt.subplots(2, 3, figsize=(13, 7))
 
 panels = [
-    (axes[0, 0], "MP12", "L1 C/A multipath RMS (m)", "m",   COLOR_PRIMARY),
-    (axes[0, 1], "MP21", "L2 P-code multipath RMS (m)", "m", COLOR_SECONDARY),
-    (axes[1, 0], "SN1",  "L1 C/A SNR mean (dB-Hz)",   "dB-Hz", COLOR_PRIMARY),
-    (axes[1, 1], "SN2",  "L2 SNR mean (dB-Hz)",       "dB-Hz", COLOR_SECONDARY),
+    # multipath (top row)
+    (axes[0, 0], "MP12", "L1 C/A multipath RMS (m)", "m",     COLOR_PRIMARY),
+    (axes[0, 1], "MP21", "L2 P-code multipath RMS (m)", "m",  COLOR_PRIMARY),
+    (axes[0, 2], "MP15", "L1-L5 multipath RMS (m)", "m",      COLOR_PRIMARY),
+    # signal strength (bottom row)
+    (axes[1, 0], "SN1",  "L1 C/A SNR mean (dB-Hz)", "dB-Hz",  COLOR_SECONDARY),
+    (axes[1, 1], "SN2",  "L2 SNR mean (dB-Hz)", "dB-Hz",      COLOR_SECONDARY),
+    (axes[1, 2], "SN5",  "L5 SNR mean (dB-Hz)", "dB-Hz",      COLOR_SECONDARY),
 ]
 for ax, col, title, unit, color in panels:
     s = station_monthly[col].dropna()
     ax.hist(s, bins=40, color=color, alpha=0.75, edgecolor="white", linewidth=0.4)
-    ax.axvline(s.median(), color=COLOR_DANGER, linestyle="--", linewidth=1, label=f"median = {s.median():.2f} {unit}")
+    ax.axvline(s.median(), color=COLOR_DANGER, linestyle="--", linewidth=1,
+               label=f"median = {s.median():.2f} {unit}")
     ax.set_xlabel(title)
     ax.set_ylabel("Stations")
     ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
@@ -397,8 +428,10 @@ ax.plot(daily_national["date"], daily_national["MP12_mean"],
         color=COLOR_PRIMARY, marker="o", markersize=4, label="MP12 (L1 C/A)")
 ax.plot(daily_national["date"], daily_national["MP21_mean"],
         color=COLOR_SECONDARY, marker="s", markersize=4, label="MP21 (L2 P)")
+ax.plot(daily_national["date"], daily_national["MP15_mean"],
+        color=COLOR_WARNING, marker="^", markersize=4, label="MP15 (L1-L5)")
 ax.set_ylabel("Multipath RMS (m)")
-ax.legend(loc="upper right", fontsize=9)
+ax.legend(loc="upper right", fontsize=9, ncol=3)
 ax.set_title("Multipath", loc="left", fontweight=600)
 
 ax = axes[1]
@@ -406,8 +439,10 @@ ax.plot(daily_national["date"], daily_national["SN1_mean"],
         color=COLOR_PRIMARY, marker="o", markersize=4, label="SN1 (L1 C/A)")
 ax.plot(daily_national["date"], daily_national["SN2_mean"],
         color=COLOR_SECONDARY, marker="s", markersize=4, label="SN2 (L2)")
+ax.plot(daily_national["date"], daily_national["SN5_mean"],
+        color=COLOR_WARNING, marker="^", markersize=4, label="SN5 (L5)")
 ax.set_ylabel("Mean SNR (dB-Hz)")
-ax.legend(loc="upper right", fontsize=9)
+ax.legend(loc="lower right", fontsize=9, ncol=3)
 ax.set_title("Signal strength", loc="left", fontweight=600)
 ax.set_xlabel("Date")
 fig.autofmt_xdate()
@@ -419,43 +454,38 @@ plt.show()
 
 ```{python}
 #| label: fig-spatial
-#| fig-cap: "Geographic distribution of L1 C/A multipath and SNR; markers binned by quartile."
-fig, axes = plt.subplots(1, 2, figsize=(13, 6))
-
-# Bin into quartiles for color-mapped, station-anonymous plotting.
-def quartile_colors(values: pd.Series, cmap):
-    q = values.quantile([0, 0.25, 0.50, 0.75, 1.0]).to_numpy()
-    bins = np.digitize(values.fillna(values.median()), q[1:-1])
-    return cmap(bins / 3.0), q
-
-for ax, (col, title, cmap) in zip(
-    axes,
-    [("MP12", "L1 C/A multipath (m)", CMAP_PERFORMANCE),
-     ("SN1",  "L1 C/A SNR (dB-Hz)",  CMAP_PERFORMANCE.reversed())],
-):
-    colors, edges = quartile_colors(station_monthly[col], cmap)
+#| fig-cap: "Geographic distribution of station-monthly multipath (L1 C/A and L1-L5) and SNR (L1 and L5). Color scales are fixed across reports for month-over-month comparability."
+# Fixed colorbar ranges so reports are visually comparable across months
+# (see MP_VMIN/VMAX and SN_VMIN/VMAX in setup).
+panels = [
+    ("MP12", "L1 C/A multipath (m)", MP_VMIN, MP_VMAX, CMAP_PERFORMANCE),
+    ("MP15", "L1-L5 multipath (m)",  MP_VMIN, MP_VMAX, CMAP_PERFORMANCE),
+    ("SN1",  "L1 C/A SNR (dB-Hz)",   SN_VMIN, SN_VMAX, CMAP_PERFORMANCE.reversed()),
+    ("SN5",  "L5 SNR (dB-Hz)",       SN_VMIN, SN_VMAX, CMAP_PERFORMANCE.reversed()),
+]
+fig = plt.figure(figsize=(13, 12))
+for i, (col, title, vmin, vmax, cmap) in enumerate(panels):
+    ax = fig.add_subplot(2, 2, i + 1, projection=ccrs.PlateCarree())
+    japan_axes(ax)
+    norm = Normalize(vmin=vmin, vmax=vmax)
     ax.scatter(station_monthly["lon"], station_monthly["lat"],
-               s=8, c=colors, alpha=0.85, edgecolors="none")
-    ax.set_xlim(127, 147)
-    ax.set_ylim(24, 46)
-    ax.set_xlabel("Longitude (°E)")
-    ax.set_ylabel("Latitude (°N)")
-    ax.set_aspect("equal")
-    ax.set_title(title, loc="left", fontweight=600)
-    qlabels = [f"≤ {edges[1]:.2f}", f"≤ {edges[2]:.2f}",
-               f"≤ {edges[3]:.2f}", f"> {edges[3]:.2f}"]
-    handles = [plt.Line2D([0], [0], marker="o", markersize=6, linestyle="",
-                          markerfacecolor=cmap(i / 3.0), markeredgecolor="none",
-                          label=q) for i, q in enumerate(qlabels)]
-    ax.legend(handles=handles, loc="lower left", fontsize=8, framealpha=0.9,
-              title="Quartile")
+               s=8, c=station_monthly[col], cmap=cmap, norm=norm,
+               alpha=0.9, edgecolors="none",
+               transform=ccrs.PlateCarree(), zorder=3)
+    ax.set_title(title, loc="left", fontweight=600, fontsize=11)
+    cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
+                        ax=ax, fraction=0.04, pad=0.04, shrink=0.85)
+    cbar.ax.tick_params(labelsize=8)
 plt.tight_layout()
 plt.show()
 ```
 
 ::: {.callout-note}
-Per free-tier scope, only quartile bins are shown — individual
-station identifiers are reserved for the Pro-tier report.
+Per free-tier scope, only color-mapped values are shown — individual
+station identifiers are reserved for the Pro-tier report. Color
+scales are fixed (`{python} f"MP {MP_VMIN}–{MP_VMAX} m"`,
+`{python} f"SN {SN_VMIN:.0f}–{SN_VMAX:.0f} dB-Hz"`) so successive
+months can be compared at a glance.
 :::
 
 ## Receiver / Antenna Inventory
