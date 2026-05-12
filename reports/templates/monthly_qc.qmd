@@ -13,6 +13,38 @@ format:
     smooth-scroll: true
     number-sections: true
     theme: [cosmo, ../styles/pntmoni.scss]
+  pdf:
+    pdf-engine: xelatex
+    documentclass: scrartcl
+    papersize: a4
+    fontsize: 10pt
+    geometry:
+      - top=20mm
+      - bottom=20mm
+      - left=20mm
+      - right=20mm
+    mainfont: "Helvetica Neue"
+    sansfont: "Helvetica Neue"
+    monofont: "Menlo"
+    # Hiragino is the macOS system Japanese family; xelatex picks it up
+    # automatically. To swap in Noto Sans JP (brand) for the published
+    # PDF, install via Google Fonts and replace the three lines below.
+    CJKmainfont: "Hiragino Sans"
+    CJKsansfont: "Hiragino Sans"
+    CJKmonofont: "Hiragino Sans"
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    colorlinks: true
+    linkcolor: "blue"
+    urlcolor: "blue"
+    fig-pos: "H"
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{caption}
+        \captionsetup[figure]{font=small,labelfont=bf}
+        \captionsetup[table]{font=small,labelfont=bf}
 execute:
   echo: false
   warning: false
@@ -42,6 +74,16 @@ from matplotlib.colors import LinearSegmentedColormap, Normalize
 from matplotlib.cm import ScalarMappable
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
+from IPython.display import Markdown
+
+def md_table(df: pd.DataFrame) -> Markdown:
+    """Render ``df`` as a markdown table (clean in both HTML and PDF).
+
+    pandas Styler outputs HTML which renders unevenly in LaTeX/PDF
+    (e.g. duplicated table captions); markdown round-trips through
+    pandoc to native HTML and LaTeX tables.
+    """
+    return Markdown(df.to_markdown(index=False))
 
 # ---- Brand (mirrors reports/_brand.yml) -------------------------------
 COLOR_PRIMARY = "#10b981"
@@ -294,13 +336,19 @@ JAPAN_PROJECTION = ccrs.LambertConformal(
 JAPAN_EXTENT = (122.0, 150.0, 22.0, 47.0)   # lon_min, lon_max, lat_min, lat_max
 
 def japan_axes(ax):
-    """Style a cartopy GeoAxes for the Japan archipelago."""
+    """Style a cartopy GeoAxes for the Japan archipelago.
+
+    Uses the 50m Natural Earth scale: the 10m scale gives finer
+    coastline (down to small islands) but inflates the rasterised
+    fill bitmap roughly 4× in the embedded PDF — at country-scale
+    map zoom the 50m detail level is indistinguishable.
+    """
     ax.set_extent(JAPAN_EXTENT, crs=ccrs.PlateCarree())
-    ax.add_feature(cfeature.LAND.with_scale("10m"),
+    ax.add_feature(cfeature.LAND.with_scale("50m"),
                    facecolor="#f3f4f6", edgecolor="none", zorder=0)
-    ax.add_feature(cfeature.OCEAN.with_scale("10m"),
+    ax.add_feature(cfeature.OCEAN.with_scale("50m"),
                    facecolor="#dbeafe", edgecolor="none", zorder=0)
-    ax.add_feature(cfeature.COASTLINE.with_scale("10m"),
+    ax.add_feature(cfeature.COASTLINE.with_scale("50m"),
                    linewidth=0.4, edgecolor="#9ca3af", zorder=1)
     gl = ax.gridlines(draw_labels=True, linewidth=0.3, color="#d1d5db",
                       alpha=0.6, x_inline=False, y_inline=False,
@@ -469,7 +517,7 @@ summary = pd.DataFrame([
     ["Stations reporting",                                        f"{N_STATIONS_REPORTED:,}"],
     ["Days covered",                                              f"{N_DAILY_FILES}"],
 ], columns=["Metric", PERIOD_LABEL])
-summary.style.hide(axis="index")
+md_table(summary)
 ```
 
 ::: {.callout-tip}
@@ -519,14 +567,14 @@ def uptime_pair(col_daily: str, col_station: str, label: str, ylim_low: int):
 def uptime_quantiles(col_station: str, label: str):
     s = station_monthly[col_station].dropna()
     q = s.quantile([0.05, 0.50, 0.95]).to_dict()
-    return pd.DataFrame([
+    df = pd.DataFrame([
         ["5th percentile",  fmt_pct(q[0.05])],
         ["Median",          fmt_pct(q[0.50])],
         ["95th percentile", fmt_pct(q[0.95])],
         ["Best station",    fmt_pct(s.max())],
         ["Worst station",   fmt_pct(s.min())],
-    ], columns=["Statistic", f"Station-monthly {label.lower()}"]
-    ).style.hide(axis="index")
+    ], columns=["Statistic", f"Station-monthly {label.lower()}"])
+    return md_table(df)
 ```
 
 ### Data Availability
@@ -911,7 +959,7 @@ sats = pd.DataFrame([
     ["E",  "Galileo",       "Approx. 26 active SVs across IOV / FOC; signals: E1, E5a, E5b, E6"],
     ["J",  "QZSS",          "4 active operational SVs (J01–J03, J07) plus QZS-1R; L1 C/A on most, L1C/B on QZS-1R"],
 ], columns=["Sys ID", "Constellation", "Notes"])
-sats.style.hide(axis="index")
+md_table(sats)
 ```
 
 ::: {.callout-note}
