@@ -23,8 +23,10 @@ Workflow per-DOY
 from __future__ import annotations
 
 import concurrent.futures
+import hashlib
 import logging
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Iterable
@@ -33,7 +35,7 @@ from pathlib import Path
 
 from . import _binary, _stats, _workspace
 from ._base import ProcessingResult
-from ._config import write_station_config
+from ._config import record_station_provenance, write_station_config
 from ._obs_header import read_identity
 from ._stats import RunSummary, format_summary
 
@@ -41,6 +43,50 @@ logger = logging.getLogger(__name__)
 
 ENGINE = "claslib"
 DEFAULT_INTERVAL_SEC = 30
+
+# config keys whose value is a path to an aux data file we want to hash.
+_AUX_FILE_KEYS = (
+    "file-rcvantfile",
+    "file-satantfile",
+    "file-eopfile",
+    "file-blqfile",
+    "file-cssrgridfile",
+    "file-isbfile",
+    "file-phacycfile",
+    "file-dcbfile",
+    "file-geoidfile",
+)
+_AUX_KV_RE = re.compile(r"^\s*(file-[a-z]+)\s*=\s*([^\s#]+)")
+
+
+def _aux_hashes(mode_template: Path, data_dir: Path) -> dict[str, str]:
+    """SHA-256 every aux file referenced by ``mode_template``.
+
+    ``data/...`` references are resolved relative to ``data_dir``
+    (matching how rnx2rtkp resolves them inside the workspace).
+    """
+    hashes: dict[str, str] = {}
+    text = mode_template.read_text(encoding="utf-8", errors="replace")
+    for line in text.splitlines():
+        m = _AUX_KV_RE.match(line)
+        if not m:
+            continue
+        key, value = m.group(1), m.group(2)
+        if key not in _AUX_FILE_KEYS:
+            continue
+        # rel paths like ``data/foo.bar`` are resolved against data_dir
+        path = Path(value)
+        if not path.is_absolute() and value.startswith("data/"):
+            path = data_dir / value[len("data/"):]
+        if not path.is_file():
+            logger.debug("aux hash skip (missing): %s -> %s", key, path)
+            continue
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        hashes[key] = h.hexdigest()
+    return hashes
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +176,8 @@ def process_station(
     engine_version: str,
     interval: int = DEFAULT_INTERVAL_SEC,
     force: bool = False,
+    aux_data_sha256: dict[str, str] | None = None,
+    provenance_path: Path | None = None,
 ) -> ProcessingResult:
     """Run rnx2rtkp on one station's RINEX OBS for one DOY."""
     station = obs_gz.name[:4]
@@ -208,6 +256,20 @@ def process_station(
         # 7. Cleanup obs and any stray .osr.
         for stray in (obs_in_ws, workspace / f"{out_name}.osr"):
             stray.unlink(missing_ok=True)
+
+        # 8. Per-station provenance row (rectype/anttype/aux hashes).
+        record_station_provenance(
+            date_iso=target.isoformat(),
+            mode=mode,
+            station=station,
+            identity=identity,
+            config_hash=config_hash,
+            config_path=conf_dst,
+            obs_path=obs_gz,
+            template_path=mode_template,
+            aux_data_sha256=aux_data_sha256,
+            log_path=provenance_path,
+        )
 
     except BaseException:
         # Best-effort cleanup so a partial run does not poison the workspace.
@@ -337,10 +399,13 @@ def process_doy(
         return [], empty_summary
 
     workers = max_workers or os.cpu_count() or 1
+    aux_sha256 = _aux_hashes(mode_template, data_dir.resolve())
     logger.info(
-        "processing %d station(s) for %s with %d workers (mode=%s, engine=%s)",
-        len(obs_files), target.isoformat(), workers, mode, engine_version,
+        "processing %d station(s) for %s with %d workers (mode=%s, engine=%s, aux_files=%d)",
+        len(obs_files), target.isoformat(), workers, mode, engine_version, len(aux_sha256),
     )
+    for key, h in aux_sha256.items():
+        logger.info("aux %s sha256=%s", key, h[:16])
 
     results: list[ProcessingResult] = []
     failed_stations: list[str] = []
@@ -361,6 +426,7 @@ def process_doy(
                     engine_version=engine_version,
                     interval=interval,
                     force=force,
+                    aux_data_sha256=aux_sha256,
                 ): obs for obs in obs_files
             }
             for fut in concurrent.futures.as_completed(futures):

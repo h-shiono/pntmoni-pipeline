@@ -7,7 +7,17 @@ from typing import Annotated
 
 import typer
 
-from ..acquisition import cddis_brdc, geonet_f5, geonet_rinex, qzss_l6
+from ..acquisition import (
+    _base as _acq_base,
+    _provenance as _acq_provenance,
+    cddis_brdc,
+    geonet_f5,
+    geonet_rinex,
+    igs_atx,
+    igs_erp,
+    qzss_l6,
+)
+from ..processing._aux_data import build_l5copy
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -106,4 +116,89 @@ def cmd_l6(
     hourly, merged = qzss_l6.fetch(target, dest, overwrite=overwrite)
     typer.echo(
         f"acquired {len(hourly)} hourly L6 file(s); merged → {merged.path.name}"
+    )
+
+
+@app.command("igs-atx")
+def cmd_igs_atx(
+    dest: DestOpt = Path("data/raw"),
+    overwrite: OverwriteOpt = True,
+) -> None:
+    """Acquire the official igs20.atx from files.igs.org."""
+    r = igs_atx.fetch(dest, overwrite=overwrite)
+    typer.echo(
+        f"acquired {r.path.name} ({r.size_bytes} bytes, sha256={r.sha256[:12]})"
+    )
+
+
+@app.command("igs-erp")
+def cmd_igs_erp(
+    dest: DestOpt = Path("data/raw"),
+    overwrite: OverwriteOpt = True,
+) -> None:
+    """Acquire and decompress IGS Ultra-Rapid ERP (igu00p01.erp.Z) from CDDIS."""
+    compressed, plain = igs_erp.fetch(dest, overwrite=overwrite)
+    typer.echo(
+        f"acquired {compressed.path.name} ({compressed.size_bytes} bytes) "
+        f"→ {plain.path.name} ({plain.size_bytes} bytes, sha256={plain.sha256[:12]})"
+    )
+
+
+@app.command("aux-data")
+def cmd_aux_data(
+    raw_root: DestOpt = Path("data/raw"),
+    aux_dir: Annotated[
+        Path,
+        typer.Option(
+            "--aux-dir",
+            help="Production aux-data dir (will be populated with derived ATX, ERP, etc.).",
+        ),
+    ] = Path("configs/aux_data"),
+    overwrite: OverwriteOpt = True,
+) -> None:
+    """One-shot: fetch igs20.atx + igu00p01.erp, derive L5copy ATX, stage into aux dir.
+
+    The aux dir mirrors CLASLIB's data/ layout so production configs
+    (kinematic_p30*.conf) can ``file-rcvantfile = data/igs20_L5copy.atx``
+    and the engine ``--data-dir configs/aux_data`` resolves them.
+    """
+    atx_raw = igs_atx.fetch(raw_root, overwrite=overwrite)
+    erp_compressed, erp_plain = igs_erp.fetch(raw_root, overwrite=overwrite)
+
+    aux_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy ERP into aux_dir at the filename expected by configs.
+    aux_erp = aux_dir / "igu00p01.erp"
+    aux_erp.write_bytes(erp_plain.path.read_bytes())
+
+    # Derive L5copy ATX.
+    aux_atx = aux_dir / "igs20_L5copy.atx"
+    summary = build_l5copy(atx_raw.path, aux_atx, source_sha256=atx_raw.sha256)
+
+    derived_sha = _acq_base.sha256_file(aux_atx)
+    derived_record = _acq_base.AcquisitionResult(
+        source="igs_atx_l5copy",
+        url=f"derived-from:{atx_raw.url}",
+        path=aux_atx,
+        sha256=derived_sha,
+        size_bytes=aux_atx.stat().st_size,
+        retrieved_at=_acq_base.utcnow(),
+        skipped=False,
+        metadata={
+            "source_sha256": atx_raw.sha256,
+            "algorithm_version": "1",
+            "g05_inserts": summary.n_g05_inserted,
+            "j05_inserts": summary.n_j05_inserted,
+            "antennas_seen": summary.n_antennas_seen,
+        },
+    )
+    _acq_provenance.record(derived_record)
+
+    typer.echo(
+        f"aux-data staged at {aux_dir}:\n"
+        f"  igs20.atx          sha256={atx_raw.sha256[:12]} ({atx_raw.size_bytes} bytes)\n"
+        f"  igs20_L5copy.atx   sha256={derived_sha[:12]} "
+        f"(G05+={summary.n_g05_inserted}, J05+={summary.n_j05_inserted}, "
+        f"antennas={summary.n_antennas_seen})\n"
+        f"  igu00p01.erp       sha256={erp_plain.sha256[:12]} ({erp_plain.size_bytes} bytes)"
     )

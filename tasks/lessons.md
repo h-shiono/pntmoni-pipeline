@@ -573,6 +573,61 @@ percentages — inversions are easy and embarrassing.
 
 ---
 
+## [2026-05-12] aux-data: shipped igs14_L5copy.atx / igu00p01.erp untraceable, stale
+
+**Mistake / context:** First full-month CLASLIB processing run for April
+2026 was launched against ``vendor/pntmoni-claslib/data/igs14_L5copy.atx``
+and ``vendor/pntmoni-claslib/data/igu00p01.erp`` — files shipped with the
+CLASLIB fork. User flagged that (a) igs20.atx and igu00p01.erp are
+mutable upstream and need provenance, (b) the shipped L5copy ATX has
+no audit trail to the igs20.atx revision it derives from, (c) per-station
+rectype/anttype substitutions were only traceable via per-station .conf
+files on disk, not in a structured log.
+**Root cause:** Phase 0 verify path was a fast shortcut. The
+``configs/kinematic_p30_verify.conf`` lessons-entry (2026-05-09) noted
+that newer igs20.atx + clas_grid_003.def were "not yet staged"; we kept
+running on the shipped versions instead of building the production
+acquisition path early. The shipped ``igu00p01.erp`` ended at MJD
+59992.25 (2023-02-17) — **1180 days stale** vs the 2026-04 target.
+**Fix applied:**
+- ``acquisition/igs_atx.py``: fetches ``https://files.igs.org/pub/station/general/igs20.atx``
+- ``acquisition/igs_erp.py``: fetches ``https://cddis.nasa.gov/archive/gnss/products/igu00p01.erp.Z``
+  via the existing Earthdata cross-origin redirect helper; ``.Z``
+  (LZW) decompression via ``/usr/bin/uncompress`` (macOS ``gunzip``
+  does NOT support .Z)
+- ``processing/_aux_data.build_l5copy``: deterministic patcher — for
+  every antenna block with F02 present but F05 missing, inserts an F05
+  frequency sub-block copying the F02 PCV. Scope: GPS (G02→G05),
+  QZSS (J02→J05). ``# OF FREQUENCIES`` is bumped to match. Output
+  header carries PNTMONI COMMENT lines documenting source SHA-256,
+  algorithm version, and insert counts.
+- ``processing/_station_provenance``: per-(station, date, mode) JSONL
+  record at ``data/metadata/station_config.jsonl`` capturing receiver,
+  antenna, config_hash, and SHA-256 of every aux file the mode config
+  referenced (file-rcvantfile, file-eopfile, file-blqfile, …).
+- ``cli/acquire.py``: ``acquire {igs-atx, igs-erp, aux-data}``; the
+  umbrella ``acquire aux-data`` fetches both + builds the L5copy
+  derivation + stages everything into ``configs/aux_data/``.
+- Verify configs (``kinematic_p30_verify.conf``,
+  ``kinematic_p30_ttff_verify.conf``) now reference
+  ``data/igs20_L5copy.atx`` and resolve via ``--data-dir configs/aux_data``.
+**Live numbers (fetched 2026-05-12):**
+- ``igs20.atx``: 56.5 MB, 905 antennas (vs shipped 793 — newer release)
+- ``igs20_L5copy.atx``: 59.7 MB, **G05 inserts=432, J05 inserts=8**
+- ``igu00p01.erp``: 3.28 MB, fresh today
+- Single-station smoke test (0001 / 2026-04-03 / verify mode):
+  97.6% Q=4 (RTK FIX), 2.4% Q=5, 1 Q=1 (initial convergence)
+**Rule:** Aux files referenced by a processing config MUST be:
+(a) acquired with URL + SHA-256 + retrieved_at recorded, (b) derived
+files reproducibly built from a source whose SHA-256 is also recorded,
+(c) every per-station processing run logs the SHA-256 of every aux
+file used. Anything checked into ``vendor/...`` is a frozen snapshot
+that needs explicit refresh — never trust an upstream-mutable file to
+stay current just because it sits on disk.
+**Tags:** #aux-data #igs20 #l5copy #provenance #atx #erp #reproducibility
+
+---
+
 ## [2026-05-09] design: provenance JSONL is append-only attempt log
 
 **Mistake:** After a failed BRDC download saved an HTML file as if

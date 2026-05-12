@@ -26,3 +26,9 @@ logs/
 # QC binaries (user-staged, license / size sensitive — not source-controlled)
 vendor/teqc/
 teqc_OSX_*.zip
+
+# Aux data dir is populated by `pntmoni-pipeline acquire aux-data` from
+# upstream sources (igs20.atx, igu00p01.erp). The L5copy derivation is
+# reproducible from acquisition.jsonl provenance; the artefacts are
+# large (~60 MB) and version-controlling them would shadow the recipe.
+configs/aux_data/
