@@ -46,11 +46,28 @@ run_step() {
 
 log "BEGIN april_process START_DAY=${START_DAY} END_DAY=${END_DAY}"
 
+# Minimum free space required before starting a day. Each day's working
+# set peaks at ~14 GB during processing (7 GB RINEX + ~4 GB workspace
+# gunzipped obs + ~2.6 GB .pos × 2 modes), so 15 GB is the floor.
+MIN_FREE_GB=${MIN_FREE_GB:-15}
+
+free_gb_under() {
+    df -g "$1" 2>/dev/null | awk 'NR==2 {print $4}'
+}
+
 for d in $(seq -w "${START_DAY}" "${END_DAY}"); do
     target="${YEAR}-${MONTH}-${d}"
     doy=$(date -j -f '%Y-%m-%d' "${target}" +%j)
 
     log "=== ${target} (DOY ${doy}) ==="
+
+    # 0. Pre-flight disk-free gate.
+    free_gb=$(free_gb_under "${REPO_ROOT}")
+    if [ -z "${free_gb}" ] || [ "${free_gb}" -lt "${MIN_FREE_GB}" ]; then
+        log "ABORT ${target} disk free ${free_gb}GB < ${MIN_FREE_GB}GB — halting batch"
+        exit 1
+    fi
+    log "preflight ${target} disk_free=${free_gb}GB"
 
     # 1. RINEX OBS for the day
     if ! run_step "acquire-rinex ${target}" uv run pntmoni-pipeline acquire rinex --date "${target}"; then

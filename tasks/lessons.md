@@ -573,6 +573,56 @@ percentages — inversions are easy and embarrassing.
 
 ---
 
+## [2026-05-14] ops: disk-full mid-batch halted DOY 116 + harness lock-up at 0 bytes free
+
+**Mistake / context:** During the April re-run, the workstation's
+``/System/Volumes/Data`` filled to 100% (119 MiB free out of 228 GiB)
+mid-way through DOY 116 (April 26). ``rnx2rtkp`` workers cascaded
+``OSError: [Errno 28] No space left on device`` errors for ~20 stations
+within seconds. Worse, ``/private/tmp`` was on the same volume, so
+Claude Code's per-Bash output capture started failing with ``ENOSPC``,
+preventing even basic ``df`` / ``rm`` commands from running through the
+harness. Manual user intervention via terminal was needed to free space.
+**Root cause (two compounding issues):**
+1. **No pre-flight disk check.** ``april_process.sh`` happily kicked off
+   day N's acquisition + processing without verifying free space first.
+   Each day's working set peaks around 14 GB (7 GB RINEX + ~4 GB
+   gunzipped workspace + ~2.6 GB .pos × 2 modes). Crossing the threshold
+   silently was the structural failure.
+2. **Skipped-day partials never cleaned.** When ``acquire-rinex`` timed
+   out on DOY 107 and 109 (transient GSI FTP failures), the script
+   ``continue``d to the next day WITHOUT removing the partially-downloaded
+   RINEX (640 MB and 5.2 GB respectively). These accumulated alongside
+   the day-output growth.
+**Fix applied:**
+- ``scripts/april_process.sh`` now runs a pre-flight ``df -g`` check at
+  the top of every per-day loop iteration; aborts the batch (``exit 1``)
+  if free space < ``MIN_FREE_GB`` (default 15 GB, overrideable). This is
+  loud-fail: the partial run stops cleanly instead of cascading errors.
+- Recovery procedure: drop partial DOY RINEX dirs (``data/raw/rinex/2026/
+  {107,109,116}``), partial outputs from the failed DOY, and any stale
+  benchmark trees (``data/processed/kinematic_p30_verify_nolapack/``).
+- Resumed via 3 chained job invocations covering 7 missing DOYs
+  (107, 109, 116-120). All 7 completed cleanly. Final state: 30/30
+  days × 2 modes = 60 successful runs, 0 failed stations across 77,925
+  per-station provenance rows.
+**Rule:**
+- Pre-flight resource checks (disk, memory) belong at the top of every
+  long-running batch loop iteration. The cost of one ``df`` call per
+  day is negligible; the cost of a half-failed mid-day cascade is hours
+  of operator time + partial state to disentangle.
+- When a step fails and the loop ``continue``s to the next iteration,
+  the failed step's partial artefacts must be cleaned up explicitly in
+  the same SKIP path — don't leave them for "the next sweep" because
+  the next sweep may never come.
+- macOS ``/private/tmp`` shares the system volume; a batch that writes
+  several GB to ``data/`` can starve the harness's own output capture.
+  Keep working-set forecasts honest and leave at least one safety
+  margin's worth of headroom (10-15 GB).
+**Tags:** #ops #disk-full #preflight #cleanup #batch #partial-state
+
+---
+
 ## [2026-05-12] aux-data: shipped igs14_L5copy.atx / igu00p01.erp untraceable, stale
 
 **Mistake / context:** First full-month CLASLIB processing run for April
