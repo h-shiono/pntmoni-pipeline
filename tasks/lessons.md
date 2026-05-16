@@ -579,6 +579,111 @@ percentages — inversions are easy and embarrassing.
 
 ---
 
+## [2026-05-16] satellite_outages: NAQU L6 outages do NOT imply CLAS unavailable (4-way redundancy)
+
+**Mistake / context:** First normalisation pass mapped any QZSS NAQU
+with ``NAQ_SS_SIGNAL = L6`` to an ``affected_signals = ["L6"]`` event,
+implying "if L6 is out, CLAS is out". Live NAQU 2025 data showed
+157 L6-band outages across the four QZS satellites (SVN2: 24,
+SVN3: 41, SVN4: 42, SVN5: 50). At face value this would suggest
+CLAS was unavailable hundreds of times in 2025 — wildly contradicted
+by the QSS Service Performance Report which shows ≥99 % CLAS
+service availability.
+**Root cause:** The CLAS service rides on the **L6D** message
+stream, which is broadcast redundantly from ALL FOUR operational
+QZS satellites (per Performance Report Table 5: SVN002/003/004/005
+each with a distinct PRN). A single satellite's L6-band outage
+removes one broadcaster but the remaining three continue carrying
+L6D, so the user-side CLAS service remains available. CLAS service
+becomes unavailable only when the receiver's visible CLAS-broadcasting
+QZS set drops to zero — a function of (a) all broadcasters
+simultaneously down, or (b) local-sky geometry that has no
+CLAS-broadcasting QZS above the elevation mask.
+**Fix applied:** No code change required at the producer layer — the
+raw notice records and the OutageEvent schema already capture per-SVN
+L6 outage windows. What changed is the **interpretation rule** for
+downstream consumers, documented in
+[``pntmoni-docs/40-data-schemas/satellite-outages.md``](../../pntmoni-docs/40-data-schemas/satellite-outages.md)
+and in this lesson:
+
+- "L6 outage on a single SVN" ≠ "CLAS unavailable"
+- "CLAS unavailable" must be computed by intersecting outage windows
+  across the CLAS-broadcasting SVN set, OR by checking for explicit
+  CLAS-service-down notices (NAQU subtypes carrying signal=CLAS or
+  service-level outage prefixes)
+
+A helper (``analysis/clas_availability.py`` planned) will encapsulate
+this calculation so monthly-report consumers don't reproduce the
+mistake. Tracked in ``tasks/todo.md`` as a v2 task.
+**Rule:** When a service is broadcast redundantly across multiple
+sources, treat per-source outages as **inputs** to a service-availability
+calculation — never as the calculation itself. Bake the redundancy
+topology into a dedicated helper module so consumer code can't make
+the "one source down = service down" mistake by accident. Encode
+the topology (broadcaster set, PRN assignments) explicitly somewhere
+auditable, not as folklore.
+**Tags:** #satellite-outages #clas #naqu #qzss #redundancy #methodology
+
+---
+
+## [2026-05-16] http: httpx requires dict-form POST data, not list-of-tuples
+
+**Mistake:** First NAQU acquisition run failed instantly with
+``TypeError: sequence item 1: expected a bytes-like object, tuple
+found`` inside ``h11._connection.send``. The form-data was passed as
+a ``list[tuple[str, str]]`` to ``httpx.Client.post(data=...)`` —
+visually familiar from ``urllib.parse.urlencode`` which accepts
+tuple-lists for repeated keys.
+**Root cause:** httpx's ``data=`` argument expects a
+``Mapping[str, str | list[str]]``, not a sequence of tuples. The
+list-of-tuples form is accepted by stdlib's urllib but produces a
+malformed encoding chain inside httpx → h11, surfacing as a
+type error during the byte-join in the connection layer rather
+than at the API boundary where it could be reported clearly.
+**Fix applied:** Changed ``naqu._query_page`` to build a ``dict``,
+unpacking the constant flag tuples via ``dict(_DEFAULT_SERVICE_FLAGS)``.
+All values stringified explicitly. NAQU 2025 fetch then completed in
+1.7 s (568 records).
+**Rule:** When passing form data to httpx, always use a dict. Reserve
+list-of-tuples for stdlib's ``urllib.parse.urlencode`` (which builds a
+string) — not for httpx's data parameter (which expects a mapping).
+For repeated keys, use ``dict[str, list[str]]`` (httpx-supported) or
+build the urlencoded string explicitly and pass it as
+``content=...`` with a manual content-type header.
+**Tags:** #httpx #python #web-api #satellite-outages
+
+---
+
+## [2026-05-16] data: GPS NANU "GENERAL" type has different format (no DTG/SVN/sections)
+
+**Mistake / context:** First NANU 2025 enumeration parse-skipped two
+notices (2025003, 2025017) with no obvious failure mode in the
+parser. On inspection these are NANU type ``GENERAL`` — a different
+format from the standard numbered-section grammar that
+``_navstar_format.parse`` expects.
+**Root cause:** GENERAL NANUs are free-text announcements (e.g.
+"On 22 Jan 2025, GPS will transition SVN44 into the broadcast
+almanac…"). They lack the structured Section-1 fields (NANU TYPE,
+NUMBER, DTG, SVN, PRN, START/STOP JDAY/TIME). The strict parser
+requires DTG to construct ``published_at``, so the parse returns
+``None`` and the notice is silently skipped.
+**Fix applied:** Added an INFO-level log distinguishing GENERAL-type
+skips from genuine parse failures. The notice is not stored as a
+raw_notice. The full body text is still available from upstream by
+re-fetching the URL, so no data loss.
+**Rule:** When a parser is strict about fields the upstream
+sometimes omits, log the structural reason for the skip
+(``"GENERAL type, skipped (no SVN/window)"``) so operators can
+distinguish "format we know about but chose not to handle" from
+"format we didn't know existed". Document the skipped variants in
+the schema doc as known not-currently-handled cases. v2 may stuff
+GENERAL into raw_notices with ``fetched_at`` as ``published_at`` and
+a sentinel ``notice_type = "GENERAL"``; for v1 the operational
+information gain is minor and we keep the data layer strict.
+**Tags:** #nanu #parser #data-conventions #satellite-outages
+
+---
+
 ## [2026-05-16] methodology: CLAS 72 force-include is load-bearing for coastal/island networks
 
 **Mistake / context:** First sketch of the station qualification scheme

@@ -849,6 +849,44 @@ constellation-specific channels (NANU/GPS, NAGU/Galileo, NAQU/QZSS)
 into a canonical Parquet store that both this pipeline and the web
 calendar can consume.
 
+### Result (Phase 0 producer side complete, 2026-05-16)
+- `acquisition/satellite_outages/` with parsers for all three sources;
+  CLI `acquire satellite-outages [-c gps|gal|qzs|all] [-y YYYY]`
+- Live run verified: NAQU 2025 (568 raw → 310 events), NANU 2025
+  (84 parsed), NAGU RSS (6 recent). Outputs at
+  `data/processed/satellite_outages/{raw_notices/,events.parquet}` +
+  provenance at `data/metadata/satellite_outages.jsonl`
+- Cloud + web wiring tracked in
+  [`pntmoni-docs/tasks/cross-repo-todo.md`](../../pntmoni-docs/tasks/cross-repo-todo.md)
+  (ADR 0012 follow-ups)
+
+### v2 follow-ups (this repository)
+- [ ] `analysis/clas_availability.py`: helper computing CLAS-supply
+      availability from L6 outage simultaneity across the broadcaster
+      set (currently SVN002/003/004/005 per Service Performance Report
+      Table 5). Anchors the methodological distinction documented in
+      `tasks/lessons.md` 2026-05-16 "NAQU L6 outages do NOT imply CLAS
+      unavailable". Encode the broadcaster set in a config TOML so
+      future constellation changes (new QZS launches, GEO swaps)
+      surface as a config diff rather than a code change
+- [ ] NAQU `event_type` taxonomy refinement: 78 % of normalised
+      events currently land in `other` because the NAQU type set is
+      large (FCSTSUMM, FCSTCANC, UNUNOREF, FCSTRESC, …). Extend
+      `events._TYPE_MAP`, bump `methodology_version` to
+      `outage-norm-v2`, and re-run normalisation
+- [ ] GENERAL-type NANU handling: ~2-5 per year are free-text
+      announcements with no DTG / SVN / window. v2 may store them as
+      raw notices with `fetched_at` as `published_at` and a sentinel
+      `notice_type = "GENERAL"`; for v1 the operational information
+      gain is minor
+- [ ] NAGU historical backfill from
+      `https://www.gsc-europa.eu/system-status/user-notifications-archived`
+      (HTML scrape) when historical depth becomes required (e.g.
+      cross-year continuity stats)
+- [ ] SVN ↔ block mapping table to populate `block` field on
+      `OutageEvent` (currently always None). Lives well as a small
+      curated TOML under `configs/`
+
 ### Motivation
 - Web product: unified satellite-outage calendar UI (Phase 0 scope per
   `pntmoni-docs/CLAUDE.md`)
