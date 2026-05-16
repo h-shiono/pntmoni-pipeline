@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import math
 from datetime import date
 from pathlib import Path
 
@@ -308,7 +307,7 @@ def test_qualify_default_ng_days_max_uses_legacy_ratio(tmp_path: Path) -> None:
         out_of_service_path=tmp_path / "missing.toml",
         network_assignments_path=tmp_path / "missing.toml",
     )
-    assert result.ng_days_max == math.ceil(89 * qualification.DEFAULT_NG_RATIO)
+    assert result.ng_days_max == round(89 * qualification.DEFAULT_NG_RATIO)
 
 
 def test_write_parquet_and_provenance(tmp_path: Path) -> None:

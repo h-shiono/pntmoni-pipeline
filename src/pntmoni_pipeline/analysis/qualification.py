@@ -13,8 +13,10 @@ Methodology (per Shiono & Kubo 2025, ION GNSS+ Table 2):
 2. Per (station, day): an NG-day is any single excursion beyond a
    threshold across all (metric, bin) cells.
 3. Per station: ``qc_pass = n_ng_days <= ng_days_max``. Default
-   ``ng_days_max = ceil(n_days * 0.038)`` mirrors the legacy
-   ``station_stats`` ratio (~2/52 weekly samples).
+   ``ng_days_max = round(n_days * 0.038)`` mirrors the legacy
+   ``station_stats`` ratio (~2/52 weekly samples). Rounding (vs the
+   pre-``qual-v2`` ``ceil``) treats 0.038 as a centred tolerance
+   rate rather than an upper bound — see ADR 0011 Postscript.
 4. Overlay the CLAS official 72 evaluation points (force-include even
    when QC fails — protects coastal / island networks where no QC-pass
    station may exist).
@@ -58,7 +60,7 @@ ELEV_BINS = (
 )
 
 DEFAULT_NG_RATIO = 0.038  # legacy: 2 NG / 52 weekly samples
-METHODOLOGY_VERSION = "qual-v1"
+METHODOLOGY_VERSION = "qual-v2"
 
 
 @dataclass(frozen=True)
@@ -368,7 +370,7 @@ def qualify(
 
     n_days_loaded = len(tables)
     if ng_days_max is None:
-        ng_days_max = math.ceil(n_days_loaded * DEFAULT_NG_RATIO)
+        ng_days_max = round(n_days_loaded * DEFAULT_NG_RATIO)
     logger.info(
         "qualification: ref_date=%s window=%d days loaded=%d ng_days_max=%d",
         ref_date.isoformat(), window_days, n_days_loaded, ng_days_max,

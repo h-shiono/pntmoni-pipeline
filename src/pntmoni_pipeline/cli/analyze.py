@@ -447,7 +447,7 @@ def cmd_qualification(
         typer.Option(
             "--ng-days",
             help="Maximum NG-days a station may have and still qc_pass. "
-                 "Default: ceil(n_days_loaded * 0.038) per legacy ratio.",
+                 "Default: round(n_days_loaded * 0.038) per legacy ratio.",
         ),
     ] = None,
     qc_summary_root: Annotated[

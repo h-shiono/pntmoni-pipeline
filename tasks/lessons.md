@@ -921,3 +921,35 @@ report renderer or downstream consumers want the canonical record
 per artifact, query `latest-by-path-where-file-exists`, not
 `first-match-by-url`.
 **Tags:** #provenance #design #data-engineering
+
+---
+
+## [2026-05-16] methodology: ceil vs round when porting an integer ratio across granularities
+
+**Mistake:** `ng_days_max = ceil(n_days × 0.038)` was inherited
+verbatim from the legacy `station_stats` weekly-sample
+implementation when the qualification module was ported to daily
+granularity. Under weekly sampling `ceil(52 × 0.038) = ceil(1.976)
+= 2` matches the original "2 NG per 52 weeks" intent — but at
+daily granularity `ceil(89 × 0.038) = ceil(3.382) = 4` admits an
+extra NG-day not present in the original methodology, producing an
+effective ~4.5% tolerance against an intended 3.8%.
+**Root cause:** `0.038` is itself an integer-ratio approximation
+(`2/52`), so it represents a *centred rate*, not an *upper bound
+on tolerance*. `ceil` treats it as the latter; `round` preserves
+the former. The two functions are indistinguishable at the
+original sample count, so the discrepancy was invisible until the
+granularity changed.
+**Fix applied:** Switched to `round`, bumped
+`METHODOLOGY_VERSION` to `qual-v2`, regenerated the 2026-04-30
+qualification parquet (50 stations flipped qualified →
+not-qualified, none in geographic blind spots — force_eval
+overlay rescued the 4 boundary force-eval stations), and recorded
+the rationale + empirical impact in ADR 0011 Postscript.
+**Rule:** When inheriting a rule expressed as an *integer
+threshold* (e.g. "at most 2 of 52") and re-expressing it as a
+*ratio applied to a different sample count*, audit whether the
+rule's intent is a centred rate (use `round`) or an upper bound
+(use `ceil` / `floor`). Document the choice in code and bump the
+methodology version when correcting one.
+**Tags:** #qc #qualification #methodology #legacy-porting
