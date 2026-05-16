@@ -841,6 +841,73 @@ unhealthy) and is a leading indicator of degraded conditions.
 
 ---
 
+## [Phase 0–1] Task: NAQU / NAGU / NANU satellite outage acquisition
+
+### Goal
+Acquire and normalise per-satellite outage notices from the three
+constellation-specific channels (NANU/GPS, NAGU/Galileo, NAQU/QZSS)
+into a canonical Parquet store that both this pipeline and the web
+calendar can consume.
+
+### Motivation
+- Web product: unified satellite-outage calendar UI (Phase 0 scope per
+  `pntmoni-docs/CLAUDE.md`)
+- Pipeline self-consumption: continuity / integrity stats in monthly
+  report (mirrors QSS Performance Report §4.4 / §4.5) + anomaly
+  attribution
+
+### Plan (sketch)
+- [ ] `acquisition/satellite_outages/nanu.py`: USCG NAVCEN scrape +
+      parser
+- [ ] `acquisition/satellite_outages/nagu.py`: EUSPA / GSC feed +
+      parser
+- [ ] `acquisition/satellite_outages/naqu.py`: Cabinet Office / QSS
+      web scrape + parser
+- [ ] `acquisition/satellite_outages/events.py`: normalise raw
+      notices → canonical `OutageEvent` per
+      `pntmoni-docs/40-data-schemas/satellite-outages.md`
+- [ ] CLI: `pntmoni-pipeline acquire satellite-outages
+      [--constellation gps|gal|qzs]`
+- [ ] Outputs:
+  - `data/processed/satellite_outages/raw_notices/{src}/{YYYY}/{YYYY-MM}.parquet`
+  - `data/processed/satellite_outages/events.parquet`
+  - `data/metadata/satellite_outages.jsonl`
+- [ ] Unit tests for each parser + the normalisation rules
+- [ ] Historical backfill from each constellation's accessible
+      archive (depth varies — investigate during impl)
+
+### Architecture / dependencies
+Per [`pntmoni-docs/70-decisions/adr-0012.md`](../../pntmoni-docs/70-decisions/adr-0012.md):
+- Pipeline = single producer
+- `pntmoni-cloud` schedules daily acquisition + uploads to GCS
+- `pntmoni-web` reads cloud API; does NOT scrape directly
+- The shared interface IS the Parquet schema, NOT a code library
+
+### Phase Guard
+[ ] Phase 0–1 (Notice calendar prototype is in Phase 0 scope per
+    `pntmoni-docs/CLAUDE.md`; monthly-report continuity / integrity
+    consumption is Phase 1+)
+
+### Done Criteria
+- Three parsers produce `raw_notices.parquet` records validated
+  against the schema doc
+- `events.py` normalises raw → events with deterministic event_id
+- Pipeline can answer "was QZS-3 healthy on 2026-04-15?" locally
+  in <1s
+- Cloud upload + API endpoint wired up (in `pntmoni-cloud`)
+
+### Open Issues
+- Backfill horizon per source — NANU long-archived at USCG, NAQU /
+  NAGU archive depth TBD
+- SVN ↔ PRN historical mapping across satellite generation changes
+  (especially QZS-1R replacement) — needs a small reference table
+- Severity classification edge cases (e.g. multi-signal partial
+  outages) — refine `events.py` rules as live data surfaces
+- Web TypeScript type sync: schema doc is hand-curated; consider
+  a generator step if drift becomes a problem
+
+---
+
 ## How to use this file
 
 When starting a task:
