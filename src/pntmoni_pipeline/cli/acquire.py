@@ -17,6 +17,14 @@ from ..acquisition import (
     igs_erp,
     qzss_l6,
 )
+from ..acquisition.satellite_outages import (
+    _provenance as _so_provenance,
+    _writers as _so_writers,
+    events as _so_events,
+    nagu as _so_nagu,
+    nanu as _so_nanu,
+    naqu as _so_naqu,
+)
 from ..processing._aux_data import build_l5copy
 
 app = typer.Typer(no_args_is_help=True)
@@ -201,4 +209,94 @@ def cmd_aux_data(
         f"(G05+={summary.n_g05_inserted}, J05+={summary.n_j05_inserted}, "
         f"antennas={summary.n_antennas_seen})\n"
         f"  igu00p01.erp       sha256={erp_plain.sha256[:12]} ({erp_plain.size_bytes} bytes)"
+    )
+
+
+@app.command("satellite-outages")
+def cmd_satellite_outages(
+    constellation: Annotated[
+        str,
+        typer.Option(
+            "--constellation", "-c",
+            help="Filter to one constellation: gps | gal | qzs | all (default).",
+        ),
+    ] = "all",
+    year: Annotated[
+        int | None,
+        typer.Option(
+            "--year", "-y",
+            help="Target year for NANU/NAQU enumeration. Defaults to current year.",
+        ),
+    ] = None,
+    raw_dest: Annotated[
+        Path,
+        typer.Option(
+            "--raw-dest",
+            help="Root directory for raw_notices Parquet output.",
+        ),
+    ] = Path("data/processed/satellite_outages/raw_notices"),
+    events_dest: Annotated[
+        Path,
+        typer.Option(
+            "--events-dest",
+            help="Destination path for normalised events Parquet.",
+        ),
+    ] = Path("data/processed/satellite_outages/events.parquet"),
+) -> None:
+    """Acquire NANU / NAGU / NAQU satellite outage notices.
+
+    Per ADR 0012 (pntmoni-docs), this pipeline is the single producer
+    of normalised satellite-outage data. Raw notices are archived
+    per-(constellation, month); events are normalised into a single
+    Parquet keyed by SVN.
+    """
+    import datetime as _dt
+    target_year = year or _dt.date.today().year
+    selectors = {"gps", "gal", "qzs"} if constellation == "all" else {constellation}
+    if not selectors <= {"gps", "gal", "qzs"}:
+        raise typer.BadParameter(f"unknown constellation: {constellation}")
+
+    all_raw: list = []
+
+    if "gps" in selectors:
+        typer.echo(f"acquiring NANU for {target_year} ...")
+        results = _so_nanu.fetch_year(target_year)
+        all_raw.extend(r for r, _ in results)
+        typer.echo(f"  {len(results)} NANU records")
+
+    if "qzs" in selectors:
+        typer.echo(f"acquiring NAQU for {target_year} ...")
+        results = _so_naqu.fetch_year(target_year)
+        all_raw.extend(r for r, _ in results)
+        typer.echo(f"  {len(results)} NAQU records")
+
+    if "gal" in selectors:
+        typer.echo("acquiring NAGU (RSS, recent) ...")
+        results = _so_nagu.fetch_recent()
+        all_raw.extend(results)
+        typer.echo(f"  {len(results)} NAGU records")
+
+    if not all_raw:
+        typer.echo("no notices fetched; aborting before writing Parquets.")
+        return
+
+    written = _so_writers.write_raw_notices(all_raw, dest_root=raw_dest)
+    events_list = _so_events.normalize(all_raw)
+    events_path = _so_writers.write_events(events_list, dest=events_dest)
+
+    for path, n in written.items():
+        _so_provenance.record(
+            constellation=path.parent.parent.name,
+            source_url=str(path),
+            n_notices=n,
+            raw_parquet=path,
+            events_parquet=events_path,
+            extras={"year": target_year},
+        )
+
+    typer.echo(
+        f"\n--- summary ---\n"
+        f"  raw notices : {sum(written.values())} rows across "
+        f"{len(written)} parquet(s)\n"
+        f"  events      : {len(events_list)} normalised → {events_path}"
     )
