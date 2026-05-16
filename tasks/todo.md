@@ -320,38 +320,65 @@ subset across stations meeting the criteria.
   methodology section: "evaluated against N stations meeting criteria
   X, Y, Z".
 
-### Plan (sketch — refine when picked up)
-- [ ] Define qualification criteria. Candidates:
-  - Observation completeness (e.g. ≥95% of expected epochs present —
-    `n_observed_epochs / 2880` for 30s daily)
-  - SNR / multipath quality (VIF method, planned `qc/` module)
-  - F5 coordinate stability (use the F5 archive we already acquire)
-  - CLAS coverage check (any matching `inet=N` from trace) — implicit
-    via fix-rate threshold
-- [ ] Persist per-station QC metrics alongside TTFF (e.g.
-  `data/metadata/qc.jsonl`)
-- [ ] Implement `analysis/qualification.py` that joins QC + coverage
-  + criteria into a `qualified: bool` flag per (station, date)
-- [ ] Update aggregate scripts to report dual metrics (raw + qualified)
-- [ ] Document the criteria in
-  `pntmoni-docs/30-evaluation-methodology/` (or write the methodology
-  doc if not yet present)
+### Plan
+- [x] `analysis/qualification.py`: 99.73th percentile thresholds per
+      (metric × elev bin) on a rolling QC-summary window; per-station
+      NG-day count → ``qc_pass``; ``force_eval`` overlay for the CLAS
+      72 evaluation set; ``out_of_service`` hard-veto layer
+- [x] `configs/stations/out_of_service.toml` (4 entries)
+- [x] `configs/stations/eval_periods.toml` refreshed to include
+      fy2025_1st_h (72 stations, Apr-Sep 2025 per QSS report
+      published 2026-01-21)
+- [x] CLI ``analyze qualification`` with ``--ref-date`` /
+      ``--window-days`` / ``--ng-days`` override
+- [x] 12 unit tests (threshold direction, NG count, force_eval rescue,
+      out_of_service veto, fallback to latest period, parquet+jsonl
+      provenance)
+- [x] Live: ref_date=2026-04-30, window=90d → 1083/1300 qualified
+      (15 force-eval rescues, matches paper Table 2 range)
+- [ ] **Followup**: 0604 / 0605 rationale capture — inherited from
+      legacy ``station_stats.OUT_OF_SERVICE`` list without comment.
+      Investigate (NAQU / station-side notice / decommission?) before
+      removing or re-confirming the veto.
+- [ ] **Followup**: methodology doc in
+      ``pntmoni-docs/30-evaluation-methodology/`` (proposed name:
+      ``06-station-qualification.md``). Should include: 99.73th
+      rationale, force_eval semantics, window-size sensitivity,
+      cross-reference to QSS Service Performance Report (the source of
+      ``eval_periods.toml::fy*``)
+- [ ] **Followup**: stand up a watcher / periodic check for new QSS
+      Service Performance Report releases (currently semi-annual,
+      ~5 months after period end). When fy2025_2nd_h publishes
+      (~early Oct 2026), add CSV → re-run migration → bump
+      ``methodology_version`` in ``qualification.py``
+- [ ] **Followup (separate concern)**: NAQU / NAGU / NANU
+      satellite-level outage notice tracking is a distinct task — not
+      station qualification. Scope into its own module when integrity
+      / continuity reporting comes online (per QSS Performance Report
+      §4.4)
+- [ ] Update aggregate scripts to consume the qualified Parquet
+      and report dual metrics (raw + qualified) in monthly reports
 
 ### Phase Guard
-[ ] Phase 0–1 (begins once monthly report scaffolding lands; the
-    aggregate output schema feeds report templates)
+[x] Phase 0–1 (qualification module landed; dual-aggregate hookup
+    waits on monthly-report scaffolding)
 
 ### Done Criteria
-- A single station can be flagged qualified or not based on a TOML
-  criteria file
-- Monthly report shows BOTH raw N=1298 and qualified subset metrics
-- Criteria are auditable and reproducible from raw .pos + provenance
+- [x] A single station can be flagged qualified or not based on a
+      90-day QC window + TOML overlays
+- [ ] Monthly report shows BOTH raw N=1298 and qualified subset metrics
+- [x] Criteria are auditable and reproducible from
+      ``data/metadata/qualification.jsonl`` (full threshold table +
+      methodology_version + pipeline_git_sha)
 
 ### Open Issues
-- Specific thresholds (95% completeness? 90%?) need to be empirically
-  set after a few months of trend data
-- "Qualified" definition may evolve — tie versioning to the
-  methodology doc to keep cross-report comparability
+- ``ng_days_max`` default ``ceil(n_days × 0.038)`` matches legacy
+  weekly-sample ratio. 90-day fixed window vs dynamic window choice
+  needs revisit alongside the first 2-3 monthly reports (does the
+  threshold's stability deteriorate at month boundaries?)
+- "Qualified" definition may evolve — tied to
+  ``methodology_version = "qual-v1"`` in the parquet schema metadata
+  so cross-report comparability is auditable
 
 ---
 

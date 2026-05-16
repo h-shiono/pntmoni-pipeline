@@ -81,6 +81,12 @@ must be the 6-char form.
 products. RINEX (`GRJE_3.02`) uses 4-char IDs; F5
 (`coordinates_F5/GPS`) uses 6-char IDs; F3 (`coordinates_F3`) may
 differ again. Verify with NLST before building filters.
+**Followup (2026-05-16):** When extracting the CLAS 72 evaluation
+points from the QSS Service Performance Report PDF, station IDs are
+written in the 6-digit F5 form (e.g. ``950500``) — convert to the
+4-char RINEX form by taking the **last 4 characters**. Same rule
+handles 5-digit edge cases (``93001`` → ``3001``). Verified against
+``configs/stations/eval_periods.toml`` cross-reference.
 **Tags:** #geonet #gsi #data-conventions
 
 ---
@@ -570,6 +576,119 @@ the SOLQ enum directly. When summarising a run for the user,
 double-check the value-to-meaning mapping before reporting
 percentages — inversions are easy and embarrassing.
 **Tags:** #claslib #nmea #interpretation #ppp-rtk
+
+---
+
+## [2026-05-16] methodology: CLAS 72 force-include is load-bearing for coastal/island networks
+
+**Mistake / context:** First sketch of the station qualification scheme
+treated the CLAS Official 72 evaluation points as just one signal among
+many. User flagged: "気をつけないといけない点としては、clas official評価点
+72点を含むようにしないと、網によっては評価点が一点も選ばれなくなることがあります
+（主に沖縄と小笠原）". Verified empirically on the Feb-Apr 2026 window:
+the 99.73th-percentile QC thresholds (derived across the whole GEONET)
+flag essentially every Okinawa / Ogasawara station, because their
+tropical / oceanic environments produce multipath and cycle slips well
+above continental-Japan medians. Without the force-include overlay,
+netid 1 (Ishigaki), 2 (Okinawa central), and 12 (Ogasawara) would
+qualify ZERO stations from QC alone.
+**Root cause:** A single network-wide 3σ band penalises systematic
+environmental difficulty, not per-station deterioration. The QSS
+official evaluation set is the methodological escape hatch — those
+stations are evaluated *in spite of* harsh environment because the
+CLAS service must work there too.
+**Fix applied:**
+- ``analysis/qualification.qualify()`` overlays the CLAS 72 set (from
+  ``eval_periods.toml``) as ``force_eval``. The final rule is
+  ``qualified = (qc_pass OR force_eval) AND NOT out_of_service``.
+- Force-eval has a fall-back: when no period in the registry covers
+  ``ref_date`` (e.g. official report has not yet published the
+  current half-year), use the LATEST available period. Matches the
+  operational reality that QSS reports lag ~5 months.
+- ``configs/stations/out_of_service.toml`` is a hard veto layer for
+  stations that should be excluded regardless (e.g. 1098 / 1140 are
+  not in CLAS coverage at all; evaluating them would distort metrics).
+**Observed (ref_date=2026-04-30, window=90d):** qualified=1083/1300
+with 15 force-eval rescues (qc_fail-but-CLAS-72). The 15 rescues
+include IRIOMOTEJIMA (0500), IRABU (0747), TARAMA (0748), ISHIGAKI1
+(0749), HATERUMAJIMA (0751), MOTOBU (0496), KIKAI2 (0732), SETOUCHI
+(0733), YANAI (0414), KAMIYAMA (0557) — exactly the southern-island
+cohort the user predicted.
+**Rule:** Population-derived QC thresholds describe the global
+distribution; they do NOT describe whether a station is operationally
+acceptable for the service it backs. When official-evaluation lists
+exist, treat them as authoritative force-include — the alternative is
+silent geographic blind spots. Document the rescue count in every
+qualification provenance record so methodology audits can see how
+many stations got the override.
+**Tags:** #qualification #methodology #clas #okinawa #ogasawara #force-eval
+
+---
+
+## [2026-05-16] perf: pyarrow per-row column access is ~100µs / call — vectorise to numpy
+
+**Mistake:** First implementation of ``qualification._check_station_day``
+looped per station per day per threshold (~120 thresholds × 1298
+stations × 89 days ≈ 14M iterations), each calling
+``t.column(col)[row_idx].as_py()`` to extract a single float. On the
+Feb-Apr 2026 window this exceeded 3 minutes wall and was still going
+when killed.
+**Root cause:** pyarrow's chunked array indexing involves a
+chunk-resolution + Python object boxing on every ``__getitem__`` —
+roughly 100 µs per call from Python. The cost is invisible at small
+scales (unit tests with 200 stations × 10 days run in seconds) but
+explodes by ~3 orders of magnitude on real data.
+**Fix applied:** Refactored to vectorised numpy. Per day, extract each
+threshold's column once via ``t.column(col).to_pylist()`` → ``np.array``,
+then compute a single boolean comparison against the threshold. OR-fold
+across thresholds to get one per-station NG mask per day. Per-station
+"first excursion reason" is computed lazily AFTER the hot loop —
+only for the small set of already-flagged stations — so the formatting
+overhead stays bounded.
+**Result:** 32 s wall on the real 89-day × 1298-station × 121-threshold
+workload. Same numerical output; unit tests still pass (12/12).
+**Rule:** Any analysis that crosses ``n_rows × n_cols`` per-cell access
+patterns must extract columns to numpy ONCE and operate vectorised.
+``pa.Table.column(c).to_numpy(zero_copy_only=False)`` is the canonical
+escape hatch; we use ``to_pylist() → np.asarray`` because some columns
+are float64 with NaNs that numpy handles natively. Reserve per-row
+pyarrow access for genuinely sparse work (e.g. resolving a debug
+string for a station that's already flagged).
+**Tags:** #perf #pyarrow #numpy #vectorisation #qualification
+
+---
+
+## [2026-05-16] testing: population-derived thresholds need spike count < 0.27% of pool
+
+**Mistake:** First end-to-end test of ``analysis/qualification`` injected
+spike values into 4 special stations across a 10-day window. The test
+expected the spike values to *exceed* the derived 99.73th-percentile
+threshold, but they consistently fell AT it, so the strict ``>`` check
+never fired and the test failed. Time wasted: ~20 min of debugging.
+**Root cause:** When the "bad" stations' spike samples occupy too large
+a fraction of the metric pool, the 99.73th-percentile threshold gets
+pulled INTO the spike-value cluster. Concretely: pool size ~1040, spike
+count 31 → ~3% of pool, vastly more than the 0.27% tail the threshold
+is meant to isolate. The sorted index ``int(n × 0.9973)`` lands inside
+the spike cluster, so threshold = spike-value, and ``spike > threshold``
+is False.
+**Fix applied:** Designed the end-to-end test with three constraints
+that keep each metric's spike fraction < 0.27%:
+1. Each bad station spikes a DIFFERENT metric (so per-metric spike
+   count stays small).
+2. Bad stations spike on at most 3 days each (limiting per-metric
+   spike count to ~3).
+3. Baseline cohort is large enough (200 stations × 10 days = 2000
+   samples) that 3 spikes is ~0.15% of pool — comfortably below
+   the 0.27% threshold-pull boundary.
+**Rule:** When unit-testing population-derived percentile thresholds,
+the test injector must respect the threshold's own boundary. Quick
+sanity check: ``spike_count / pool_size < (1 - percentile)``, e.g.
+< 0.0027 for the 99.73th percentile. Violating this means the
+threshold gets dragged INTO the spike cluster and downstream
+comparisons silently flip semantics. Document the math inline in the
+test docstring so future maintainers don't repeat the mistake.
+**Tags:** #testing #qualification #percentile #unit-tests
 
 ---
 
