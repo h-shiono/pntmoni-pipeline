@@ -84,17 +84,59 @@ def cmd_f5(
         str,
         typer.Option(
             "--variant",
-            help="GSI archive variant: 'f5' (ITRF2014, legacy) or 'f5_1' "
-                 "(ITRF2020, current — primary CLAS reference for fy2026+).",
+            help="GSI Final archive variant: 'f5' (ITRF2014, legacy) or "
+                 "'f5_1' (ITRF2020, current — primary CLAS reference for fy2026+).",
         ),
-    ] = geonet_f5.DEFAULT_VARIANT,
+    ] = "f5",
     stations: Annotated[
         list[str] | None,
         typer.Option("--station", "-s", help="Filter by F5 station-ID prefix."),
     ] = None,
     overwrite: OverwriteOpt = False,
 ) -> None:
-    """Acquire GEONET F5 / F5.1 coordinate snapshot for one year."""
+    """Acquire GEONET F5 / F5.1 (Final) coordinate snapshot for one year."""
+    if variant not in {"f5", "f5_1"}:
+        raise typer.BadParameter(
+            f"acquire f5 expects 'f5' or 'f5_1'; got {variant!r}. "
+            f"Use 'acquire r5' for rapid solutions."
+        )
+    results = geonet_f5.fetch(
+        year, dest, variant=variant, stations=stations, overwrite=overwrite,
+    )
+    typer.echo(f"acquired {len(results)} {variant} file(s) for {year}")
+
+
+@app.command("r5")
+def cmd_r5(
+    year: Annotated[int, typer.Option("--year", "-y", help="GPS year (e.g. 2026).")],
+    dest: DestOpt = Path("data/raw"),
+    variant: Annotated[
+        str,
+        typer.Option(
+            "--variant",
+            help="GSI Rapid archive variant: 'r5' (ITRF2014, legacy) or "
+                 "'r5_1' (ITRF2020, current — basis for the Monthly 速報 "
+                 "report; F5.1 続報 supersedes when published).",
+        ),
+    ] = "r5_1",
+    stations: Annotated[
+        list[str] | None,
+        typer.Option("--station", "-s", help="Filter by F5 station-ID prefix."),
+    ] = None,
+    overwrite: OverwriteOpt = False,
+) -> None:
+    """Acquire GEONET R5 / R5.1 (Rapid) coordinate snapshot for one year.
+
+    Rapid solutions publish within ~1 week of observation (target ~2 days),
+    versus ~1-month latency for the Final F5 / F5.1 lineage. Use this for
+    the Monthly 速報 ENU computation; rerun against F5/F5.1 when the Final
+    snapshot lands. See ADR 0013.
+    """
+    if variant not in {"r5", "r5_1"}:
+        raise typer.BadParameter(
+            f"acquire r5 expects 'r5' or 'r5_1'; got {variant!r}. "
+            f"Use 'acquire f5' for final solutions."
+        )
     results = geonet_f5.fetch(
         year, dest, variant=variant, stations=stations, overwrite=overwrite,
     )

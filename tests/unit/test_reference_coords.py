@@ -173,17 +173,31 @@ def test_geonet_f5_variant_for_date_uses_clas_switchover() -> None:
     assert geonet_f5.CLAS_F51_EFFECTIVE_DATE == date(2026, 4, 1)
 
 
+def test_geonet_rapid_variant_for_date_mirrors_final_switchover() -> None:
+    from pntmoni_pipeline.acquisition import geonet_f5
+    # Rapid lineage tracks the same ITRF2014→ITRF2020 switch as Final.
+    assert geonet_f5.rapid_variant_for_date(date(2026, 3, 31)) == "r5"
+    assert geonet_f5.rapid_variant_for_date(date(2026, 4, 1)) == "r5_1"
+    assert geonet_f5.variant_for_date(date(2026, 4, 1), rapid=True) == "r5_1"
+    assert geonet_f5.variant_for_date(date(2025, 12, 1), rapid=True) == "r5"
+
+
 def test_geonet_f5_variant_routing(tmp_path: Path) -> None:
     from pntmoni_pipeline.acquisition import geonet_f5
     # Routing only — no FTP call. We just assert path strings.
     assert geonet_f5.remote_dir(2026, "f5") == "/data/coordinates_F5/GPS/2026"
     assert geonet_f5.remote_dir(2026, "f5_1") == "/data/coordinates_F5.1/2026"
+    assert geonet_f5.remote_dir(2026, "r5") == "/data/coordinates_R5/GPS/2026"
+    assert geonet_f5.remote_dir(2026, "r5_1") == "/data/coordinates_R5.1/2026"
+
     v_f5 = geonet_f5.variant_for("f5")
     v_f51 = geonet_f5.variant_for("f5_1")
-    assert v_f5.local_subdir == "f5"
-    assert v_f51.local_subdir == "f5_1"
-    assert v_f5.frame == "ITRF2014"
-    assert v_f51.frame == "ITRF2020"
+    v_r5 = geonet_f5.variant_for("r5")
+    v_r51 = geonet_f5.variant_for("r5_1")
+    assert v_f5.local_subdir == "f5"   and v_f5.frame  == "ITRF2014" and not v_f5.is_rapid
+    assert v_f51.local_subdir == "f5_1" and v_f51.frame == "ITRF2020" and not v_f51.is_rapid
+    assert v_r5.local_subdir == "r5"   and v_r5.frame  == "ITRF2014" and v_r5.is_rapid
+    assert v_r51.local_subdir == "r5_1" and v_r51.frame == "ITRF2020" and v_r51.is_rapid
     with pytest.raises(ValueError):
         geonet_f5.variant_for("nope")
 
@@ -341,3 +355,69 @@ def test_compute_for_targets_multi_day(tmp_path: Path) -> None:
     # Each target produces 2 rows (fixed + other) → 6 total.
     assert len(combined) == 6
     assert set(combined["target_date"]) == {t.isoformat() for t in targets}
+
+
+# ---------------------------------------------------------------------------
+# Variant namespacing (R5 / R5.1 速報 coexists with F5 / F5.1 続報)
+# ---------------------------------------------------------------------------
+
+def test_output_paths_are_variant_namespaced(tmp_path: Path) -> None:
+    out_root = tmp_path / "ref_coords_out"
+    d = date(2026, 4, 1)
+    f51 = _reference_coords.output_path_for_day(out_root, d, variant="f5_1")
+    r51 = _reference_coords.output_path_for_day(out_root, d, variant="r5_1")
+    week_f51 = _reference_coords.output_path_for_week(out_root, 2026, 14, variant="f5_1")
+    week_r51 = _reference_coords.output_path_for_week(out_root, 2026, 14, variant="r5_1")
+    # 速報 and 続報 must land in distinct paths so they never overwrite.
+    assert f51 != r51 and week_f51 != week_r51
+    assert "f5_1" in f51.parts and "r5_1" in r51.parts
+
+
+def test_compute_for_target_records_variant_in_df_and_result(tmp_path: Path) -> None:
+    from datetime import timedelta
+    target = date(2026, 4, 8)  # well inside the month so ±7 d stays in 2026-04
+    f5_root = tmp_path / "r5_1"
+    drift = [(target + timedelta(days=d), float(d) * 1e-4) for d in range(-7, 8)]
+    true_fixed = (-3957162.5, 3310203.0, 3737702.0)
+    true_other = (-3904422.0, 3484842.0, 3633777.0)
+    _write_synthetic_f5_1(
+        f5_root, "92110", "2110", "つくば１", "TSUKUBA1", 2026,
+        [(d, true_fixed[0] + dv, true_fixed[1] + dv, true_fixed[2] + dv) for d, dv in drift],
+    )
+    _write_synthetic_f5_1(
+        f5_root, "021098", "1098", "南鳥島", "MINAMI", 2026,
+        [(d, true_other[0] + dv, true_other[1] + dv, true_other[2] + dv) for d, dv in drift],
+    )
+    res = _reference_coords.compute_for_target(
+        target, f5_root=f5_root, fixed_station_id="92110", variant="r5_1",
+    )
+    assert res.variant == "r5_1"
+    assert (res.df["variant"] == "r5_1").all()
+
+
+def test_find_reference_coords_parquet_picks_variant(tmp_path: Path) -> None:
+    """Auto-resolution must prefer the Final lineage; explicit variant
+    must select even when both Final and Rapid exist for the same date.
+    """
+    from pntmoni_pipeline.analysis import _epoch_errors
+
+    target = date(2026, 4, 1)
+    root = tmp_path / "reference_coords"
+    f51_path = root / "f5_1" / "2026" / "20260401.parquet"
+    r51_path = root / "r5_1" / "2026" / "20260401.parquet"
+    for p in (f51_path, r51_path):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([{"target_date": target.isoformat(), "x_m": 0.0}]).to_parquet(
+            p, index=False,
+        )
+    # Default (auto) prefers Final.
+    assert _epoch_errors.find_reference_coords_parquet(target, root=root) == f51_path
+    # Explicit r5_1 returns the Rapid file.
+    assert (
+        _epoch_errors.find_reference_coords_parquet(target, root=root, variant="r5_1")
+        == r51_path
+    )
+    # Missing variant raises with the path it tried.
+    r51_path.unlink()
+    with pytest.raises(FileNotFoundError, match="r5_1"):
+        _epoch_errors.find_reference_coords_parquet(target, root=root, variant="r5_1")

@@ -924,6 +924,42 @@ per artifact, query `latest-by-path-where-file-exists`, not
 
 ---
 
+## [2026-05-16] design: reference_coords output must be variant-namespaced (R5 速報 ⇄ F5 続報)
+
+**Context**: Per ADR 0013 (`pntmoni-docs/70-decisions/adr-0013.md`),
+the Free Monthly **速報** runs against GSI's Rapid lineage (R5.1,
+ITRF2020, ~1-week latency) and the Free Monthly **続報** runs against
+the Final lineage (F5.1, ITRF2020, ~1-month latency) for the **same
+calendar month**. Pre-ADR the pipeline assumed a single reference per
+date and wrote `data/processed/reference_coords/{year}/YYYYMMDD.parquet`
+— a layout that would silently overwrite a 速報 parquet when 続報 lands
+(or vice versa).
+**Fix applied**:
+- `analysis/_reference_coords.output_path_for_day/_week` and the
+  `analyze reference-coords` CLI now **always** namespace by variant
+  (`{root}/{variant}/{year}/...`). The four variants `f5`, `f5_1`,
+  `r5`, `r5_1` get disjoint subtrees.
+- `ComputeResult.variant` and the parquet's per-row `variant` column
+  carry the lineage downstream; provenance JSONL gains `variant` and
+  `is_rapid` fields.
+- `analysis/_epoch_errors.find_reference_coords_parquet` resolves
+  variant-first. Auto-mode prefers Final (F5.1 > F5 > R5.1 > R5) so
+  Stage-1 ENU recomputes naturally pick up 続報 when it lands; an
+  explicit `--ref-variant r5_1` selects 速報.
+- One-shot migration of 3 existing parquets (20260315, W11 → `f5/`;
+  20260401 → `f5_1/`) — frame field in each row disambiguated which
+  variant produced them.
+**Rule**: When the product model intentionally republishes the same
+target with a different upstream (速報 → 続報, draft → final, ITRF2014
+→ ITRF2020), the on-disk layout must reserve disjoint paths from the
+start. Single-target paths with implicit "the latest writer wins"
+semantics are a future debugging trap. Encode the variant in the path,
+the row, and the provenance simultaneously so any one can be lost
+without losing the lineage.
+**Tags:** #reference-coords #adr-0013 #r5 #f5 #variant #design
+
+---
+
 ## [2026-05-16] methodology: ceil vs round when porting an integer ratio across granularities
 
 **Mistake:** `ng_days_max = ceil(n_days × 0.038)` was inherited

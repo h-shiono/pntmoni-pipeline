@@ -1,19 +1,29 @@
-"""GEONET F5 / F5.1 coordinate-solution acquisition (GSI).
+"""GEONET F5 / F5.1 / R5 / R5.1 coordinate-solution acquisition (GSI).
 
-Two GSI archives currently coexist:
+GSI publishes the GEONET station-coordinate time series in two
+"flavours" — *final* and *rapid* — each in two reference-frame variants:
 
-- ``F5``  (``/data/coordinates_F5/GPS/{year}/``) — ITRF2014 frame.
-  Legacy primary, snapshot publication delay ~1 month.
-- ``F5.1`` (``/data/coordinates_F5.1/{year}/``) — ITRF2020 frame, no
-  ``GPS/`` subdirectory. Becomes the CLAS reference for the April 2026
-  fiscal half forward (per QSS announcement; verify the exact
-  effective date in the operations notes). Snapshot stays current
-  closer to the present than F5.
+- ``F5``   Final, ITRF2014  (``/data/coordinates_F5/GPS/``).
+- ``F5.1`` Final, ITRF2020  (``/data/coordinates_F5.1/``).
+- ``R5``   Rapid, ITRF2014  (``/data/coordinates_R5/GPS/``).
+- ``R5.1`` Rapid, ITRF2020  (``/data/coordinates_R5.1/``).
 
-Local storage uses separate subdirs so the two archives never mix:
+The final products are the peer-reviewed reference (Shiono & Kubo 2026,
+NAVIGATION) but lag ~1 month behind observation. The rapid products
+publish within ~1 week of observation (target ~2 days). PNT Moni uses
+the rapid solutions for its monthly **速報** (preliminary) reports and
+the final solutions for the **続報** (follow-up) reports — see
+``pntmoni-docs/70-decisions/adr-0013.md``.
 
-  data/raw/f5/{year}/{f5_id}.{yy}.pos
-  data/raw/f5_1/{year}/{f5_id}.{yy}.pos
+CLAS switches from the ITRF2014 lineage (F5/R5) to ITRF2020 (F5.1/R5.1)
+on :data:`CLAS_F51_EFFECTIVE_DATE` per QSS announcement IS-QZSS_260327.
+
+Local storage uses separate subdirs so the four archives never mix::
+
+    data/raw/f5/{year}/{f5_id}.{yy}.pos
+    data/raw/f5_1/{year}/{f5_id}.{yy}.pos
+    data/raw/r5/{year}/{f5_id}.{yy}.pos
+    data/raw/r5_1/{year}/{f5_id}.{yy}.pos
 
 The ``--variant`` flag at the CLI selects which archive a run targets.
 """
@@ -32,10 +42,11 @@ logger = logging.getLogger(__name__)
 
 
 class F5Variant(NamedTuple):
-    label: str            # "f5" / "f5_1"
+    label: str            # "f5" / "f5_1" / "r5" / "r5_1"
     remote_root: str      # FTP path
     local_subdir: str     # under dest_root/
     frame: str            # for documentation; not enforced
+    is_rapid: bool        # True for R5 / R5.1, False for F5 / F5.1
 
 
 F5_VARIANTS: dict[str, F5Variant] = {
@@ -44,12 +55,28 @@ F5_VARIANTS: dict[str, F5Variant] = {
         remote_root="/data/coordinates_F5/GPS",
         local_subdir="f5",
         frame="ITRF2014",
+        is_rapid=False,
     ),
     "f5_1": F5Variant(
         label="f5_1",
         remote_root="/data/coordinates_F5.1",
         local_subdir="f5_1",
         frame="ITRF2020",
+        is_rapid=False,
+    ),
+    "r5": F5Variant(
+        label="r5",
+        remote_root="/data/coordinates_R5/GPS",
+        local_subdir="r5",
+        frame="ITRF2014",
+        is_rapid=True,
+    ),
+    "r5_1": F5Variant(
+        label="r5_1",
+        remote_root="/data/coordinates_R5.1",
+        local_subdir="r5_1",
+        frame="ITRF2020",
+        is_rapid=True,
     ),
 }
 
@@ -57,20 +84,28 @@ DEFAULT_VARIANT = "f5"      # backward-compat default for explicit
                             # ``acquire`` runs; ``--variant`` is recommended
 SOURCE_PREFIX = "geonet_"   # provenance source label = SOURCE_PREFIX + variant
 
-# CLAS evaluation officially switches from F5 (ITRF2014) to F5.1
-# (ITRF2020) on this date per QSS announcement IS-QZSS_260327
-# (https://qzss.go.jp/info/information/is-qzss_260327.html).
-# Pre-switch dates are evaluated against F5; post-switch against F5.1.
+# CLAS evaluation officially switches from the ITRF2014 lineage (F5/R5)
+# to ITRF2020 (F5.1/R5.1) on this date per QSS announcement
+# IS-QZSS_260327 (https://qzss.go.jp/info/information/is-qzss_260327.html).
+# Pre-switch dates are evaluated against F5/R5; post-switch against F5.1/R5.1.
 CLAS_F51_EFFECTIVE_DATE = date(2026, 4, 1)
 
 
-def variant_for_date(target: date) -> str:
-    """Return the F5 variant CLAS officially uses for ``target``.
+def variant_for_date(target: date, *, rapid: bool = False) -> str:
+    """Return the GSI variant CLAS officially uses for ``target``.
 
-    Pre-:data:`CLAS_F51_EFFECTIVE_DATE` → ``"f5"`` (ITRF2014).
-    On or after that date → ``"f5_1"`` (ITRF2020).
+    Pre-:data:`CLAS_F51_EFFECTIVE_DATE` → ``"f5"`` / ``"r5"`` (ITRF2014).
+    On or after that date → ``"f5_1"`` / ``"r5_1"`` (ITRF2020).
     """
-    return "f5_1" if target >= CLAS_F51_EFFECTIVE_DATE else "f5"
+    post_switch = target >= CLAS_F51_EFFECTIVE_DATE
+    if rapid:
+        return "r5_1" if post_switch else "r5"
+    return "f5_1" if post_switch else "f5"
+
+
+def rapid_variant_for_date(target: date) -> str:
+    """Convenience alias for ``variant_for_date(target, rapid=True)``."""
+    return variant_for_date(target, rapid=True)
 
 
 def variant_for(label: str) -> F5Variant:
@@ -94,14 +129,16 @@ def fetch(
     stations: Iterable[str] | None = None,
     overwrite: bool = False,
 ) -> list[AcquisitionResult]:
-    """Download F5/F5.1 coordinate files for a year.
+    """Download F5/F5.1/R5/R5.1 coordinate files for a year.
 
     Parameters
     ----------
     year : 4-digit GPS year of the snapshot.
     dest_root : root for ``{variant.local_subdir}/{year}/`` layout.
-    variant : ``"f5"`` (legacy, ITRF2014) or ``"f5_1"`` (current, ITRF2020).
-    stations : optional 6-char F5 station ID prefixes to filter by;
+    variant : one of ``"f5"`` (legacy final), ``"f5_1"`` (current final),
+        ``"r5"`` (legacy rapid), ``"r5_1"`` (current rapid). See
+        :data:`F5_VARIANTS`.
+    stations : optional F5 station-ID prefixes to filter by;
         ``None`` mirrors all.
     """
     v = variant_for(variant)
@@ -137,6 +174,7 @@ def fetch(
                         "year": year,
                         "variant": v.label,
                         "frame": v.frame,
+                        "is_rapid": v.is_rapid,
                         "station": name[:4],
                     },
                     overwrite=overwrite,
@@ -151,6 +189,7 @@ __all__ = [
     "F5Variant",
     "F5_VARIANTS",
     "fetch",
+    "rapid_variant_for_date",
     "remote_dir",
     "variant_for",
     "variant_for_date",

@@ -946,6 +946,87 @@ Per [`pntmoni-docs/70-decisions/adr-0012.md`](../../pntmoni-docs/70-decisions/ad
 
 ---
 
+## [2026-05-16] Task: R5 / R5.1 (Rapid) acquisition + 速報 ENU computation
+
+### Goal
+Per ADR 0013 (`pntmoni-docs/70-decisions/adr-0013.md`), the Free Monthly
+速報 report is built from GSI's **Rapid** coordinate solution lineage
+(R5/R5.1) so monthly numbers can be published ~1 week after end-of-month
+instead of waiting ~1 month for the Final (F5/F5.1) snapshot. The same
+month is later republished as 続報 against F5.1 once available. The
+pipeline must therefore (a) acquire R5/R5.1 alongside F5/F5.1 and (b)
+compute reference coordinates + ENU from R5.1 without overwriting the
+Final-variant outputs that will land later.
+
+### Plan
+- [x] `acquisition/geonet_f5.py`: extend `F5_VARIANTS` with `r5` /
+      `r5_1`; add `is_rapid` field on `F5Variant`; add
+      `rapid_variant_for_date()` mirroring `variant_for_date()` for the
+      ITRF2014→ITRF2020 switch
+- [x] CLI: `pntmoni-pipeline acquire r5 [--variant r5|r5_1]` (default
+      `r5_1` for post-2026-04-01 work); `acquire f5` retains its
+      f5/f5_1-only scope
+- [x] `analysis/_reference_coords.py`: thread `variant` through
+      `compute_for_target` / `compute_for_targets`; record in the
+      `ComputeResult.variant` field and on the parquet row; output
+      paths are now **variant-namespaced**
+      (`{root}/{variant}/{year}/...`) so R5.1 速報 and F5.1 続報 coexist
+- [x] CLI `analyze reference-coords --f5-variant` accepts the new
+      values (`r5`, `r5_1`, `auto-rapid`); spanning the ITRF2014→ITRF2020
+      switch still fails loud per the Final flow
+- [x] `analysis/_epoch_errors.find_reference_coords_parquet`
+      variant-aware with auto-resolve preferring Final (F5.1 > F5 > R5.1
+      > R5); CLI `analyze epoch-errors --ref-variant r5_1` for explicit
+      Rapid lookup
+- [x] One-shot migration of 3 existing reference_coords parquets into
+      the new variant subdirs (f5/, f5_1/)
+- [x] Tests: variant routing for R5/R5.1, rapid variant_for_date,
+      output paths namespaced, find_reference_coords_parquet picks
+      variant. 25/25 reference + epoch_errors green; 112/112 suite green
+- [ ] Live: `acquire r5 --year 2026 --variant r5_1` against terras.gsi
+      to verify the assumed FTP path `/data/coordinates_R5.1/2026/`.
+      If the listing comes back empty, capture the correct path and
+      update `F5_VARIANTS["r5_1"].remote_root`
+- [ ] Live: `analyze reference-coords --date 2026-04-01 --f5-variant
+      auto-rapid` → produces `data/processed/reference_coords/r5_1/2026/
+      20260401.parquet` for the 速報 ENU compute
+- [ ] Downstream: re-run `analyze epoch-errors --date 2026-04-01
+      --ref-variant r5_1` (then accuracy / ttff-stats / monthly) to
+      land the first 速報 cube; document the R5.1-vs-F5.1 numerical
+      delta in lessons.md once F5.1 lands
+
+### Phase Guard
+[x] Phase 0–1 (Rapid ingestion path is the architectural scaffolding
+    ADR 0013 requires for Phase 1's Free Monthly 速報 launch)
+
+### Done Criteria
+- [x] `acquire r5` and `acquire f5` produce disjoint local archives
+- [x] reference_coords parquets are variant-namespaced so 速報/続報
+      coexist
+- [ ] First live R5.1 acquisition succeeds (or the assumed remote path
+      is corrected after a clear failure)
+- [ ] First R5.1-based ENU parquet rendered and compared against an
+      F5.1 baseline once the latter is available
+
+### Open Issues
+- The R5 / R5.1 FTP paths
+  (`/data/coordinates_R5/GPS/`, `/data/coordinates_R5.1/`) are
+  reasoned by analogy with F5 / F5.1 — to be confirmed on first live
+  run. The fetch already raises a clear `FileNotFoundError` if the
+  directory is empty / missing, which surfaces a wrong path quickly
+- R5 / R5.1 file format is assumed structurally identical to F5 /
+  F5.1 (SITE/INF + SOLVER/INF + +DATA block; same row shape). The
+  `_f5_reader` is format-agnostic past the +DATA marker so this
+  should hold; verify on first read and record the
+  `SOLVER/INF::SOLUTION_ID` string (likely `R5(GPS)` vs `F5(GPS)`)
+  in a lesson if it diverges in any unexpected way
+- After the first 速報 ENU run, document the R5.1 vs F5.1 numerical
+  delta (expected ~mm-to-low-cm at aggregate, larger near recent
+  deformation events) in lessons.md so the Free 速報 → 続報
+  republication pattern's typical magnitude is on-record
+
+---
+
 ## How to use this file
 
 When starting a task:

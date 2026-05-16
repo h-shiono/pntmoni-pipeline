@@ -153,10 +153,13 @@ def cmd_reference_coords(
         str,
         typer.Option(
             "--f5-variant",
-            help="GSI variant: 'auto' (date-based: F5 pre-2026-04-01, F5.1 "
-                 "after; per QSS IS-QZSS_260327), 'f5' (ITRF2014, force), "
-                 "or 'f5_1' (ITRF2020, force). Resolves f5_root to "
-                 "data/raw/{variant} unless --f5-root is set.",
+            help="GSI coordinate-solution variant. Final: 'auto' (date-based "
+                 "F5 pre-2026-04-01 / F5.1 after, per QSS IS-QZSS_260327), "
+                 "'f5' (ITRF2014, force), 'f5_1' (ITRF2020, force). Rapid: "
+                 "'auto-rapid' (date-based R5/R5.1 — used for the Monthly "
+                 "速報), 'r5', 'r5_1'. Resolves f5_root to "
+                 "data/raw/{variant} unless --f5-root is set; output is "
+                 "written under {out}/{variant}/ to keep 速報/続報 separate.",
         ),
     ] = "auto",
     output_root: Annotated[
@@ -192,25 +195,38 @@ def cmd_reference_coords(
 
     if date_ is not None:
         targets = [_parse_iso_date(date_)]
-        out_path = _reference_coords.output_path_for_day(output_root, targets[0])
     else:
         assert week is not None
         year, iso_week = _parse_iso_week(week)
         targets = _iso_week_dates(year, iso_week)
-        out_path = _reference_coords.output_path_for_week(output_root, year, iso_week)
+
+    # Resolve variant first (needed for output path).
+    if f5_variant in ("auto", "auto-rapid"):
+        rapid = f5_variant == "auto-rapid"
+        chosen = {geonet_f5.variant_for_date(t, rapid=rapid) for t in targets}
+        if len(chosen) > 1:
+            raise typer.BadParameter(
+                f"targets span the ITRF2014→ITRF2020 switch "
+                f"({geonet_f5.CLAS_F51_EFFECTIVE_DATE.isoformat()}); "
+                f"split into two runs with explicit --f5-variant"
+            )
+        f5_variant = chosen.pop()
+    if f5_variant not in geonet_f5.F5_VARIANTS:
+        raise typer.BadParameter(
+            f"unknown --f5-variant: {f5_variant}; "
+            f"choose from {sorted(geonet_f5.F5_VARIANTS)} or 'auto'/'auto-rapid'"
+        )
+
+    if date_ is not None:
+        out_path = _reference_coords.output_path_for_day(
+            output_root, targets[0], variant=f5_variant,
+        )
+    else:
+        out_path = _reference_coords.output_path_for_week(
+            output_root, year, iso_week, variant=f5_variant,
+        )
 
     if f5_root is None:
-        if f5_variant == "auto":
-            chosen = {geonet_f5.variant_for_date(t) for t in targets}
-            if len(chosen) > 1:
-                raise typer.BadParameter(
-                    f"targets span the F5→F5.1 switch "
-                    f"({geonet_f5.CLAS_F51_EFFECTIVE_DATE.isoformat()}); "
-                    f"split into two runs with explicit --f5-variant"
-                )
-            f5_variant = chosen.pop()
-        if f5_variant not in ("f5", "f5_1"):
-            raise typer.BadParameter(f"unknown --f5-variant: {f5_variant}")
         f5_root = Path("data/raw") / f5_variant
 
     jumps = _reference_coords.load_jumps(jumps_path)
@@ -223,6 +239,7 @@ def cmd_reference_coords(
         jumps=jumps,
         allow_partial_window=allow_partial_window,
         min_fixed_days=min_fixed_days,
+        variant=f5_variant,
     )
     _reference_coords.write_parquet(combined, out_path)
     _reference_coords.record_provenance(
@@ -232,7 +249,10 @@ def cmd_reference_coords(
         window_days=window_days,
     )
 
-    typer.echo(f"wrote {out_path} ({len(combined)} rows, {len(results)} target dates)")
+    typer.echo(
+        f"wrote {out_path} ({len(combined)} rows, {len(results)} target dates, "
+        f"variant={f5_variant})"
+    )
     for r in results:
         typer.echo(
             f"  {r.df['target_date'].iloc[0]}  "
@@ -262,7 +282,16 @@ def cmd_epoch_errors(
         typer.Option(
             "--ref-coords",
             help="Reference-coords Parquet. Auto-detect under "
-                 "data/processed/reference_coords/{year}/ if omitted.",
+                 "data/processed/reference_coords/{variant}/{year}/ if omitted.",
+        ),
+    ] = None,
+    ref_variant: Annotated[
+        str | None,
+        typer.Option(
+            "--ref-variant",
+            help="Reference-coords variant subdir to look up "
+                 "(f5/f5_1/r5/r5_1). Use r5_1 for the Monthly 速報 ENU; "
+                 "omit to auto-prefer Final (F5.1 > F5 > R5.1 > R5).",
         ),
     ] = None,
     output_root: Annotated[
@@ -289,6 +318,7 @@ def cmd_epoch_errors(
         mode=mode,
         processed_root=processed_root,
         ref_coords_path=ref_coords_path,
+        ref_variant=ref_variant,
         output_root=output_root,
         stations=stations,
         engine_version=engine_version,

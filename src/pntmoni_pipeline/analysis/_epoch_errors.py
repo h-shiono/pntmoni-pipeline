@@ -135,24 +135,39 @@ def find_reference_coords_parquet(
     target: date,
     *,
     root: Path = DEFAULT_REF_COORDS_ROOT,
+    variant: str | None = None,
 ) -> Path:
     """Locate the reference-coords Parquet that contains rows for ``target``.
 
-    Search order: ``{year}/{YYYYMMDD}.parquet``, then weekly
-    ``{year}/W{ww}.parquet`` files where the target date's
-    ISO-week matches.
+    Output layout is variant-namespaced
+    (``{root}/{variant}/{year}/{...}.parquet``) so the Monthly 速報 (R5/R5.1)
+    and 続報 (F5/F5.1) snapshots coexist for the same target date.
+
+    Search order within ``{root}/{variant}/``: daily
+    ``{year}/{YYYYMMDD}.parquet`` first, then weekly
+    ``{year}/W{ww}.parquet`` where the target date's ISO-week matches.
+
+    Auto-resolution when ``variant is None``: prefer the final (續報) lineage
+    over the rapid (速報) one if both exist — F5.1, F5, R5.1, R5 in that
+    order. This matches the "use the most rigorous reference available"
+    semantics; callers wanting an explicit rapid lookup must pass
+    ``variant="r5_1"``.
     """
-    year_dir = root / f"{target.year}"
-    daily = year_dir / f"{target.strftime('%Y%m%d')}.parquet"
-    if daily.is_file():
-        return daily
-    iso_year, iso_week, _ = target.isocalendar()
-    weekly = root / f"{iso_year}" / f"W{iso_week:02d}.parquet"
-    if weekly.is_file():
-        return weekly
+    variants = [variant] if variant else ("f5_1", "f5", "r5_1", "r5")
+    tried: list[Path] = []
+    for v in variants:
+        year_dir = root / v / f"{target.year}"
+        daily = year_dir / f"{target.strftime('%Y%m%d')}.parquet"
+        if daily.is_file():
+            return daily
+        iso_year, iso_week, _ = target.isocalendar()
+        weekly = root / v / f"{iso_year}" / f"W{iso_week:02d}.parquet"
+        if weekly.is_file():
+            return weekly
+        tried.extend([daily, weekly])
     raise FileNotFoundError(
         f"no reference_coords Parquet found for {target} under {root}; "
-        f"expected {daily} or {weekly}"
+        f"tried {tried}"
     )
 
 
@@ -184,6 +199,7 @@ def compute_epoch_errors(
     mode: str,
     processed_root: Path = DEFAULT_PROCESSED_ROOT,
     ref_coords_path: Path | None = None,
+    ref_variant: str | None = None,
     output_root: Path = DEFAULT_OUTPUT_ROOT,
     engine_version: str = "unknown",
     stations: Iterable[str] | None = None,
@@ -192,7 +208,7 @@ def compute_epoch_errors(
 ) -> EpochErrorsResult:
     """Build epoch_errors Parquet for one DOY × all (or filtered) stations."""
     if ref_coords_path is None:
-        ref_coords_path = find_reference_coords_parquet(target)
+        ref_coords_path = find_reference_coords_parquet(target, variant=ref_variant)
     ref = load_reference_coords_for_target(target, ref_coords_path=ref_coords_path)
     ref_xyz_by_rinex = {
         row.rinex_id: np.array([row.x_m, row.y_m, row.z_m])

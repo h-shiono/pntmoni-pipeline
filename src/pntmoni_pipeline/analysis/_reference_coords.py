@@ -172,6 +172,7 @@ class ComputeResult:
     n_fixed_days_dropped: int
     applied_jump_dates: list[date]
     f5_sha256: dict[str, str]
+    variant: str                     # "f5" | "f5_1" | "r5" | "r5_1"
 
 
 def compute_for_target(
@@ -183,6 +184,7 @@ def compute_for_target(
     jumps: Sequence[FixedStationJump] | None = None,
     allow_partial_window: bool = False,
     min_fixed_days: int = DEFAULT_MIN_FIXED_DAYS,
+    variant: str = "f5_1",
 ) -> ComputeResult:
     """Compute reference coordinates for one target date.
 
@@ -319,6 +321,8 @@ def compute_for_target(
     })
 
     df = pd.DataFrame(rows).sort_values("f5_id").reset_index(drop=True)
+    if not df.empty:
+        df["variant"] = variant
     return ComputeResult(
         df=df,
         fixed_metadata=fixed_metadata,
@@ -327,6 +331,7 @@ def compute_for_target(
         n_fixed_days_dropped=n_dropped,
         applied_jump_dates=applied_jumps,
         f5_sha256=f5_sha256,
+        variant=variant,
     )
 
 
@@ -343,6 +348,7 @@ def compute_for_targets(
     jumps: Sequence[FixedStationJump] | None = None,
     allow_partial_window: bool = False,
     min_fixed_days: int = DEFAULT_MIN_FIXED_DAYS,
+    variant: str = "f5_1",
 ) -> tuple[pd.DataFrame, list[ComputeResult]]:
     """Run :func:`compute_for_target` for several dates.
 
@@ -360,6 +366,7 @@ def compute_for_targets(
             jumps=jumps,
             allow_partial_window=allow_partial_window,
             min_fixed_days=min_fixed_days,
+            variant=variant,
         )
         results.append(r)
         frames.append(r.df)
@@ -372,15 +379,17 @@ def compute_for_targets(
 # ---------------------------------------------------------------------------
 
 def output_path_for_week(
-    output_root: Path, year: int, iso_week: int,
+    output_root: Path, year: int, iso_week: int, variant: str = "f5_1",
 ) -> Path:
-    return output_root / f"{year}" / f"W{iso_week:02d}.parquet"
+    return output_root / variant / f"{year}" / f"W{iso_week:02d}.parquet"
 
 
 def output_path_for_day(
-    output_root: Path, target: date,
+    output_root: Path, target: date, variant: str = "f5_1",
 ) -> Path:
-    return output_root / f"{target.year}" / f"{target.strftime('%Y%m%d')}.parquet"
+    return (
+        output_root / variant / f"{target.year}" / f"{target.strftime('%Y%m%d')}.parquet"
+    )
 
 
 def write_parquet(df: pd.DataFrame, dest: Path) -> Path:
@@ -406,6 +415,8 @@ def record_provenance(
         for r in results:
             entry = {
                 "target_date": str(r.df["target_date"].iloc[0]) if not r.df.empty else None,
+                "variant": r.variant,
+                "is_rapid": r.variant.startswith("r5"),
                 "fixed_station_id": fixed_station_id,
                 "fixed_metadata": {
                     "rinex_id": r.fixed_metadata.rinex_id,
