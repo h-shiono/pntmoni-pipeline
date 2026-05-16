@@ -1,0 +1,32 @@
+# configs/stations/out_of_service.toml
+# GEONET stations that should be EXCLUDED from the absolute-evaluation
+# reference set regardless of QC pass/fail or CLAS official evaluation
+# point status. These are physical/operational exclusions.
+#
+# The qualification module (`analysis/qualification.py`) treats this list
+# as a hard veto:
+#
+#     qualified = (qc_pass OR force_eval) AND NOT out_of_service
+#
+# Reasons captured below are at the per-station level so the audit trail
+# survives. Add new entries with a [stations."ID"] block and at least
+# `reason` + `since` fields. Use `until = ...` if the exclusion is
+# time-bounded; omit it for permanent / open-ended exclusions.
+#
+# This file is hand-curated (not auto-generated from legacy CSVs).
+
+[stations."1098"]
+reason = "Minamitorishima — Pacific remote island, outside CLAS coverage. F5 reports isinside=False; PPP-RTK falls back to Q=1 (single point) for the entire DOY regardless of build."
+since = 2026-04-01
+
+[stations."1140"]
+reason = "Okinotorishima — Pacific remote island, outside CLAS coverage. F5 reports isinside=False; PPP-RTK falls back to Q=1 (single point) for the entire DOY regardless of build."
+since = 2026-04-01
+
+[stations."0604"]
+reason = "Legacy gnss_research_toolbox.station_stats OUT_OF_SERVICE list (rationale not captured in legacy code — investigate before removing)."
+since = 2026-04-01
+
+[stations."0605"]
+reason = "Legacy gnss_research_toolbox.station_stats OUT_OF_SERVICE list (rationale not captured in legacy code — investigate before removing)."
+since = 2026-04-01

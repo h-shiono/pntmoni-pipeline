@@ -17,6 +17,7 @@ from ..analysis import (
     _ttff,
     _ttff_stats,
     format_summary,
+    qualification,
 )
 
 app = typer.Typer(no_args_is_help=True)
@@ -429,4 +430,89 @@ def cmd_monthly(
     typer.echo(
         f"wrote 4 Parquets for {res.period} (mode={res.mode})  "
         f"pooled {res.n_dates_pooled} day(s)"
+    )
+
+
+
+@app.command("qualification")
+def cmd_qualification(
+    ref_date_s: Annotated[
+        str, typer.Option("--ref-date", help="Window end date (inclusive), YYYY-MM-DD."),
+    ],
+    window_days: Annotated[
+        int, typer.Option("--window-days", help="Length of the rolling QC window in days."),
+    ] = 90,
+    ng_days_max: Annotated[
+        int | None,
+        typer.Option(
+            "--ng-days",
+            help="Maximum NG-days a station may have and still qc_pass. "
+                 "Default: ceil(n_days_loaded * 0.038) per legacy ratio.",
+        ),
+    ] = None,
+    qc_summary_root: Annotated[
+        Path, typer.Option("--qc-root", help="Root of qc_summary parquets."),
+    ] = Path("data/processed/qc_summary"),
+    eval_periods_path: Annotated[
+        Path,
+        typer.Option(
+            "--eval-periods",
+            help="CLAS official evaluation periods TOML (force-include set).",
+        ),
+    ] = Path("configs/stations/eval_periods.toml"),
+    out_of_service_path: Annotated[
+        Path,
+        typer.Option(
+            "--out-of-service",
+            help="Hard-veto stations TOML (CLAS-out-of-coverage / decommissioned).",
+        ),
+    ] = Path("configs/stations/out_of_service.toml"),
+    network_assignments_path: Annotated[
+        Path,
+        typer.Option(
+            "--network-assignments",
+            help="GEONET station → netid lookup TOML (for output column).",
+        ),
+    ] = Path("configs/stations/network_assignments.toml"),
+    out_root: Annotated[
+        Path,
+        typer.Option(
+            "--out",
+            help="Output directory for {ref_date}_{window}d.parquet.",
+        ),
+    ] = Path("data/processed/station_qualification"),
+    provenance_log: Annotated[
+        Path,
+        typer.Option(
+            "--provenance-log",
+            help="JSONL provenance log (appended).",
+        ),
+    ] = Path("data/metadata/qualification.jsonl"),
+) -> None:
+    """Run the absolute-evaluation station qualification."""
+    ref_date = _parse_iso_date(ref_date_s)
+    result = qualification.qualify(
+        ref_date,
+        window_days=window_days,
+        ng_days_max=ng_days_max,
+        qc_summary_root=qc_summary_root,
+        eval_periods_path=eval_periods_path,
+        out_of_service_path=out_of_service_path,
+        network_assignments_path=network_assignments_path,
+    )
+    dest = out_root / f"{ref_date.isoformat()}_{window_days}d.parquet"
+    qualification.write_parquet(result, dest)
+    qualification.write_provenance_jsonl(result, provenance_log)
+    n_q = sum(1 for r in result.rows if r["qualified"])
+    n_qc = sum(1 for r in result.rows if r["qc_pass"])
+    n_fe = sum(1 for r in result.rows if r["force_eval"])
+    n_oos = sum(1 for r in result.rows if r["out_of_service"])
+    typer.echo(
+        f"qualification for ref_date={ref_date.isoformat()} window={window_days}d "
+        f"ng_days_max={result.ng_days_max}\n"
+        f"  qualified : {n_q}/{len(result.rows)}\n"
+        f"  qc_pass   : {n_qc}\n"
+        f"  force_eval: {n_fe}\n"
+        f"  out_of_svc: {n_oos}\n"
+        f"  wrote     : {dest}"
     )
