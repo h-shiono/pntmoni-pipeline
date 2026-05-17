@@ -983,17 +983,42 @@ Final-variant outputs that will land later.
 - [x] Tests: variant routing for R5/R5.1, rapid variant_for_date,
       output paths namespaced, find_reference_coords_parquet picks
       variant. 25/25 reference + epoch_errors green; 112/112 suite green
-- [ ] Live: `acquire r5 --year 2026 --variant r5_1` against terras.gsi
-      to verify the assumed FTP path `/data/coordinates_R5.1/2026/`.
-      If the listing comes back empty, capture the correct path and
-      update `F5_VARIANTS["r5_1"].remote_root`
-- [ ] Live: `analyze reference-coords --date 2026-04-01 --f5-variant
-      auto-rapid` → produces `data/processed/reference_coords/r5_1/2026/
-      20260401.parquet` for the 速報 ENU compute
-- [ ] Downstream: re-run `analyze epoch-errors --date 2026-04-01
-      --ref-variant r5_1` (then accuracy / ttff-stats / monthly) to
-      land the first 速報 cube; document the R5.1-vs-F5.1 numerical
-      delta in lessons.md once F5.1 lands
+- [x] Live: `acquire r5 --year 2026 --variant r5_1` against terras.gsi
+      verified the assumed FTP path `/data/coordinates_R5.1/2026/` —
+      1306 .pos files, ~25 MB, data through 2026-05-15 (vs F5.1 lag
+      ~1 month). `SOLUTION_ID = R5(GPS)`, `EPHEMERIS = IGR`, otherwise
+      structurally identical to F5.1
+- [x] Live: `analyze reference-coords --date 2026-04-01 --f5-variant
+      auto-rapid` → 1301-station parquet at
+      `data/processed/reference_coords/r5_1/2026/20260401.parquet`,
+      fixed_days_used=15/15
+- [x] R5.1 vs F5.1 empirical delta recorded in lessons.md
+      (p50=1.32 mm 3D, p95=1.66 mm)
+- [x] 30-day downstream chain for 2026-04 (epoch-errors × 2 modes →
+      accuracy → ttff-stats → monthly for kinematic_p30_ttff_verify):
+      30/30 days OK, 32 min wall, single in-process driver at
+      `/tmp/r51_april_driver.py` (ad-hoc, not committed). First
+      national monthly aggregate landed at
+      `data/processed/accuracy_monthly/.../202604.parquet` etc.
+
+### Open Issues / followups
+- `kinematic_p30_verify` monthly (no-reset comparison vs the
+  ttff_verify run; quantifies the resets' fix_rate cost)
+- `eval_only` / `qualified` station_set rows in
+  accuracy_monthly_network are NaN because no `eval_periods.toml`
+  entry covers 2026-04. fy2026_1st_h period waits on QSS Service
+  Performance Report publication (semi-annual, expected ~early
+  Oct 2026 per lessons 2026-05-16). Until then, only `all`
+  station_set rows are populated
+- engine_version label `v0.8.3-pntmoni-1-dirty` on the R5.1-rerun
+  epoch_errors is **the driver's stated label**, not the binary that
+  produced the underlying .pos files. For repackaging runs the
+  label may understate the actual provenance; track if it matters
+- Disk: post-batch `free_end = 16.7 GB` (started at 29.9 GB; net
+  +13 GB on disk for 2 modes × 30 days of epoch_errors + small
+  Stage-2 + monthly parquets). Inside the 15 GB safety threshold
+  but margins are thin — consider `.pos` archival to
+  /Volumes/Humphrey-1/ once the cube is verified
 
 ### Phase Guard
 [x] Phase 0–1 (Rapid ingestion path is the architectural scaffolding

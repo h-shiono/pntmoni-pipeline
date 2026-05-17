@@ -924,6 +924,70 @@ per artifact, query `latest-by-path-where-file-exists`, not
 
 ---
 
+## [2026-05-17] empirical: first 30-day R5.1 monthly aggregate (2026-04, kinematic_p30_ttff_verify)
+
+**Context**: First full-month rollup of the post-ADR-0013 pipeline,
+using the R5.1 (Rapid) reference for the entire 2026-04 月 (DOY 091–120,
+30/30 days OK, 32 min wall in-process). Mode is
+`kinematic_p30_ttff_verify` (TTFF resets every 900 s); n = 1298
+stations, 111.99 M epochs pooled. This is the **baseline** the
+Monthly 速報 report will quote on going forward.
+**Numbers (station_set=all)**:
+- **fix_rate**: 75.44 % all / 76.06 % day / 74.71 % night
+- **hor_p50 / p95 / p99**: 26.5 / 245.2 / 912.4 mm
+- **ver_p50 / p95 / p99**: 40.2 / 456.0 / —
+- inside (CLAS coverage) vs outside: 75.81 % / 74.72 % fix_rate;
+  hor_p95 235.8 / 264.9 mm — outside marginally noisier as expected
+- TTFF (network 1, n_stations=8): fix_success_rate 95.7 % all /
+  99.5 % day / 91.2 % night, ttff_p50 = 180 s, ttff_p95 = 300 s
+**Methodological note — TTFF resets cost ~22 pp fix_rate** (measured):
+the parallel `kinematic_p30_verify` (no-reset) monthly for the same
+period and station set landed at **fix_rate = 97.34 % all**,
+hor_p95 = 110.8 mm, hor_p99 = 198.6 mm, ver_p95 = 183.2 mm. The TTFF
+mode's `misc-regularly = 900` reset zeroes the filter every 15 minutes,
+and the first ~3 minutes of each reconvergence land in Q=5/Q=1.
+Concretely:
+- fix_rate: verify **97.34 %** vs ttff_verify **75.44 %** → **−21.90 pp**
+- hor_p95: 110.8 mm → 245.2 mm (**× 2.2** inflation)
+- hor_p99: 198.6 mm → 912.4 mm (**× 4.6** inflation, dominated by
+  in-convergence epochs)
+- ver_p95: 183.2 mm → 456.0 mm (× 2.5)
+
+This is structural to TTFF measurement; reports should always cite
+which mode produced a quoted fix_rate, and the Monthly report
+should publish **both** numbers — verify answers "what is CLAS
+performance in steady-state?", ttff_verify answers "what is CLAS
+performance including convergence?". They are not interchangeable
+even on identical input.
+
+**Methodological note — inside/outside delta is the Pro-tier signal**:
+- verify mode, inside (CLAS coverage):   fix_rate 97.71 %, hor_p95 103.6 mm
+- verify mode, outside:                  fix_rate 96.63 %, hor_p95 124.9 mm
+- verify mode, outside_wo_southern:      fix_rate 96.75 %, hor_p95 119.7 mm
+
+The "outside minus southern islands" 1 pp gap captures the
+ionospheric / coverage-edge cost of Okinawa + Ogasawara stations
+specifically. This is exactly the signal the Pro-tier per-station
+drill-down is designed to surface (per ADR 0013 §2).
+**Methodological note — day/night delta is small but consistent**:
+~1.4 pp fix_rate drop and ~8 % ver_p95 inflation at night. This is
+the ionospheric scintillation signature and is the empirical baseline
+against which future seasonal / Solar-Cycle-25 trend detection will
+be calibrated. The night window in this codebase is UTC 10–20
+(≈ Japan local 19–05), so it captures the geomagnetic-quiet hours
+correctly for the GEONET footprint.
+**Rule**: When publishing the first national monthly number from a
+new methodology baseline, record it in lessons as a *frozen
+reference point*. Future regressions in fix_rate or accuracy
+percentiles are easiest to detect against a labelled prior number
+("the 2026-04 R5.1 baseline was 75.4 % all / hor_p95 245 mm")
+rather than diff-from-noise. Also lock the mode label in the same
+record — fix_rate values are not comparable across `verify` vs
+`ttff_verify` even on identical input.
+**Tags:** #monthly #r5 #2026-04 #ttff #fix-rate #baseline #empirical
+
+---
+
 ## [2026-05-17] empirical: R5.1 vs F5.1 reference delta is sub-mm at GEONET aggregate scale (ADR 0013 §1 validated)
 
 **Context**: First live computation of an R5.1-based reference_coords
