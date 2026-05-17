@@ -924,6 +924,98 @@ per artifact, query `latest-by-path-where-file-exists`, not
 
 ---
 
+## [2026-05-17] empirical: R5.1 vs F5.1 reference delta is sub-mm at GEONET aggregate scale (ADR 0013 §1 validated)
+
+**Context**: First live computation of an R5.1-based reference_coords
+parquet for **2026-04-01** (1301 stations, fixed_days_used=15/15)
+side-by-side with the pre-existing F5.1-based parquet of the same date.
+Both use the same ±7 d centred-median (CMR) algorithm and the same
+Tsukuba1 (92110) anchor. The only difference is which GSI lineage
+populates the daily fixed-station + station series — R5.1 (Rapid,
+~1-week latency, IGR ephemerides) vs F5.1 (Final, ~1-month latency,
+IGS ephemerides).
+**Numerical delta (3D ECEF, across all 1301 stations)**:
+- **p50 = 1.32 mm**
+- **p95 = 1.66 mm**
+- **max = 3.77 mm**
+- Tsukuba1 anchor: (Δx, Δy, Δz) = (+0.60, +0.40, −1.10) mm
+**Interpretation**: CLAS positioning errors are typically 10–30 cm
+horizontal and a few decimetres vertical at GEONET stations. A 1–4 mm
+reference-coordinate uncertainty between R5.1 and F5.1 is **two to
+three orders of magnitude smaller** than the signal being measured, so
+the choice of R5.1 vs F5.1 reference is methodologically immaterial
+for national- and regional-aggregate CLAS evaluation. This is the
+empirical baseline ADR 0013 §1 ("Reference precision adequacy at
+aggregate level") asserted from theory; it is now backed by a live
+measurement.
+**Caveats**:
+- p95 = 1.66 mm is the *typical* upper bound across a quiet day at a
+  large station set. The same comparison **near recent deformation
+  events** (volcanic / post-seismic regions on the day of measurement)
+  will be larger — R5 lacks the long-arc batch refinement that F5
+  uses to capture rapid coordinate evolution. ADR 0013 §2 already
+  flags this as why **R5 + per-station drill-down is not offered**.
+- Comparison is for 2026-04-01 only; periodic re-measurement at
+  monthly cadence is the right operational posture so a regression
+  in either lineage is visible.
+- IGR (Ultra-Rapid IGS products) vs IGS (Final products) is the
+  upstream difference; downstream the CMR algorithm is identical, so
+  any residual delta is the IGR/IGS gap propagated through Bernese.
+**Rule**: When a methodological-equivalence claim (ADR §) bottoms out
+in an empirical question ("how close are the two products actually?"),
+publish a real number from a live run AND the date you measured it.
+Numbers carry the methodology forward even after the operator who
+made the call rotates off.
+**Tags:** #reference-coords #r5 #f5 #adr-0013 #empirical #methodology
+
+---
+
+## [2026-05-17] design: downstream cubes (epoch_errors/accuracy/ttff) are not variant-namespaced — provenance carries the lineage
+
+**Context**: After namespacing `reference_coords` by variant (see the
+2026-05-16 design lesson directly below), the question naturally
+arises whether `epoch_errors/`, `accuracy/`, `ttff/` and the monthly
+rollups should also be variant-namespaced.
+**Decision**: They should **not** be. The path layout remains
+`{root}/{mode}/{year}/YYYYMMDD.parquet` (single-instance) and the
+provenance JSONL identifies the reference variant via the
+`ref_coords_source` field (which now contains the variant subdir,
+e.g. `data/processed/reference_coords/r5_1/2026/20260401.parquet`).
+**Rationale**:
+- The 速報→続報 supersession is sequential: once F5.1 publishes,
+  recomputing the cube from F5.1 (overwriting R5.1) is what we want.
+  Both versions on disk would be a parallel-existence asymmetry the
+  product model doesn't actually need.
+- Downstream cubes are cheaply recomputable from the upstream
+  reference_coords (~20–30 s per DOY × mode for epoch_errors; <5 s
+  per Stage-2 stage). They are caches, not source-of-truth artefacts.
+- Disk pressure: epoch_errors is ~75 MB / DOY / mode. Per April this
+  is ~4.5 GB per mode-set; doubling for variant coexistence would
+  add ~9 GB per month, which compounds quickly and amplifies the
+  disk-full risk the 2026-05-14 ops lesson is already on record about.
+- Provenance JSONL already names which reference variant was used
+  (via the source path) so lineage auditability is preserved without
+  duplicating cubes.
+**Operational pattern**:
+1. Compute reference_coords for R5.1 (`--f5-variant auto-rapid`)
+2. Run epoch-errors → accuracy → ttff-stats → monthly with
+   `--ref-variant r5_1` (or omitted; default auto-prefers Final but
+   falls through to Rapid if Final missing)
+3. Publish the Free Monthly **速報** from the resulting cubes
+4. When F5.1 publication catches up to the ±7 d window, re-acquire
+   F5.1, recompute reference_coords (`--f5-variant f5_1`), and re-run
+   epoch-errors with `--ref-variant f5_1`. Cubes are overwritten;
+   the Free Monthly **続報** is published from the refreshed cubes
+**Rule**: When deciding what layers of a computation chain to
+parameterise vs. overwrite, ask whether the parameter genuinely
+distinguishes a *published artefact* (preserve, namespace) from
+an *intermediate cache* (overwrite, rely on provenance for lineage).
+Reference_coords is the published artefact behind 速報/続報 — it
+must coexist. Downstream cubes are caches — they can be regenerated.
+**Tags:** #design #reference-coords #epoch-errors #variant #adr-0013 #provenance
+
+---
+
 ## [2026-05-16] design: reference_coords output must be variant-namespaced (R5 速報 ⇄ F5 続報)
 
 **Context**: Per ADR 0013 (`pntmoni-docs/70-decisions/adr-0013.md`),
