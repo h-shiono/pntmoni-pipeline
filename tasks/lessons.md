@@ -924,6 +924,91 @@ per artifact, query `latest-by-path-where-file-exists`, not
 
 ---
 
+## [2026-05-17] design + empirical: registry qualification-merge + eval_only / qualified monthly numbers
+
+**Context**: First 30-day R5.1 monthly (the entry directly below)
+landed `eval_only` and `qualified` station_set rows as NaN because
+`_registry.load()` derives `is_eval` strictly from
+`eval_periods.toml`, and the toml's latest entry ends 2025-09-30
+(fy2025_1st_h). Target dates in 2026-04 fell into the gap and
+nothing matched. The Monthly **速報** product (R5.1, per ADR 0013)
+is not supposed to wait on the next QSS Service Performance Report
+publication (`fy2026_1st_h`, expected ~2026-10) — the operative
+eval set should fall through to the latest published period.
+
+**Design**: Added a `qualification_path: Path | None` parameter to
+`analysis._registry.load()` and a `--qualification` CLI flag to
+`analyze {accuracy,ttff-stats,monthly}`. When supplied, the
+station_qualification parquet (produced by `analyze qualification`,
+which already has the latest-period fallback for `force_eval`)
+overrides per-station `is_eval`, `qc_pass`, `qualified`, and adds
+`out_of_service`. The merge:
+- `is_eval` ← `force_eval` (CLAS 72 with latest-period fallback)
+- `qc_pass` ← parquet's `qc_pass` (rolling-window QC, 90 d)
+- `qualified` ← parquet's `qualified` (`(qc_pass | force_eval) & ~oos`)
+
+The CLI flag is **opt-in**, deliberately: the Monthly **続報** (F5.1)
+path may want strict period matching once `fy2026_1st_h` enters
+`eval_periods.toml`. The flag preserves both semantics behind one
+codepath.
+
+**Empirical — 2026-04 numbers with the merge applied**
+(qualification = `data/processed/station_qualification/2026-04-30_90d.parquet`:
+  1300 rows, qualified=1033, qc_pass=1014, force_eval=72, oos=2):
+
+verify (no-reset) — national, all/all/all:
+| station_set | n | fix_rate | hor_p50 | hor_p95 | hor_p99 | ver_p95 |
+|---|---|---|---|---|---|---|
+| all         | 1298 | 97.34 % | 21.9 mm | 110.8 mm | 198.6 mm | 183.2 mm |
+| eval_only   |   72 | 97.50 % | 22.3 mm | 113.8 mm | 196.2 mm | 189.3 mm |
+| qualified   | 1033 | 97.67 % | 21.8 mm | 104.8 mm | 177.0 mm | 173.4 mm |
+
+ttff_verify (15-min resets) — national, all/all/all:
+| station_set | n | fix_rate | hor_p50 | hor_p95 | hor_p99 | ver_p95 |
+|---|---|---|---|---|---|---|
+| all         | 1298 | 75.44 % | 26.5 mm | 245.2 mm | 912.4 mm | 456.0 mm |
+| eval_only   |   72 | 75.76 % | 26.9 mm | 230.5 mm | 868.2 mm | 434.4 mm |
+| qualified   | 1033 | 75.80 % | 26.3 mm | 225.9 mm | 874.3 mm | 422.6 mm |
+
+TTFF (ttff_verify, network=all/all/all):
+- all (1294): fix_success_rate 97.82 %, ttff_p99 = 510 s
+- eval_only (72): 97.70 %, ttff_p99 = 450 s — cleanest, by design (QSS-curated)
+- qualified (1031): 98.19 %, ttff_p99 = 480 s
+
+**Three findings worth carrying forward**:
+
+1. **`qualified` outperforms `all` modestly** (+0.33 pp fix_rate verify;
+   −6 mm hor_p95; −10 mm ver_p95). The signal exists but is small at
+   the *national* aggregate level — the qualification step is doing
+   the right thing (removing genuine problem stations) without
+   distorting the aggregate. Per-network drill-down will show
+   bigger gaps where southern-island difficulty concentrates.
+
+2. **`eval_only` ≈ `qualified` to ~0.1 pp**: the CLAS 72 official
+   set is already covered by the QC-pass criterion, so the
+   `force_eval` overlay is mostly redundant at the monthly aggregate.
+   It still matters at the per-network level (southern islands —
+   the 15 force-eval rescues per lessons 2026-05-16) — *don't drop
+   `eval_only` as a category* even though headline numbers coincide.
+
+3. **`qualified` is the right default for the Free Monthly 速報**:
+   it answers "how well does CLAS perform on stations that are
+   actually fit-for-evaluation?", which is the question subscribers
+   will read into the headline number. `all` is the more permissive
+   reference; `eval_only` is the QSS-aligned reproducibility set.
+   Publish all three; lead with `qualified`.
+
+**Rule**: When upstream metadata (eval_periods.toml) lags behind the
+target date, the right reflex is **not** to backfill the metadata
+with a guess — it is to add an explicit override mechanism so the
+operator's decision (which fallback to use) is visible in the run's
+provenance (`--qualification <path>`). The 速報 / 続報 distinction is
+the use-case template: same dataset, two acceptable readings, both
+auditable.
+**Tags:** #registry #qualification #r5 #monthly #2026-04 #adr-0013 #design
+
+---
+
 ## [2026-05-17] empirical: first 30-day R5.1 monthly aggregate (2026-04, kinematic_p30_ttff_verify)
 
 **Context**: First full-month rollup of the post-ADR-0013 pipeline,

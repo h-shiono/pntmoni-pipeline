@@ -313,6 +313,7 @@ def compute_daily(
     vertical_threshold_m: float | None = None,
     min_window_completion: float = DEFAULT_MIN_WINDOW_COMPLETION,
     registry_sources: _registry.RegistrySources | None = None,
+    qualification_path: Path | None = None,
     record_provenance: bool = True,
     provenance_path: Path | None = None,
 ) -> TTFFDailyResult:
@@ -338,7 +339,9 @@ def compute_daily(
         if isinstance(v, str) and v:
             engine_version = v
 
-    registry = _registry.load(target_date, sources=registry_sources)
+    registry = _registry.load(
+        target_date, sources=registry_sources, qualification_path=qualification_path,
+    )
 
     station_df, events_df = compute_station_ttff(
         epoch_errors,

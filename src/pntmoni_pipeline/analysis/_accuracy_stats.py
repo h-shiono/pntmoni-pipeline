@@ -256,6 +256,7 @@ def compute_daily(
     epoch_errors_root: Path = DEFAULT_EPOCH_ERRORS_ROOT,
     output_root: Path = DEFAULT_OUTPUT_ROOT,
     registry_sources: _registry.RegistrySources | None = None,
+    qualification_path: Path | None = None,
     record_provenance: bool = True,
     provenance_path: Path | None = None,
 ) -> AccuracyDailyResult:
@@ -280,7 +281,9 @@ def compute_daily(
         if isinstance(v, str) and v:
             engine_version = v
 
-    registry = _registry.load(target_date, sources=registry_sources)
+    registry = _registry.load(
+        target_date, sources=registry_sources, qualification_path=qualification_path,
+    )
 
     station_df = compute_station_accuracy(
         epoch_errors,

@@ -348,6 +348,16 @@ def cmd_accuracy(
     output_root: Annotated[
         Path, typer.Option("--out", help="Stage-2 output root."),
     ] = _accuracy_stats.DEFAULT_OUTPUT_ROOT,
+    qualification: Annotated[
+        Path | None,
+        typer.Option(
+            "--qualification",
+            help="station_qualification parquet (per analyze qualification). "
+                 "When supplied, overrides registry is_eval / qc_pass / "
+                 "qualified from the parquet — populates eval_only and "
+                 "qualified station_sets for the Monthly 速報.",
+        ),
+    ] = None,
 ) -> None:
     """Build daily accuracy stats (per-station + per-network cube) — Stage 2a."""
     target = _parse_iso_date(date_)
@@ -356,6 +366,7 @@ def cmd_accuracy(
         mode=mode,
         epoch_errors_root=epoch_errors_root,
         output_root=output_root,
+        qualification_path=qualification,
     )
     typer.echo(
         f"wrote {res.station_parquet.name} + {res.network_parquet.name}  "
@@ -403,6 +414,15 @@ def cmd_ttff_stats(
             help="Vertical accuracy threshold (m). Auto from mode if omitted.",
         ),
     ] = None,
+    qualification: Annotated[
+        Path | None,
+        typer.Option(
+            "--qualification",
+            help="station_qualification parquet — overrides registry "
+                 "is_eval / qc_pass / qualified for the eval_only and "
+                 "qualified station_sets.",
+        ),
+    ] = None,
 ) -> None:
     """Build daily strict-TTFF stats — Stage 2b."""
     target = _parse_iso_date(date_)
@@ -414,6 +434,7 @@ def cmd_ttff_stats(
         reset_period_sec=reset_period,
         horizontal_threshold_m=horizontal_threshold,
         vertical_threshold_m=vertical_threshold,
+        qualification_path=qualification,
     )
     typer.echo(
         f"wrote {res.station_parquet.name} + {res.network_parquet.name}  "
@@ -443,6 +464,16 @@ def cmd_monthly(
     reset_period: Annotated[
         int, typer.Option("--reset-period", help="Reset period in seconds."),
     ] = _ttff_stats.DEFAULT_RESET_PERIOD_SEC,
+    qualification: Annotated[
+        Path | None,
+        typer.Option(
+            "--qualification",
+            help="station_qualification parquet — overrides registry "
+                 "is_eval / qc_pass / qualified for the eval_only and "
+                 "qualified station_sets. Recommended for the Monthly "
+                 "速報 since fy2026_1st_h is not yet in eval_periods.toml.",
+        ),
+    ] = None,
 ) -> None:
     """Pool a month of daily epoch_errors and emit monthly Parquets."""
     try:
@@ -456,6 +487,7 @@ def cmd_monthly(
         epoch_errors_root=epoch_errors_root,
         output_root=output_root,
         reset_period_sec=reset_period,
+        qualification_path=qualification,
     )
     typer.echo(
         f"wrote 4 Parquets for {res.period} (mode={res.mode})  "

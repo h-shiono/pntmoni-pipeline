@@ -82,6 +82,7 @@ def compute_monthly(
     vertical_threshold_m: float | None = None,
     min_window_completion: float = _ttff_stats.DEFAULT_MIN_WINDOW_COMPLETION,
     registry_sources: _registry.RegistrySources | None = None,
+    qualification_path: Path | None = None,
     record_provenance: bool = True,
 ) -> MonthlyRollupResult:
     """Pool every available daily epoch_errors in (year, month) and
@@ -114,7 +115,9 @@ def compute_monthly(
 
     period_label = f"{year}-{month:02d}"
     last_date = found[-1]
-    registry = _registry.load(last_date, sources=registry_sources)
+    registry = _registry.load(
+        last_date, sources=registry_sources, qualification_path=qualification_path,
+    )
 
     # Stage-2a accuracy on pooled epochs.
     accuracy_station = _accuracy_stats.compute_station_accuracy(

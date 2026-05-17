@@ -1002,14 +1002,13 @@ Final-variant outputs that will land later.
       `data/processed/accuracy_monthly/.../202604.parquet` etc.
 
 ### Open Issues / followups
-- `kinematic_p30_verify` monthly (no-reset comparison vs the
-  ttff_verify run; quantifies the resets' fix_rate cost)
-- `eval_only` / `qualified` station_set rows in
-  accuracy_monthly_network are NaN because no `eval_periods.toml`
-  entry covers 2026-04. fy2026_1st_h period waits on QSS Service
-  Performance Report publication (semi-annual, expected ~early
-  Oct 2026 per lessons 2026-05-16). Until then, only `all`
-  station_set rows are populated
+- [x] `kinematic_p30_verify` monthly (verify=97.34% vs ttff_verify=75.44%
+      fix_rate, lessons 2026-05-17)
+- [x] `eval_only` / `qualified` station_set population via the new
+      `--qualification` flag (lessons 2026-05-17 "registry
+      qualification-merge"). 速報 publishes `qualified` as the
+      headline subset; `all` as the permissive reference;
+      `eval_only` as the QSS-aligned reproducibility set
 - engine_version label `v0.8.3-pntmoni-1-dirty` on the R5.1-rerun
   epoch_errors is **the driver's stated label**, not the binary that
   produced the underlying .pos files. For repackaging runs the

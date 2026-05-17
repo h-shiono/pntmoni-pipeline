@@ -88,6 +88,67 @@ def test_registry_southern_flag(tmp_path: Path) -> None:
     assert not bool(df[df["rinex_id"] == "0231"].iloc[0]["is_southern"])
 
 
+def test_registry_qualification_merge_overrides_eval_and_qualified(tmp_path: Path) -> None:
+    """When a qualification parquet is supplied, its is_eval (= force_eval),
+    qc_pass, and qualified flags must override the period-derived defaults.
+    Use case: Monthly 速報 wants the latest-period CLAS 72 (force_eval) and
+    QC-derived qualified set even when target_date is past all eval_periods
+    entries (e.g. 2026-04 vs eval_periods ending 2025-09-30).
+    """
+    src = _write_minimal_registry(tmp_path)
+    # 2026-04-30 — past every period in the minimal registry; the
+    # period-derived is_eval is False for everyone.
+    target = date(2026, 4, 30)
+    base = _registry.load(target, sources=src)
+    assert not base["is_eval"].any()
+    assert not base["qualified"].any()
+
+    qpath = tmp_path / "q.parquet"
+    pd.DataFrame([
+        # 0231 — qc_pass True, force_eval True (latest-period fallback hit)
+        {"station": "0231", "qc_pass": True,  "force_eval": True,
+         "out_of_service": False, "qualified": True},
+        # 0500 — qc_pass False but force_eval True → still qualified
+        {"station": "0500", "qc_pass": False, "force_eval": True,
+         "out_of_service": False, "qualified": True},
+        # 1098 — vetoed by out_of_service even though qc_pass is True
+        {"station": "1098", "qc_pass": True,  "force_eval": False,
+         "out_of_service": True,  "qualified": False},
+    ]).to_parquet(qpath, index=False)
+
+    merged = _registry.load(target, sources=src, qualification_path=qpath)
+    by_id = merged.set_index("rinex_id")
+
+    assert bool(by_id.loc["0231", "is_eval"]) is True
+    assert bool(by_id.loc["0231", "qualified"]) is True
+    assert bool(by_id.loc["0231", "qc_pass"]) is True
+
+    assert bool(by_id.loc["0500", "is_eval"]) is True
+    assert bool(by_id.loc["0500", "qualified"]) is True
+    assert bool(by_id.loc["0500", "qc_pass"]) is False
+
+    assert bool(by_id.loc["1098", "is_eval"]) is False
+    assert bool(by_id.loc["1098", "qualified"]) is False
+    assert bool(by_id.loc["1098", "out_of_service"]) is True
+
+
+def test_registry_qualification_merge_missing_columns_raises(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    bad = tmp_path / "bad.parquet"
+    pd.DataFrame([{"station": "0231", "qc_pass": True}]).to_parquet(bad, index=False)
+    with pytest.raises(ValueError, match="missing columns"):
+        _registry.load(date(2024, 5, 15), sources=src, qualification_path=bad)
+
+
+def test_registry_qualification_merge_path_missing_raises(tmp_path: Path) -> None:
+    src = _write_minimal_registry(tmp_path)
+    with pytest.raises(FileNotFoundError):
+        _registry.load(
+            date(2024, 5, 15), sources=src,
+            qualification_path=tmp_path / "does_not_exist.parquet",
+        )
+
+
 # ---------------------------------------------------------------------------
 # Synthetic epoch_errors fixture
 # ---------------------------------------------------------------------------
