@@ -1230,3 +1230,27 @@ rule's intent is a centred rate (use `round`) or an upper bound
 (use `ceil` / `floor`). Document the choice in code and bump the
 methodology version when correcting one.
 **Tags:** #qc #qualification #methodology #legacy-porting
+
+## [2026-05-20] claslib: CSSR dump capability is SSR2OSR/SSR2OBS -dump, not DUMPCSSR
+
+**Mistake:** While auditing methodology §6 (L6 broadcast alert
+detection) against the implementation, I concluded the CSSR
+alert-flag dump mechanism was unavailable in pntmoni-claslib
+v0.8.3 because the README states DUMPCSSR was "no longer supported
+from version 0.4.0". I recommended deferring §6 to Phase 1 on that
+false premise.
+**Root cause:** I read only the DUMPCSSR removal note and did not
+check that its functionality was folded into the SSR2OSR (and later
+SSR2OBS) utilities, which expose a `-dump` option (README §3.1/§3.2).
+The dump path in `src/cssr.c` even writes a CSV whose header
+includes an `Alert Flag` column (cssr.c:4352), and frame-level
+alerts are flagged at cssr.c:4120-4122 — exactly what §6 needs.
+**Fix applied:** Corrected §6's mechanism wording to name
+SSR2OSR/SSR2OBS `-dump` (Alert Flag CSV) rather than the removed
+DUMPCSSR / a vague "dump 機能". Kept §6 as a v1.0.0-feasible
+feature rather than deferring it.
+**Rule:** Before declaring a vendored tool's capability "removed"
+or "missing", grep the source for the underlying function — a
+removed CLI front-end (DUMPCSSR) does not mean the capability is
+gone; it is often merged into a successor utility (SSR2OSR -dump).
+**Tags:** #claslib #cssr #l6 #methodology #verification

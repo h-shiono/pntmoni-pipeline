@@ -33,6 +33,7 @@ from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+from ..acquisition import igs_atx
 from . import _binary, _stats, _workspace
 from ._base import ProcessingResult
 from ._config import record_station_provenance, write_station_config
@@ -342,6 +343,10 @@ def process_doy(
         whose record was already appended to ``stats_path``.
     """
     started_at = datetime.now(UTC)
+    # Guard: the date-based ATX selection only implements the igs20
+    # (>= 2022-11-27) branch. Refuse pre-switch dates rather than
+    # silently applying the wrong frame (methodology §2.1 / §8.4).
+    igs_atx.select_atx_for_date(target)
     binary = binary or _binary.find_binary()
     engine_version = _binary.detect_version(binary)
     mode_template = (config_dir / f"{mode}.conf").resolve()

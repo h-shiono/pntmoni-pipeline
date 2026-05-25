@@ -24,9 +24,9 @@ reason = "Okinotorishima — Pacific remote island, outside CLAS coverage. F5 re
 since = 2026-04-01
 
 [stations."0604"]
-reason = "Legacy gnss_research_toolbox.station_stats OUT_OF_SERVICE list (rationale not captured in legacy code — investigate before removing)."
+reason = "Iwoto 1 (硫黄島１ / IOTO1) — remote southern island (~24.8°N, Ogasawara), outside CLAS coverage; not assigned to any CLAS compact network (absent from network_assignments.toml), analogous to Minamitorishima/Okinotorishima. Identity confirmed from GSI F5 J_NAME=硫黄島１ (2026-05-20). Supersedes the legacy station_stats OUT_OF_SERVICE entry whose rationale was uncaptured."
 since = 2026-04-01
 
 [stations."0605"]
-reason = "Legacy gnss_research_toolbox.station_stats OUT_OF_SERVICE list (rationale not captured in legacy code — investigate before removing)."
+reason = "Iwoto 2 (硫黄島２ / IOTO2) — remote southern island (~24.8°N, Ogasawara), outside CLAS coverage; not assigned to any CLAS compact network (absent from network_assignments.toml), analogous to Minamitorishima/Okinotorishima. Identity confirmed from GSI F5 J_NAME=硫黄島２ (2026-05-20). Supersedes the legacy station_stats OUT_OF_SERVICE entry whose rationale was uncaptured."
 since = 2026-04-01

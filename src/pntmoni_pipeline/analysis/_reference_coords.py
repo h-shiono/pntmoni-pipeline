@@ -52,6 +52,12 @@ DEFAULT_F5_ROOT = Path("data/raw/f5")
 DEFAULT_OUTPUT_ROOT = Path("data/processed/reference_coords")
 DEFAULT_PROVENANCE_PATH = Path("data/metadata/reference_coords.jsonl")
 
+# Reference-coordinate methodology identifiers (methodology §3.2, §7.2).
+# ±7-day (15 calendar day) centered median with common-mode removal,
+# operating on GSI daily solutions (product recorded via ``variant``).
+METHODOLOGY_VERSION = "gsi-daily-median15d-1.0"
+FILTER_METHOD = "median15d-centered"
+
 # Minimum non-NaN fixed-station days required for a "production-grade"
 # reference. Default is 14 (out of 15 in a ±7d window), which permits
 # AT MOST one jump-NaN'd day. Partial-window runs (typical when F5
@@ -417,6 +423,8 @@ def record_provenance(
                 "target_date": str(r.df["target_date"].iloc[0]) if not r.df.empty else None,
                 "variant": r.variant,
                 "is_rapid": r.variant.startswith("r5"),
+                "methodology_version": METHODOLOGY_VERSION,
+                "filter_method": FILTER_METHOD,
                 "fixed_station_id": fixed_station_id,
                 "fixed_metadata": {
                     "rinex_id": r.fixed_metadata.rinex_id,
