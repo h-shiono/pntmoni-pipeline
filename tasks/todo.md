@@ -1051,6 +1051,84 @@ Final-variant outputs that will land later.
 
 ---
 
+## [2026-05-25] §6 L6 alerts + report injection + Free-tier build-out (v1.0.0 monthly readiness)
+
+Goal: close the remaining "documented-but-not-implemented" gaps in the
+v1.0.0 methodology so the monthly report can be produced as written.
+Phase Guard: Phase 0 (first trial monthly report). Refs: methodology
+§5/§6/§7, ADR 0013 + Postscript (hex Free viz), ADR 0006 Postscript
+(comparison stays in the half-yearly Archive, not monthly).
+
+### todo#1 — L6 broadcast alert extraction & aggregation (§6)
+
+Mechanism: `ssr2osr -dump` emits `parse_cssr_*.csv`;
+`parse_cssr_header.csv` (ofp[10], cssr.c:4348/4352) carries the
+`Alert Flag` column (+ Epoch Time, PRN, L6 msg type, etc.).
+
+- [ ] Build `ssr2osr` for macOS: `cd vendor/pntmoni-claslib/util/ssr2osr && make`
+      (mirrors rnx2rtkp; the `_POSIX_C_SOURCE` working-tree patch
+      enables the macOS compile). Add a binary discovery + build-hint
+      path analogous to `processing/_binary.py`.
+- [ ] New module (`analysis/_l6_alerts.py` or a new `anomaly/` pkg):
+      locate the period's L6 input (reuse `acquisition/qzss_l6` paths)
+      → run `ssr2osr -dump` → parse `parse_cssr_header.csv` → aggregate
+      `Alert Flag` (monthly count, daily/epoch time series, per-PRN
+      breakdown) → cross-reference NAGU/NANU/NAQU
+      (`acquisition/satellite_outages`) by time × satellite → write
+      `l6_alerts` parquet + `l6_alerts.jsonl` provenance (ssr2osr
+      version + input SHA-256).
+- [ ] CLI: `pntmoni-pipeline analyze l6-alerts --period YYYY-MM`.
+- [ ] Unit tests (fixture `parse_cssr_header.csv`; aggregation +
+      cross-ref).
+- [ ] Verify on real 2026-04 L6 data; record sample output.
+
+### todo#2 — Report render driver + param injection (§7.2/§7.4, §5, §6)
+
+- [ ] Report-render driver (CLI `report monthly --period --stream`):
+      gather monthly parquets (accuracy_monthly, ttff_monthly,
+      qualification, reference_coords, l6_alerts) → compute
+      `config_hash` (`config_hash.compute_config_hash`), record full
+      digest to `processing.jsonl`, pass 16-char display → assemble
+      Quarto params (period, stream, engine/qc/refcoord/methodology
+      versions, config_hash, headline metrics, alert summary,
+      data_mode) → render `monthly.qmd` via Quarto (`--execute-params`)
+      → PDF + HTML.
+- [ ] Replace `monthly.qmd` synthetic placeholders with param-bound
+      real data loading for the sections that have data (§5, §6, §7.4).
+- [ ] Verify: render 2026-04 (R5.1) report with real config_hash +
+      alert counts.
+
+### todo#3 — Free-tier hex-grid spatial viz (ADR 0013 Postscript) — cell size is the crux
+
+- [ ] **DECIDE cell-size + min-stations-per-cell policy** (shared with
+      Product 2 GNSS QC). Options: (a) equal-area hex via H3 resolution;
+      (b) fixed geographic km; (c) data-driven (coarsest resolution
+      keeping most populated cells ≥ k stations) + suppression
+      threshold k. Needs discussion + empirical tuning on the GEONET
+      ~1300-station distribution.
+- [ ] Define the cell aggregate statistic consistent with §5.1
+      (pooled-epoch percentile over the cell's stations — not a second
+      station-unit step).
+- [ ] Implement a single shared hex-grid rendering path (Product 1 Free
+      + Product 2); fixed color scale per metric; empty/suppressed
+      cells visually distinct.
+- [ ] Wire into `monthly.qmd` Free spatial section (Free = hex; Pro =
+      per-station scatter retained).
+- [ ] Verify visually (sample hex map for 2026-04).
+
+### Open decisions (resolve before the todo#3 build)
+
+- **Cell-size method + min-stations-per-cell threshold** — the shared
+  Product 1/2 question. Tentative: evaluate H3 resolutions against the
+  GEONET distribution, pick the coarsest that keeps most populated
+  cells ≥ k (k ~3–5, TBD). Needs sign-off.
+- Module homes: `analysis/_l6_alerts.py` vs new `anomaly/`; report
+  driver as new `cli/report.py` vs extending `cli/analyze.py`.
+- ssr2osr binary kept as a local build artifact (out of git), like
+  rnx2rtkp — confirm.
+
+---
+
 ## How to use this file
 
 When starting a task:

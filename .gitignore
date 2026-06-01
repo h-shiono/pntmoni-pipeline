@@ -32,3 +32,6 @@ teqc_OSX_*.zip
 # reproducible from acquisition.jsonl provenance; the artefacts are
 # large (~60 MB) and version-controlling them would shadow the recipe.
 configs/aux_data/
+
+# stray ssr2osr -dump outputs (should land in a workdir, not repo root)
+parse_cssr_*.csv
