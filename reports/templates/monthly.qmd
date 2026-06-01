@@ -100,6 +100,31 @@ if _pp:
 ```
 
 ```{python}
+#| label: l6-alerts-data
+#| include: false
+
+# L6 broadcast Alert-flag aggregation for the period (from the
+# ``analyze l6-alerts`` output, see methodology §6 and tasks/todo.md
+# todo#1). The driver passes the parquet path in INPUTS['l6_alerts'].
+import pandas as _pd
+from pathlib import Path as _Path
+_l6_p = INPUTS.get("l6_alerts") if isinstance(INPUTS, dict) else None
+L6_ALERTS_PRESENT = bool(_l6_p and _Path(_l6_p).is_file())
+if L6_ALERTS_PRESENT:
+    L6_ALERTS_DF = _pd.read_parquet(_l6_p)
+    N_L6_ALERTS = int(len(L6_ALERTS_DF))
+    L6_ALERTS_PER_PRN = (
+        {int(k): int(v)
+         for k, v in L6_ALERTS_DF.groupby("prn").size().items()}
+        if N_L6_ALERTS else {}
+    )
+else:
+    L6_ALERTS_DF = None
+    N_L6_ALERTS = 0
+    L6_ALERTS_PER_PRN = {}
+```
+
+```{python}
 #| label: setup
 #| include: false
 
@@ -377,7 +402,7 @@ exec_summary
 - Inside vs outside network: 網内 95% horizontal = **`{python} f"{inside_h95*100:.2f} cm"`**, 網外 95% horizontal = **`{python} f"{outside_h95*100:.2f} cm"`**
 - National availability: **`{python} f"{AVAIL*100:.1f}%"`**
 - Tropospheric divergence events detected: **0** (this synthetic month)
-- L6 broadcast alert messages: **0** (this synthetic month)
+- L6 broadcast alert messages: **`{python} N_L6_ALERTS if L6_ALERTS_PRESENT else "n/a (not aggregated)"`**
 
 # Performance
 
@@ -779,7 +804,29 @@ correction stream indicating known issues at the source (CSSR
 generation level). These are tracked monthly to give subscribers
 visibility into the broadcast's self-reported health.
 
-For `{python} PERIOD_LABEL`: **0 alert messages detected.**
+```{python}
+#| echo: false
+#| output: asis
+
+if not L6_ALERTS_PRESENT:
+    print(
+        f"For **{PERIOD_LABEL}**: L6 alert aggregation has not been "
+        f"produced for this period — run "
+        f"`pntmoni-pipeline analyze l6-alerts --period {PERIOD}` "
+        f"to populate (methodology §6)."
+    )
+elif N_L6_ALERTS == 0:
+    print(
+        f"For **{PERIOD_LABEL}**: **0 alert messages detected** across "
+        f"the L6 broadcast (no alert flags raised)."
+    )
+else:
+    _per_prn = ", ".join(f"PRN {p}: {c}" for p, c in sorted(L6_ALERTS_PER_PRN.items()))
+    print(
+        f"For **{PERIOD_LABEL}**: **{N_L6_ALERTS} alert message(s) "
+        f"detected** across the L6 broadcast ({_per_prn})."
+    )
+```
 
 ### Divergences (Tropospheric)
 
