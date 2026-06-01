@@ -365,83 +365,37 @@ marked "Coming Soon" appear in Phase 1+ per the rollout plan in
 
 # 改訂履歴
 
-| Version | Date       | Description           |
-|---------|------------|-----------------------|
-| 1.0     | (pending)  | Initial publication   |
+| バージョン | 日付       | 内容       |
+|------------|------------|------------|
+| 1.0        | (発行待ち) | 初版       |
 
 # はじめに
 
-This report covers QZSS CLAS (Centimeter Level Augmentation Service)
-performance during **`{python} PERIOD_LABEL`**, evaluated by PNT Moni
-using publicly-available data and open-source tools.
+本レポートは、**`{python} PERIOD_LABEL`** における QZSS CLAS(センチメータ級補強サービス)の性能を、PNT Moni が公開データとオープンソースのツール群を用いて評価した結果をまとめたものです。
 
-PNT Moni is an independent evaluation service for GNSS augmentation,
-providing continuous monitoring of CLAS performance at higher spatial
-and temporal resolution than the official Cabinet Office of Japan / QSS
-Performance Reports. PNT Moni's monthly reports complement the
-semi-annual official reports through monthly cadence, hex-grid
-spatial visualization (Free), regional / 網内・網外 aggregation, and
-analytical depth that addresses the practical needs of receiver
-manufacturers, system integrators, and CLAS-using operators.
-Per-station drill-down is reserved for the Pro tier
-(see [ADR 0013](https://pntmoni.com/decisions/adr-0013)).
+PNT Moni は GNSS 補強サービスの独立評価サービスとして、内閣府／QSS が公開する公式 Service Performance Report より高い空間・時間解像度で CLAS の性能を継続的にモニタリングしています。月次レポート(本書)は公式の半年次レポートを補完するもので、月次の更新頻度、独立した第三者評価、実務に資する分析深度を提供します。観測局単位のドリルダウンは **Pro 層** の領域、地域別表示は **Free Live Dashboard** の領域で、本月次の Free 層は **全国 aggregate のみ**を対象とします([ADR 0013](https://pntmoni.com/decisions/adr-0013))。
 
-The methodology used to produce this report is summarized in the next
-section. Full methodology documentation is at
-[https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
-The Methodology Version Tag at the end of this report uniquely
-identifies the configuration used.
+本レポート末尾の「方法論バージョンタグ」は、本レポートを生成した処理構成を一意に識別します。完全な方法論文書は [https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0) を参照してください。
 
 # 評価手法
 
-This section provides a summary of the methodology. The full
-methodology document is at the link above.
+本節は方法論の要約です。完全な方法論文書は上記リンクを参照してください。
 
-**Data sources**: GEONET 30-second RINEX observations from
-approximately 1,300 stations, distributed by the Geospatial Information
-Authority of Japan (GSI) under PDL 1.0
-(出典：国土地理院 電子基準点データ提供サービス).
-QSS L6 broadcast archive from Cabinet Office of Japan. IGS final SP3/CLK
-products for validation.
+**データソース**:国土地理院(GSI)が PDL 1.0 で配布する GEONET 約 1,300 観測局の 30 秒 RINEX 観測データ(出典:国土地理院 電子基準点データ提供サービス)、QSS が Web で公開する CLAS L6 補強情報アーカイブ、および CDDIS の IGS 放送暦・地球回転パラメータ。
 
-**Processing engine**: `{python} f"{ENGINE} {ENGINE_VERSION}"` operating in
-kinematic PPP-RTK mode with per-system clock parameterization and
-RAIM/FDE. See [ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md)
-and [ADR 0004](../../../pntmoni-docs/70-decisions/adr-0004.md).
+**処理エンジン**:`{python} f"{ENGINE} {ENGINE_VERSION}"`、PPP-RTK モード(`kinematic`、`l1+l2+l5`)で処理。詳細は [ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md) および [ADR 0004](../../../pntmoni-docs/70-decisions/adr-0004.md) を参照。
 
-**Reference coordinate derivation**: GSI F3 daily solutions (ITRF2005)
-prior to August 2021; F5 daily solutions (ITRF2014) from August 2021
-onwards. A 2-week median filter suppresses coordinate spikes
-(methodology following Shiono & Kubo 2026, NAVIGATION).
+**参照座標**:GSI 日座標解(対象期間に対応する系列。F5 期 = ITRF2014、F5.1 期 = ITRF2020。Rapid 系列を用いる場合は R5 / R5.1)を観測局 92110(つくば1)を基準として相対化し、対象日 $d$ を中心とする **±7 日(計 15 暦日)の中央値フィルタ**で平滑化します(共通モード除去、Method B)。手法バージョン:`{python} REFERENCE_COORD_VERSION`。
 
-**Quality control**: `{python} f"{QC_TOOL} {QC_VERSION}"`
-during 2026–2027 (transitioning to mrtk qc at 2027/Q4 per
-[ADR 0008](../../../pntmoni-docs/70-decisions/adr-0008.md)).
+**品質管理(QC)**:`{python} f"{QC_TOOL} {QC_VERSION}"` を 2026〜2027 年に使用。2027/Q4 を目処に MRTKLIB の `mrtk qc` へ移行予定([ADR 0008](../../../pntmoni-docs/70-decisions/adr-0008.md))。
 
-**Statistical aggregation**: 95th and 99th percentile errors computed
-over **pooled epoch errors** within each aggregation cell (per
-methodology §5.1; NAVIGATION 2026 continuity — see also
-[ADR 0006 Postscript](https://pntmoni.com/decisions/adr-0006) on
-official-report resolution and comparison granularity). TTFF measured
-with **15-minute reset period** (NAVIGATION 2026 continuity); 60-minute
-reset added in Phase 1. See
-[ADR 0005](https://pntmoni.com/decisions/adr-0005).
+**統計集計**:95% / 99% パーセンタイル誤差は、各集計セルに属する**全観測局・全日のエポック誤差をプール**して算出します(方法論 §5.1、NAVIGATION 2026 と同一規則)。公式レポートとの解像度差・比較粒度については [ADR 0006 Postscript](https://pntmoni.com/decisions/adr-0006) を参照。TTFF は **15 分リセット**(NAVIGATION 2026 との連続性、方法論 §5.2)。60 分リセットは Phase 1 で追加予定([ADR 0005](https://pntmoni.com/decisions/adr-0005))。
 
-**Known structural divergence from QSS official numbers**: PNT Moni's
-methodology differs from the official QSS Performance Report in four
-documented ways: sampling rate (30s vs 1s), parameter settings re-tuned
-for 30s sampling, CLASLIB version lag, and consequent Kalman filter
-behavior. See [ADR 0001 Postscript](../../../pntmoni-docs/70-decisions/adr-0001.md#postscript)
-and [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762).
-This is documented as a structural property, not an error.
+**公式 QSS 数値との既知の構造的差**:PNT Moni の方法論は公式 QSS Service Performance Report と以下 4 点で構造的に異なります — サンプリングレート(30 秒 vs 1 秒)、30 秒向けに再調整したパラメータ設定、CLASLIB 版差、これらに起因する Kalman Filter 挙動。詳細は [ADR 0001 Postscript](../../../pntmoni-docs/70-decisions/adr-0001.md#postscript) および [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762) を参照。これはバグではなく**構造的特性**として扱います。絶対値の比較や数値の同一視は意味を持ちません(方法論 §8.3)。
 
 ## 評価ネットワーク
 
-Stations are classified as **inside-network (網内)** or
-**outside-network (網外)** based on the official CLAS coverage
-definition. The network polygon below is updated only when the CLAS
-operational coverage changes (rare); the version of the polygon is
-encoded in the methodology version tag at the end of this report.
+CLAS は全国を 12 のネットワーク(網)に分割し、各観測局は CLASLIB が決定する Compact Network ID により所属網が定まります。さらに ION GNSS+ 2025 / NAVIGATION 2026 論文(Shiono & Kubo)で定義した各網のポリゴンに対する点内包判定により、観測局を **網内(Inside Network)**・**網外(Outside Network)** に分類します(補強情報が内挿で生成される領域 vs 外挿領域)。下記の網ポリゴンは CLAS の運用範囲が変更されたとき(稀)にのみ更新され、ポリゴンの版は本レポート末尾の方法論バージョンタグに記録されます。
 
 ```{python}
 #| label: fig-network-map
@@ -459,7 +413,7 @@ ax.set_aspect("equal")
 network_patch = Polygon(NETWORK_POLYGON, closed=True,
                          facecolor=COLOR_PRIMARY, alpha=0.10,
                          edgecolor=COLOR_PRIMARY, linewidth=1.5,
-                         linestyle="--", label="CLAS network coverage")
+                         linestyle="--", label="CLAS 網カバレッジ")
 ax.add_patch(network_patch)
 
 # Station points: inside (green) and outside (orange)
@@ -475,10 +429,7 @@ ax.grid(True, alpha=0.3)
 plt.tight_layout()
 ```
 
-The network polygon defines the area within which CLAS is intended to
-deliver specified performance. Stations outside this area receive
-corrections derived through extrapolation, with potentially different
-error characteristics analyzed in §5.3.1.
+CLAS の網ポリゴンは、補強情報が仕様通りの性能を提供することを意図された領域を定義します。網外の観測局は外挿によって導出された補正情報を受け取るため、誤差特性が異なり得ます(網内/網外の集計分析は **Pro Monthly Detailed** および将来の **Free Live Dashboard** にて提供)。
 
 # エグゼクティブサマリ
 
@@ -486,7 +437,7 @@ error characteristics analyzed in §5.3.1.
 #| label: tbl-executive-summary
 #| tbl-cap: "主要性能指標"
 exec_summary = pd.DataFrame({
-    "Metric": [
+    "指標": [
         "評価対象局数",
         "水平誤差 50% [cm]",
         "水平誤差 95% [cm]",
@@ -496,7 +447,7 @@ exec_summary = pd.DataFrame({
         "TTFF 95% [秒、15 分リセット]",
         "全国 Fix 率(Q=4)",
     ],
-    "Value": [
+    "値": [
         f"{N_STATIONS:,}",
         f"{H50*100:.2f}",
         f"{H95*100:.2f}",
@@ -510,14 +461,14 @@ exec_summary = pd.DataFrame({
 exec_summary
 ```
 
-**Headlines for `{python} PERIOD_LABEL`**:
+**`{python} PERIOD_LABEL` のハイライト**:
 
-- National 95th percentile horizontal error: **`{python} f"{H95*100:.2f} cm"`**
-- National 95th percentile vertical error: **`{python} f"{V95*100:.2f} cm"`**
-- TTFF (15-min reset, 95th percentile): **`{python} f"{TTFF95:.1f} s"`**
-- National Fix rate (Q=4): **`{python} f"{AVAIL*100:.2f}%"`**
-- Tropospheric divergence events detected: **n/a** (Phase 1+ feature, §6)
-- L6 broadcast alert messages: **`{python} N_L6_ALERTS if L6_ALERTS_PRESENT else "n/a (not aggregated)"`**
+- 全国 水平誤差 95 パーセンタイル:**`{python} f"{H95*100:.2f} cm"`**
+- 全国 垂直誤差 95 パーセンタイル:**`{python} f"{V95*100:.2f} cm"`**
+- TTFF(15 分リセット、95 パーセンタイル):**`{python} f"{TTFF95:.1f} 秒"`**
+- 全国 Fix 率(Q=4):**`{python} f"{AVAIL*100:.2f}%"`**
+- 対流圏補正の発散イベント検出数:**n/a**(Phase 1+ で導入予定、§6)
+- L6 ブロードキャストアラート件数:**`{python} N_L6_ALERTS if L6_ALERTS_PRESENT else "n/a(未集計)"`**
 
 # 性能
 
@@ -542,7 +493,7 @@ def _plot_cdf(values_m, p_marks, *, xlabel, fig=None, ax=None):
         ax.annotate(f"{int(q*100)}% = {v_cm:.2f} cm",
                     xy=(v_cm, q), xytext=(v_cm + 1, q - 0.05),
                     fontsize=8, alpha=0.7)
-    ax.set_xlabel(xlabel); ax.set_ylabel("Cumulative probability")
+    ax.set_xlabel(xlabel); ax.set_ylabel("累積確率")
     # Clip x-axis at a generous 99.9th percentile for readability.
     p999 = np.quantile(values_m, 0.999) * 100
     ax.set_xlim(0, max(p999 * 1.05, 1.0))
@@ -555,7 +506,7 @@ if EPOCH_ERRORS_PRESENT:
 else:
     _vals_h = all_horiz
     _marks = {q: float(np.quantile(all_horiz, q)) for q in (0.50, 0.95, 0.99)}
-_plot_cdf(_vals_h, _marks, xlabel="Horizontal error (cm)")
+_plot_cdf(_vals_h, _marks, xlabel="水平誤差 [cm]")
 ```
 
 ```{python}
@@ -568,7 +519,7 @@ if EPOCH_ERRORS_PRESENT:
 else:
     _vals_v = all_vert
     _marks_v = {q: float(np.quantile(all_vert, q)) for q in (0.50, 0.95, 0.99)}
-_plot_cdf(_vals_v, _marks_v, xlabel="Vertical error (cm)")
+_plot_cdf(_vals_v, _marks_v, xlabel="垂直誤差 [cm]")
 ```
 
 ```{python}
@@ -629,47 +580,30 @@ plt.tight_layout()
 
 ### 近月のトレンド
 
-**Coming Soon.** This subsection will show the past 13 months of
-national 95th-percentile horizontal and vertical errors, with the
-current month highlighted and the year-ago same month marked. The
-trend becomes meaningful once the Phase 0 / Phase 1 retroactive
-backfill (ADR 0007) covers Apr 2025 onwards — until then the single
-recent month is reported in the headline tables above.
+**Coming Soon。** 本節では、過去 13 ヶ月の全国 95 パーセンタイル水平・垂直誤差の推移を、当月をハイライト・前年同月を比較マーカー付きで掲載する予定です。トレンド表示は、Phase 0 / Phase 1 の遡及処理(ADR 0007)で 2025 年 4 月以降が揃った時点で意味を持ちます。それまでは上のテーブルに当月の値のみを掲載します。
 
 ## 詳細分析
 
 ### 完全性指標
 
 ::: {.callout-note appearance="default"}
-**Coming Soon (Phase 1+)**
+**Coming Soon(Phase 1+)**
 
-Integrity Analysis will introduce target-use-case-specific Protection
-Level (PL) reporting in Phase 1, addressing distinct integrity
-requirements for automotive lane-keeping, drone operations, surveying,
-and agricultural automation. The IASB (Inter-Augmentation SIS Bias)
-monitor, currently in peer review at GPS Solutions, will be added
-following acceptance.
+完全性指標(Integrity Analysis)は、Phase 1 にて用途別の Protection Level(PL)レポーティングを導入予定です。車線維持自動運転、ドローン運用、測量、農業自動化など、用途ごとに異なる完全性要件に対応します。GPS Solutions に投稿中の IASB(Inter-Augmentation SIS Bias)モニタは、論文採録後に追加します。
 
-Phase 1 target: end of 2026 (PL distributions per target use case).
-Phase 2 target: 2027/Q4 (IASB monitor outputs, post-acceptance).
+Phase 1 目標:2026 年末(用途別 PL 分布)。
+Phase 2 目標:2027/Q4(IASB モニタ出力、採録後)。
 :::
 
 ## 相互検証
 
 ::: {.callout-note appearance="default"}
-**Coming Soon (Phase 1+)**
+**Coming Soon(Phase 1+)**
 
-Cross Validation will report agreement statistics between the
-CLASLIB-based primary engine and MRTKLIB (parallel evaluation
-engine) on a sample of approximately 100 stations. The analysis
-demonstrates the consistency of PNT Moni's evaluation across
-independent open-source implementations and prepares for the
-2027/Q4 transition to MRTKLIB primary
-(per [ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md)).
+相互検証では、主エンジンである CLASLIB ベース処理と、並走評価エンジン MRTKLIB の間の合意統計を、約 100 局のサンプルに対して報告します。独立した OSS 実装間で PNT Moni の評価が一致していることを示し、2027/Q4 の MRTKLIB 主エンジン化([ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md))への準備とします。
 
-Phase 1 target: parallel sample stations cross-validation.
-Phase 2 target (2027/Q4): direction reversal — MRTKLIB primary,
-CLASLIB historical reference.
+Phase 1 目標:並走サンプル局での相互検証公開。
+Phase 2 目標(2027/Q4):主従反転 — MRTKLIB を主、CLASLIB は履歴参照。
 :::
 
 # データ可用性
@@ -680,56 +614,43 @@ CLASLIB historical reference.
 #| label: fig-availability
 #| fig-cap: "観測局別データ可用性分布"
 
-# Synthetic per-station availability
+# 暫定:観測局別データ可用性のヒストグラム(synthetic)
 station_avail = rng.beta(50, 1, size=N_STATIONS)
 fig, ax = plt.subplots(figsize=(8, 4))
 ax.hist(station_avail * 100, bins=40, color=COLOR_PRIMARY, alpha=0.85, edgecolor="white")
-ax.set_xlabel("Availability (%)")
-ax.set_ylabel("Number of stations")
+ax.set_xlabel("可用性 [%]")
+ax.set_ylabel("観測局数")
 ax.set_xlim(85, 100)
 plt.tight_layout()
 ```
 
-National aggregate availability for `{python} PERIOD_LABEL`:
-**`{python} f"{AVAIL*100:.1f}%"`**.
+`{python} PERIOD_LABEL` の全国 aggregate 可用性:**`{python} f"{AVAIL*100:.1f}%"`**。
 
-**GEONET maintenance events affecting availability**: No major
-maintenance events recorded in `{python} PERIOD_LABEL`.
+**可用性に影響した GEONET 保守イベント**:`{python} PERIOD_LABEL` には大規模な保守イベントは記録されていません。
 
-For up-to-date GEONET maintenance announcements, see the GSI
-official maintenance page at
-[https://terras.gsi.go.jp/](https://terras.gsi.go.jp/).
+GEONET の最新の保守告知は、国土地理院の公式お知らせページ([https://terras.gsi.go.jp/](https://terras.gsi.go.jp/))を参照してください。
 
 ## メッセージ生成局(MGF)切替
 
-CLAS messages are generated by multiple facilities (Hitachi-Ota,
-Kobe, Tsukuba) which may switch during operations. Switching events
-are detected from the broadcast metadata and reported here as a
-context indicator for any short-term changes in correction
-characteristics.
+CLAS の補強メッセージは複数の生成局(Hitachi-Ota、Kobe、Tsukuba)から送出され、運用中に切り替わることがあります。切替イベントは放送メタデータから検出され、短期的な補正特性の変化を示すコンテキスト指標として本節に記載します。
 
-For `{python} PERIOD_LABEL`: **No facility switching events detected.**
+`{python} PERIOD_LABEL`:**生成局切替イベントは検出されていません。**
 
 ## データ効率
 
 ::: {.callout-note appearance="default"}
-**Coming Soon (Phase 1+)**
+**Coming Soon(Phase 1+)**
 
-Data efficiency analysis will report on L6 message slot efficiency,
-padding rates, and message validity statistics, providing visibility
-into the operational health of CLAS broadcast.
+データ効率分析では、L6 メッセージのスロット利用効率、パディング率、メッセージ有効性統計を報告し、CLAS 放送の運用健全性に関する可視性を提供します。
 
-Phase 1 target: end of 2026.
+Phase 1 目標:2026 年末。
 :::
 
 ## 異常
 
 ### アラートフラグ
 
-L6 broadcast alert messages are flags transmitted within the CLAS
-correction stream indicating known issues at the source (CSSR
-generation level). These are tracked monthly to give subscribers
-visibility into the broadcast's self-reported health.
+L6 ブロードキャストアラート(Alert flag)は、CLAS の補強情報ストリーム(CSSR データ部)に含まれる、生成側で検知された既知の問題を示すフラグです。本節では、放送側が自己申告する健全性の可視化のため、月次でこれを集計して報告します。
 
 ```{python}
 #| echo: false
@@ -737,71 +658,55 @@ visibility into the broadcast's self-reported health.
 
 if not L6_ALERTS_PRESENT:
     print(
-        f"For **{PERIOD_LABEL}**: L6 alert aggregation has not been "
-        f"produced for this period — run "
+        f"**{PERIOD_LABEL}**:本期間の L6 アラート集計は未実行です — "
         f"`pntmoni-pipeline analyze l6-alerts --period {PERIOD}` "
-        f"to populate (methodology §6)."
+        f"を実行して集計してください(方法論 §6)。"
     )
 elif N_L6_ALERTS == 0:
     print(
-        f"For **{PERIOD_LABEL}**: **0 alert messages detected** across "
-        f"the L6 broadcast (no alert flags raised)."
+        f"**{PERIOD_LABEL}**:L6 ブロードキャスト全体で "
+        f"**アラート 0 件**(Alert flag が立ったメッセージなし)。"
     )
 else:
-    _per_prn = ", ".join(f"PRN {p}: {c}" for p, c in sorted(L6_ALERTS_PER_PRN.items()))
+    _per_prn = "、".join(f"PRN {p}: {c}" for p, c in sorted(L6_ALERTS_PER_PRN.items()))
     print(
-        f"For **{PERIOD_LABEL}**: **{N_L6_ALERTS} alert message(s) "
-        f"detected** across the L6 broadcast ({_per_prn})."
+        f"**{PERIOD_LABEL}**:L6 ブロードキャスト全体で "
+        f"**{N_L6_ALERTS} 件のアラートを検出**({_per_prn})。"
     )
 ```
 
 ### 補正値の発散(対流圏)
 
-PNT Moni detects tropospheric divergence events—periods when CLAS
-troposphere correction values deviate physically from expected
-values, leading to performance degradation. This is the most common
-class of CLAS broadcast anomaly and a critical monitoring function
-for users.
+CLAS の対流圏補正値が物理的な期待値から乖離する期間(性能劣化につながる)を、PNT Moni は対流圏発散イベントとして検出します。これは CLAS ブロードキャスト異常の最も頻度の高いクラスであり、利用者にとって重要な監視機能です。
 
-Detection methodology combines a statistical threshold (rolling
-distribution-based) with an absolute threshold (physical magnitude
-of divergence). Events are reported when both conditions are
-satisfied for sustained periods.
+検出方法は、統計的閾値(ローリング分布ベース)と絶対閾値(物理的な発散量)を組み合わせ、両者が継続的に満たされた期間をイベントとして報告します。
 
-For `{python} PERIOD_LABEL`: **0 tropospheric divergence events
-detected.** Detailed methodology will be documented in
-`30-evaluation-methodology/07-anomaly-detection.md`.
+`{python} PERIOD_LABEL`:**対流圏発散イベントの検出はありません(0 件)。** 詳細な検出手法は `30-evaluation-methodology/07-anomaly-detection.md` に文書化されます。
 
 # 付録
 
 ## GNSS システム通知:NAGU / NANU / NAQU
 
-The following operational advisories were issued for the GNSS
-constellations during `{python} PERIOD_LABEL`. These are tracked
-for cross-reference with anomalies and signal availability.
+`{python} PERIOD_LABEL` 期間中に GNSS コンステレーション運用に対して発出された通知の一覧です。異常イベントや信号可用性との相互参照のため記録します。
 
 ```{python}
 #| label: tbl-system-events
 #| tbl-cap: "対象期間中の GNSS システム通知(暫定)"
 
 events = pd.DataFrame({
-    "Date": ["—"],
-    "Source": ["—"],
-    "Type": ["—"],
-    "Description": ["No advisories recorded for this synthetic period"],
+    "日付": ["—"],
+    "出典": ["—"],
+    "種別": ["—"],
+    "内容": ["本期間(暫定データ)では通知は記録されていません"],
 })
 events
 ```
 
-In production, NAGU (GPS), NANU (GPS), and NAQU (QZSS) advisories
-are collected and listed here.
+実運用では NAGU(GPS)、NANU(GPS)、NAQU(QZSS)の通知を収集し本一覧に掲載します。
 
 ## 衛星一覧
 
-This section provides a reference snapshot of the satellite
-constellation status during `{python} PERIOD_LABEL`. The information
-helps subscribers understand which CLAS-augmented signals were
-broadcast by each satellite.
+本節は `{python} PERIOD_LABEL` 期間中のコンステレーション状況のリファレンス・スナップショットです。各衛星がどの CLAS 補強対象信号を放送していたかの把握に役立ちます。
 
 ### GPS
 
@@ -811,17 +716,17 @@ broadcast by each satellite.
 
 gps = pd.DataFrame({
     "PRN": [f"{i:02d}" for i in [1, 2, 3, 4, 5]],
-    "Block": ["IIIA", "IIR", "IIIA", "IIR-M", "IIF"],
+    "ブロック": ["IIIA", "IIR", "IIIA", "IIR-M", "IIF"],
     "L1 C/A": ["✓"] * 5,
     "L1C": ["✓", "—", "✓", "—", "—"],
     "L2C": ["✓", "—", "✓", "✓", "✓"],
     "L5": ["✓", "—", "✓", "—", "✓"],
-    "Status": ["Healthy"] * 5,
+    "状態": ["健全"] * 5,
 })
 gps
 ```
 
-(In production, full GPS constellation listed.)
+(実運用では GPS の全コンステレーションを掲載。)
 
 ### QZSS(みちびき)
 
@@ -831,13 +736,13 @@ gps
 
 qzss = pd.DataFrame({
     "PRN": ["J01", "J02", "J03", "J07"],
-    "Block": ["I", "I", "I", "I"],
+    "ブロック": ["I", "I", "I", "I"],
     "L1 C/A": ["✓"] * 4,
     "L1C": ["✓"] * 4,
     "L2C": ["✓"] * 4,
     "L5": ["✓"] * 4,
     "L6": ["✓"] * 4,
-    "Status": ["Healthy"] * 4,
+    "状態": ["健全"] * 4,
 })
 qzss
 ```
@@ -850,55 +755,45 @@ qzss
 
 galileo = pd.DataFrame({
     "ID": [f"E{i:02d}" for i in [1, 2, 3, 4, 5]],
-    "Generation": ["FOC", "FOC", "FOC", "FOC", "FOC"],
+    "世代": ["FOC", "FOC", "FOC", "FOC", "FOC"],
     "E1": ["✓"] * 5,
     "E5a": ["✓"] * 5,
     "E5b": ["✓"] * 5,
     "E6": ["✓"] * 5,
-    "Status": ["Healthy"] * 5,
+    "状態": ["健全"] * 5,
 })
 galileo
 ```
 
-(In production, full Galileo constellation listed. PNT Moni's
-evaluation also covers Galileo signals received by GEONET stations.)
+(実運用では Galileo の全コンステレーションを掲載。PNT Moni の評価は GEONET 観測局で受信される Galileo 信号も対象としています。)
 
 ### 当月の状態変化
 
-For `{python} PERIOD_LABEL`: **No status changes recorded.**
+`{python} PERIOD_LABEL`:**状態変化の記録はありません。**
 
 ---
 
 ## 方法論バージョンタグ
 
-| Field                  | Value |
-|------------------------|-------|
-| Methodology version    | `{python} METHODOLOGY_VERSION`     |
-| Pipeline config hash   | `{python} CONFIG_HASH`             |
-| Engine                 | `{python} f"{ENGINE} {ENGINE_VERSION}"` |
-| QC tool                | `{python} f"{QC_TOOL} {QC_VERSION}"`     |
-| Reporting period       | `{python} PERIOD_LABEL` |
-| Data mode              | `{python} DATA_MODE`               |
+| 項目                       | 値 |
+|----------------------------|-----|
+| 方法論バージョン           | `{python} METHODOLOGY_VERSION`     |
+| パイプライン config hash   | `{python} CONFIG_HASH`             |
+| エンジン                   | `{python} f"{ENGINE} {ENGINE_VERSION}"` |
+| QC ツール                  | `{python} f"{QC_TOOL} {QC_VERSION}"`     |
+| 参照座標手法バージョン     | `{python} REFERENCE_COORD_VERSION` |
+| 評価ストリーム             | `{python} STREAM`                  |
+| 対象期間                   | `{python} PERIOD_LABEL` |
+| データモード               | `{python} DATA_MODE`               |
 
-For full methodology details, see
-[https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
+完全な方法論文書は [https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0) を参照してください。
 
 ---
 
 ::: {.callout-note appearance="minimal"}
-**Attribution**: GEONET data provided by GSI under PDL 1.0
-(出典：国土地理院 電子基準点データ提供サービス).
-QSS official Performance Reports under
-[Government of Japan Standard Terms of Use v2.0](https://qzss.go.jp/policy/rule.html).
+**出典・利用条件**:GEONET データは国土地理院が PDL 1.0 で配布(出典:国土地理院 電子基準点データ提供サービス)。QSS 公式 Service Performance Report は[政府標準利用規約 v2.0](https://qzss.go.jp/policy/rule.html) に基づきます。
 
-**About PNT Moni**: PNT Moni is an independent service for continuous
-evaluation of GNSS augmentation services, beginning with QZSS CLAS.
-PNT Moni's monthly reports complement the semi-annual official QSS
-Performance Reports through monthly granularity, station-level
-drill-down, and analytical depth. Half-yearly Comparison Reports
-synchronized with the official cycle are available separately
-(see [ADR 0006](../../../pntmoni-docs/70-decisions/adr-0006.md)
-for details).
+**PNT Moni について**:PNT Moni は GNSS 補強サービスの継続評価を提供する独立サービスで、QZSS CLAS を出発点としています。月次レポートは公式半年次レポートを月次解像度・独立性・解析の深さで補完し、公式サイクルに同期した半年次の比較レポート(Comparison Archive)も別途提供します([ADR 0006](../../../pntmoni-docs/70-decisions/adr-0006.md))。
 
-**Contact**: hello@pntmoni.com · [https://pntmoni.com](https://pntmoni.com)
+**お問い合わせ**:hello@pntmoni.com · [https://pntmoni.com](https://pntmoni.com)
 :::
