@@ -107,7 +107,10 @@ def gather_inputs(
     # Directory-style inputs (passed through to INPUTS but not loaded
     # into the bundle DataFrame fields). epoch_errors is per-day and
     # too large for a single read; the qmd streams + subsamples it.
+    # reference_coords_dir provides station ECEF coords used by the
+    # hex-grid spatial figure (analysis/_hex_grid.py).
     bundle.paths["epoch_errors_dir"] = processed_root / "epoch_errors" / mode
+    bundle.paths["reference_coords_dir"] = processed_root / "reference_coords"
     return bundle
 
 

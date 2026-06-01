@@ -209,6 +209,29 @@ if _ep_dir_str:
             EPOCH_ERRORS_DF = _pd_at.concat(_frames, ignore_index=True)
             EPOCH_ERRORS_PRESENT = True
 
+# B3-3b: hex-grid spatial aggregation (60 km flat-to-flat,
+# CLAS-spec-aligned). Pools epoch errors per cell and computes the
+# pooled percentile per methodology §5.1, mirroring the single-number
+# headline rule at hex resolution. Populated cells only — empty cells
+# render blank (per ADR 0013 Postscript scope decision).
+HEX_PRESENT = False
+HEX_GRID = None
+HEX_SUMMARY = None
+_rc_dir_str = INPUTS.get("reference_coords_dir") if isinstance(INPUTS, dict) else None
+if _ep_dir_str and _rc_dir_str:
+    _ep_dir = _Path_at(_ep_dir_str)
+    _rc_dir = _Path_at(_rc_dir_str)
+    if _ep_dir.is_dir() and _rc_dir.is_dir():
+        try:
+            from pntmoni_pipeline.analysis._hex_grid import build_hex_summary
+            HEX_GRID, HEX_SUMMARY = build_hex_summary(
+                period=PERIOD, epoch_errors_dir=_ep_dir,
+                reference_coords_dir=_rc_dir,
+            )
+            HEX_PRESENT = len(HEX_SUMMARY) > 0
+        except Exception as _e:
+            HEX_PRESENT = False
+
 # Tiny display helpers used by later inline `{python}` expressions.
 def fmt_cm(m, nd=1):
     return f"{m*100:.{nd}f}" if m is not None else "n/a"
@@ -373,7 +396,7 @@ marked "Coming Soon" appear in Phase 1+ per the rollout plan in
 
 本レポートは、**`{python} PERIOD_LABEL`** における QZSS CLAS(センチメータ級測位補強サービス)の性能を、PNT Moni が公開データとオープンソースのツール群を用いて評価した結果をまとめたものです。
 
-PNT Moni は GNSS 補強サービスの独立評価サービスとして、内閣府／準天頂衛星システムサービス株式会社(Quasi-Zenith Satellite System Services Inc.; QSS)が公開する公式 Service Performance Report より高い空間・時間解像度で CLAS の性能を継続的にモニタリングしています。月次レポート(本書)は公式の半期毎レポートを補完するもので、月次の更新頻度、独立した第三者評価、実務に資する分析深度を提供します。本 Free tier 月次レポートは **全国 aggregate のみ** を対象とし、観測局単位のドリルダウンは **Pro tier** で提供されます。
+PNT Moni は GNSS 補強サービスの独立評価サービスとして、内閣府／準天頂衛星システムサービス株式会社(Quasi-Zenith Satellite System Services Inc.; QSS)が公開する公式 Service Performance Report より高い空間・時間解像度で CLAS の性能を継続的にモニタリングしています。月次レポート(本書)は公式の半期毎レポートを補完するもので、月次の更新頻度、独立した第三者評価、実務に資する分析深度を提供します。本 Free tier 月次レポートは **全国統計値のみ** を対象とし、観測局単位の詳細分析は **Pro tier** で提供されます。
 
 本レポート末尾の「方法論バージョンタグ」は、本レポートを生成した処理構成を一意に識別します。完全な方法論文書は [https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0) を参照してください。
 
@@ -577,6 +600,119 @@ ax.legend()
 plt.tight_layout()
 ```
 
+### 空間分布
+
+CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセルは空白で表示し、CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
+
+色階は絶対閾値ベースで、緑は CLAS 補強の典型的な性能、黄は注意水準、赤は性能逸脱を示します。
+
+```{python}
+#| label: fig-hex-spatial
+#| fig-cap: "全国 95 パーセンタイル水平・垂直誤差の空間分布(60 km hex セル、エポック・プール)"
+#| fig-width: 12
+#| fig-height: 6
+
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from matplotlib.patches import Polygon as MplPolygon
+from matplotlib.lines import Line2D
+
+def _hex_color(val_m, thresholds_cm):
+    """Map metres → green/amber/red by absolute cm thresholds."""
+    val_cm = val_m * 100.0
+    if val_cm <= thresholds_cm[0]:
+        return COLOR_SUCCESS
+    if val_cm <= thresholds_cm[1]:
+        return COLOR_WARNING
+    return COLOR_DANGER
+
+H_THRESHOLDS_CM = (6.0, 12.0)
+V_THRESHOLDS_CM = (12.0, 24.0)
+
+if HEX_PRESENT:
+    fig, axes = plt.subplots(
+        1, 2, figsize=(12, 6),
+        subplot_kw={"projection": ccrs.PlateCarree()},
+    )
+    panels = [
+        (axes[0], "horizontal_p95", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM),
+        (axes[1], "vertical_p95",   "垂直誤差 95 パーセンタイル", V_THRESHOLDS_CM),
+    ]
+    extent = list(HEX_GRID.bbox)   # (lon_min, lon_max, lat_min, lat_max)
+    for ax, col, title, thresholds in panels:
+        ax.set_extent([extent[0], extent[1], extent[2], extent[3]],
+                      crs=ccrs.PlateCarree())
+        ax.add_feature(cfeature.LAND.with_scale("50m"),
+                       facecolor="#f5f5f4", edgecolor="none")
+        ax.add_feature(cfeature.OCEAN.with_scale("50m"),
+                       facecolor="#fafafa", edgecolor="none")
+        ax.add_feature(cfeature.COASTLINE.with_scale("50m"),
+                       linewidth=0.4, edgecolor="#94a3b8")
+        for _, row in HEX_SUMMARY.iterrows():
+            verts = HEX_GRID.vertices(int(row["hex_idx"]))
+            color = _hex_color(float(row[col]), thresholds)
+            ax.add_patch(MplPolygon(
+                verts, closed=True,
+                facecolor=color, edgecolor="white", linewidth=0.3,
+                alpha=0.85, transform=ccrs.PlateCarree(),
+                zorder=10,
+            ))
+        ax.set_title(title + f" [cm]", fontsize=11)
+        ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
+        # Per-axis legend (absolute threshold key).
+        legend_handles = [
+            Line2D([0], [0], marker="h", color="none",
+                   markerfacecolor=COLOR_SUCCESS, markeredgecolor="white",
+                   markersize=10, label=f"≤ {thresholds[0]:.0f}"),
+            Line2D([0], [0], marker="h", color="none",
+                   markerfacecolor=COLOR_WARNING, markeredgecolor="white",
+                   markersize=10, label=f"{thresholds[0]:.0f}–{thresholds[1]:.0f}"),
+            Line2D([0], [0], marker="h", color="none",
+                   markerfacecolor=COLOR_DANGER, markeredgecolor="white",
+                   markersize=10, label=f"> {thresholds[1]:.0f}"),
+        ]
+        ax.legend(
+            handles=legend_handles, loc="upper left", fontsize=8,
+            framealpha=0.9, title="cm", title_fontsize=8,
+        )
+    plt.tight_layout()
+else:
+    print(
+        "**`{python} PERIOD_LABEL`**:空間分布図は epoch_errors / "
+        "reference_coords parquet が揃った時点で生成されます。"
+    )
+```
+
+```{python}
+#| label: tbl-hex-coverage
+#| tbl-cap: "Hex セル統計"
+#| echo: false
+
+if HEX_PRESENT:
+    _hex_n = len(HEX_SUMMARY)
+    _hex_total = HEX_GRID.n_hex
+    _med_st = int(HEX_SUMMARY["n_stations"].median())
+    _med_h = HEX_SUMMARY["horizontal_p95"].median() * 100
+    _med_v = HEX_SUMMARY["vertical_p95"].median() * 100
+    _stats = pd.DataFrame({
+        "指標": [
+            "Hex セル(値あり / グリッド全体)",
+            "セルあたり観測局数(中央値)",
+            "水平 95% 中央値 [cm]",
+            "垂直 95% 中央値 [cm]",
+            "セル間隔(flat-to-flat)",
+        ],
+        "値": [
+            f"{_hex_n} / {_hex_total}",
+            f"{_med_st}",
+            f"{_med_h:.2f}",
+            f"{_med_v:.2f}",
+            f"{HEX_GRID.spacing_km:.0f} km",
+        ],
+    })
+    _stats   # Quarto / IPython renders the DataFrame inline.
+```
+
 ### 近月のトレンド
 
 **Coming Soon。** 本節では、過去 13 ヶ月の全国 95 パーセンタイル水平・垂直誤差の推移を、当月をハイライト・前年同月を比較マーカー付きで掲載する予定です。トレンド表示は、Phase 0 / Phase 1 の遡及処理で 2025 年 4 月以降が揃った時点で意味を持ちます。それまでは上のテーブルに当月の値のみを掲載します。
@@ -610,7 +746,7 @@ ax.set_xlim(85, 100)
 plt.tight_layout()
 ```
 
-`{python} PERIOD_LABEL` の全国 aggregate 可用性:**`{python} f"{AVAIL*100:.1f}%"`**。
+`{python} PERIOD_LABEL` の全国統計値 可用性:**`{python} f"{AVAIL*100:.1f}%"`**。
 
 **可用性に影響した GEONET 保守イベント**:`{python} PERIOD_LABEL` には大規模な保守イベントは記録されていません。
 
