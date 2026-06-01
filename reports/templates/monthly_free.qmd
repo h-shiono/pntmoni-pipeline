@@ -669,10 +669,8 @@ CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、�
 色階は絶対閾値ベースで、緑は CLAS 補強の典型的な性能、黄は注意水準、赤は性能逸脱を示します。
 
 ```{python}
-#| label: fig-hex-spatial
-#| fig-cap: "全国 95 パーセンタイル水平・垂直誤差の空間分布(60 km hex セル、エポック・プール)"
-#| fig-width: 12
-#| fig-height: 6
+#| label: hex-spatial-setup
+#| include: false
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
@@ -691,60 +689,75 @@ def _hex_color(val_m, thresholds_cm):
 H_THRESHOLDS_CM = (6.0, 12.0)
 V_THRESHOLDS_CM = (12.0, 24.0)
 
-if HEX_PRESENT:
-    if not HEX_REAL_DATA:
-        print("> **プレビュー(合成データ)**:本図は INPUTS 未注入のための合成サンプルです。実データは driver 経由(`pntmoni-pipeline report monthly --render`)で生成されます。\n")
-    fig, axes = plt.subplots(
-        1, 2, figsize=(12, 6),
+def _render_hex_panel(col, title, thresholds_cm):
+    fig, ax = plt.subplots(
+        figsize=(7, 7),
         subplot_kw={"projection": ccrs.PlateCarree()},
     )
-    panels = [
-        (axes[0], "horizontal_p95", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM),
-        (axes[1], "vertical_p95",   "垂直誤差 95 パーセンタイル", V_THRESHOLDS_CM),
+    extent = list(HEX_GRID.bbox)
+    ax.set_extent(extent, crs=ccrs.PlateCarree())
+    ax.add_feature(cfeature.LAND.with_scale("50m"),
+                   facecolor="#f5f5f4", edgecolor="none")
+    ax.add_feature(cfeature.OCEAN.with_scale("50m"),
+                   facecolor="#fafafa", edgecolor="none")
+    ax.add_feature(cfeature.COASTLINE.with_scale("50m"),
+                   linewidth=0.4, edgecolor="#94a3b8")
+    for _, row in HEX_SUMMARY.iterrows():
+        verts = HEX_GRID.vertices(int(row["hex_idx"]))
+        color = _hex_color(float(row[col]), thresholds_cm)
+        ax.add_patch(MplPolygon(
+            verts, closed=True,
+            facecolor=color, edgecolor=color, linewidth=0.2,
+            alpha=0.55, transform=ccrs.PlateCarree(),
+            zorder=10,
+        ))
+    ax.set_title(title + " [cm]", fontsize=11)
+    ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
+    legend_handles = [
+        Line2D([0], [0], marker="h", color="none",
+               markerfacecolor=COLOR_SUCCESS, markeredgecolor="white",
+               markersize=10, label=f"≤ {thresholds_cm[0]:.0f}"),
+        Line2D([0], [0], marker="h", color="none",
+               markerfacecolor=COLOR_WARNING, markeredgecolor="white",
+               markersize=10, label=f"{thresholds_cm[0]:.0f}–{thresholds_cm[1]:.0f}"),
+        Line2D([0], [0], marker="h", color="none",
+               markerfacecolor=COLOR_DANGER, markeredgecolor="white",
+               markersize=10, label=f"> {thresholds_cm[1]:.0f}"),
     ]
-    extent = list(HEX_GRID.bbox)   # (lon_min, lon_max, lat_min, lat_max)
-    for ax, col, title, thresholds in panels:
-        ax.set_extent([extent[0], extent[1], extent[2], extent[3]],
-                      crs=ccrs.PlateCarree())
-        ax.add_feature(cfeature.LAND.with_scale("50m"),
-                       facecolor="#f5f5f4", edgecolor="none")
-        ax.add_feature(cfeature.OCEAN.with_scale("50m"),
-                       facecolor="#fafafa", edgecolor="none")
-        ax.add_feature(cfeature.COASTLINE.with_scale("50m"),
-                       linewidth=0.4, edgecolor="#94a3b8")
-        for _, row in HEX_SUMMARY.iterrows():
-            verts = HEX_GRID.vertices(int(row["hex_idx"]))
-            color = _hex_color(float(row[col]), thresholds)
-            ax.add_patch(MplPolygon(
-                verts, closed=True,
-                facecolor=color, edgecolor=color, linewidth=0.2,
-                alpha=0.55, transform=ccrs.PlateCarree(),
-                zorder=10,
-            ))
-        ax.set_title(title + f" [cm]", fontsize=11)
-        ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
-        # Per-axis legend (absolute threshold key).
-        legend_handles = [
-            Line2D([0], [0], marker="h", color="none",
-                   markerfacecolor=COLOR_SUCCESS, markeredgecolor="white",
-                   markersize=10, label=f"≤ {thresholds[0]:.0f}"),
-            Line2D([0], [0], marker="h", color="none",
-                   markerfacecolor=COLOR_WARNING, markeredgecolor="white",
-                   markersize=10, label=f"{thresholds[0]:.0f}–{thresholds[1]:.0f}"),
-            Line2D([0], [0], marker="h", color="none",
-                   markerfacecolor=COLOR_DANGER, markeredgecolor="white",
-                   markersize=10, label=f"> {thresholds[1]:.0f}"),
-        ]
-        ax.legend(
-            handles=legend_handles, loc="upper left", fontsize=8,
-            framealpha=0.9, title="cm", title_fontsize=8,
-        )
+    ax.legend(
+        handles=legend_handles, loc="upper left", fontsize=8,
+        framealpha=0.9, title="cm", title_fontsize=8,
+    )
     plt.tight_layout()
+```
+
+```{python}
+#| echo: false
+#| output: asis
+
+if HEX_PRESENT and not HEX_REAL_DATA:
+    print("> **プレビュー(合成データ)**:本図は INPUTS 未注入のための合成サンプルです。実データは driver 経由(`pntmoni-pipeline report monthly --render`)で生成されます。\n")
+```
+
+```{python}
+#| label: fig-hex-horizontal
+#| fig-cap: "水平誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
+
+if HEX_PRESENT:
+    _render_hex_panel("horizontal_p95", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM)
 else:
     print(
         "**`{python} PERIOD_LABEL`**:空間分布図は epoch_errors / "
         "reference_coords parquet が揃った時点で生成されます。"
     )
+```
+
+```{python}
+#| label: fig-hex-vertical
+#| fig-cap: "垂直誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
+
+if HEX_PRESENT:
+    _render_hex_panel("vertical_p95", "垂直誤差 95 パーセンタイル", V_THRESHOLDS_CM)
 ```
 
 ```{python}
