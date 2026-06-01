@@ -16,18 +16,88 @@ format:
 execute:
   echo: false
   warning: false
+  freeze: false
+  cache: false
 params:
   year: 2026
   month: 4
+  period: "2026-04"
+  stream: "final"
+  mode: "kinematic_p30_verify"
   methodology_version: "1.0.0"
   config_hash: "5b53653d2bff9f1e"
+  config_hash_full: "5b53653d2bff9f1e000000000000000000000000000000000000000000000000"
   engine: "pntmoni-claslib"
   engine_version: "v0.8.3-pntmoni-1"
   qc_tool: "teqc"
   qc_version: "2019Feb25"
+  reference_coord_version: "gsi-daily-median15d-1.0"
   data_mode: "synthetic"
+  inputs: {}
+  inputs_status: {}
 jupyter: python3
 ---
+
+```{python}
+#| label: parameters
+#| include: false
+
+# Parameters cell. Defaults mirror the YAML ``params:`` so the template
+# renders standalone (template preview / synthetic mode). At production
+# render time the pipeline driver
+# (src/pntmoni_pipeline/reports/driver.py) sets the
+# ``PNTMONI_REPORT_PARAMS`` env var to a JSON file mirroring this
+# cell's variables, and the override block below pulls the values in.
+# (Quarto's ``--execute-params`` / ``-P`` / papermill tagging path is
+# not relied upon — it does not reliably inject into Jupyter-tagged
+# cells in current Quarto builds.)
+YEAR = 2026
+MONTH = 4
+PERIOD = "2026-04"
+STREAM = "final"
+MODE = "kinematic_p30_verify"
+METHODOLOGY_VERSION = "1.0.0"
+CONFIG_HASH = "5b53653d2bff9f1e"
+CONFIG_HASH_FULL = "5b53653d2bff9f1e" + "0" * 48
+ENGINE = "pntmoni-claslib"
+ENGINE_VERSION = "v0.8.3-pntmoni-1"
+QC_TOOL = "teqc"
+QC_VERSION = "2019Feb25"
+REFERENCE_COORD_VERSION = "gsi-daily-median15d-1.0"
+DATA_MODE = "synthetic"
+INPUTS: dict[str, str] = {}        # parquet paths per input name
+INPUTS_STATUS: dict[str, str] = {} # "present"|"missing" per input name
+
+# Production override: the pipeline driver
+# (src/pntmoni_pipeline/reports/driver.py) sets
+# PNTMONI_REPORT_PARAMS to a JSON file mirroring this cell's variables.
+# This env-var contract is the canonical injection path; papermill /
+# Quarto --execute-params remain supported but are not relied upon.
+import json as _json
+import os as _os
+_pp = _os.environ.get("PNTMONI_REPORT_PARAMS")
+if _pp:
+    with open(_pp) as _fp:
+        _params = _json.load(_fp)
+    YEAR = int(_params.get("year", YEAR))
+    MONTH = int(_params.get("month", MONTH))
+    PERIOD = _params.get("period", PERIOD)
+    STREAM = _params.get("stream", STREAM)
+    MODE = _params.get("mode", MODE)
+    METHODOLOGY_VERSION = _params.get("methodology_version", METHODOLOGY_VERSION)
+    CONFIG_HASH = _params.get("config_hash", CONFIG_HASH)
+    CONFIG_HASH_FULL = _params.get("config_hash_full", CONFIG_HASH_FULL)
+    ENGINE = _params.get("engine", ENGINE)
+    ENGINE_VERSION = _params.get("engine_version", ENGINE_VERSION)
+    QC_TOOL = _params.get("qc_tool", QC_TOOL)
+    QC_VERSION = _params.get("qc_version", QC_VERSION)
+    REFERENCE_COORD_VERSION = _params.get(
+        "reference_coord_version", REFERENCE_COORD_VERSION,
+    )
+    DATA_MODE = _params.get("data_mode", DATA_MODE)
+    INPUTS = _params.get("inputs", INPUTS)
+    INPUTS_STATUS = _params.get("inputs_status", INPUTS_STATUS)
+```
 
 ```{python}
 #| label: setup
@@ -65,24 +135,11 @@ mpl.rcParams['axes.grid'] = True
 mpl.rcParams['grid.alpha'] = 0.3
 mpl.rcParams['figure.dpi'] = 100
 
-# ---- Reporting period from params ----
-YEAR = 2026   # In production: int(params['year'])
-MONTH = 4     # In production: int(params['month'])
-PERIOD = f"{YEAR}-{MONTH:02d}"
-PERIOD_LABEL = pd.Timestamp(YEAR, MONTH, 1).strftime("%B %Y")
-
-# ---- Methodology / engine identifiers from params ----
-# Quarto's Jupyter engine does not bind YAML `params:` to a Python
-# variable on its own; Papermill injection only happens with
-# --execute-params. Mirror the YAML defaults here so the template
-# previews standalone, and so production injection overwrites these.
-METHODOLOGY_VERSION = "1.0.0"            # In production: params['methodology_version']
-CONFIG_HASH = "5b53653d2bff9f1e"  # In production: params['config_hash']
-ENGINE = "pntmoni-claslib"               # In production: params['engine']
-ENGINE_VERSION = "v0.8.3-pntmoni-1"      # In production: params['engine_version']
-QC_TOOL = "teqc"                          # In production: params['qc_tool']
-QC_VERSION = "2019Feb25"                 # In production: params['qc_version']
-DATA_MODE = "synthetic"                  # In production: params['data_mode']
+# ---- Derived from the parameters cell ----
+# YEAR / MONTH / PERIOD / STREAM / MODE / version strings / CONFIG_HASH /
+# DATA_MODE / INPUTS / INPUTS_STATUS are all defined in the papermill
+# ``parameters`` cell above (and overridden at production render time).
+PERIOD_LABEL = pd.Timestamp(int(YEAR), int(MONTH), 1).strftime("%B %Y")
 
 # ---- Synthetic data generation ----
 rng = np.random.default_rng(seed=42)

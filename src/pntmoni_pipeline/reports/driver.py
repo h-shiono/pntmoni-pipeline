@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -183,10 +184,12 @@ def render(
 ) -> dict[str, Path]:
     """Render the Quarto template with ``params``; return output paths.
 
-    Requires ``quarto`` on PATH. The qmd must actually consume
-    ``params`` (read ``params['…']`` in its setup cell) for the output
-    to reflect them; otherwise Quarto still renders, but with the qmd's
-    own default values.
+    Requires ``quarto`` on PATH. Params are passed to the qmd via the
+    ``PNTMONI_REPORT_PARAMS`` env var pointing at a JSON file; the qmd's
+    parameters cell reads it (see ``reports/templates/monthly.qmd``).
+    Quarto's own ``--execute-params`` / ``-P`` mechanism is intentionally
+    not used here — it does not reliably inject overrides into the
+    Jupyter-tagged cell in current Quarto builds.
     """
     if not shutil.which("quarto"):
         raise RuntimeError(
@@ -198,17 +201,28 @@ def render(
     params_path.write_text(
         json.dumps(params, default=str, indent=2), encoding="utf-8",
     )
+    env = {**os.environ, "PNTMONI_REPORT_PARAMS": str(params_path.resolve())}
     out: dict[str, Path] = {}
     for fmt in formats:
         cmd = [
             "quarto", "render", str(template),
             "--to", fmt,
-            "--execute-params", str(params_path.resolve()),
             "--output-dir", str(output_dir.resolve()),
+            # The Jupyter execute-daemon caches a kernel across renders;
+            # its env is the env of the first render, so subsequent
+            # PNTMONI_REPORT_PARAMS values are ignored. Disable it.
+            "--no-execute-daemon",
         ]
-        logger.info("quarto render --to %s", fmt)
-        subprocess.run(cmd, check=True)
-        out[fmt] = output_dir / f"{template.stem}.{'html' if fmt == 'html' else 'pdf'}"
+        logger.info("quarto render --to %s (PNTMONI_REPORT_PARAMS=%s)", fmt, params_path)
+        subprocess.run(cmd, check=True, env=env)
+        ext = "html" if fmt == "html" else "pdf"
+        # Quarto may place the output under a subdir matching the qmd's
+        # parent (e.g. <out>/templates/monthly.html) when --output-dir
+        # is set; find the actual file rather than assume the flat path.
+        produced = list(output_dir.rglob(f"{template.stem}.{ext}"))
+        if not produced:
+            raise RuntimeError(f"Quarto produced no {ext} under {output_dir}")
+        out[fmt] = produced[0]
     return out
 
 
