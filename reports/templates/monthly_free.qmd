@@ -1,6 +1,6 @@
 ---
-title: "PNT Moni Monthly Report"
-subtitle: "QZSS CLAS Performance Evaluation — Free Tier"
+title: "PNT Moni 月次レポート"
+subtitle: "QZSS CLAS 性能評価 — Free Tier(無料公開版)"
 date: today
 author: "PNT Moni"
 format:
@@ -363,13 +363,13 @@ marked "Coming Soon" appear in Phase 1+ per the rollout plan in
 `30-evaluation-methodology/03-monthly-report-structure.md`.
 :::
 
-# Revision History
+# 改訂履歴
 
 | Version | Date       | Description           |
 |---------|------------|-----------------------|
 | 1.0     | (pending)  | Initial publication   |
 
-# Introduction
+# はじめに
 
 This report covers QZSS CLAS (Centimeter Level Augmentation Service)
 performance during **`{python} PERIOD_LABEL`**, evaluated by PNT Moni
@@ -392,7 +392,7 @@ section. Full methodology documentation is at
 The Methodology Version Tag at the end of this report uniquely
 identifies the configuration used.
 
-# Methodology
+# 評価手法
 
 This section provides a summary of the methodology. The full
 methodology document is at the link above.
@@ -435,7 +435,7 @@ behavior. See [ADR 0001 Postscript](../../../pntmoni-docs/70-decisions/adr-0001.
 and [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762).
 This is documented as a structural property, not an error.
 
-## Evaluation Network
+## 評価ネットワーク
 
 Stations are classified as **inside-network (網内)** or
 **outside-network (網外)** based on the official CLAS coverage
@@ -445,7 +445,7 @@ encoded in the methodology version tag at the end of this report.
 
 ```{python}
 #| label: fig-network-map
-#| fig-cap: "Evaluation network coverage and station distribution"
+#| fig-cap: "CLAS 網のカバレッジと観測局分布"
 
 fig, ax = plt.subplots(figsize=(7, 7))
 
@@ -480,21 +480,21 @@ deliver specified performance. Stations outside this area receive
 corrections derived through extrapolation, with potentially different
 error characteristics analyzed in §5.3.1.
 
-# Executive Summary
+# エグゼクティブサマリ
 
 ```{python}
 #| label: tbl-executive-summary
-#| tbl-cap: "Headline performance metrics"
+#| tbl-cap: "主要性能指標"
 exec_summary = pd.DataFrame({
     "Metric": [
-        "Stations evaluated",
-        "Horizontal error 50% (cm)",
-        "Horizontal error 95% (cm)",
-        "Horizontal error 99% (cm)",
-        "Vertical error 95% (cm)",
-        "TTFF 50% (s, 15-min reset)",
-        "TTFF 95% (s, 15-min reset)",
-        "National Fix rate (Q=4)",
+        "評価対象局数",
+        "水平誤差 50% [cm]",
+        "水平誤差 95% [cm]",
+        "水平誤差 99% [cm]",
+        "垂直誤差 95% [cm]",
+        "TTFF 50% [秒、15 分リセット]",
+        "TTFF 95% [秒、15 分リセット]",
+        "全国 Fix 率(Q=4)",
     ],
     "Value": [
         f"{N_STATIONS:,}",
@@ -519,15 +519,15 @@ exec_summary
 - Tropospheric divergence events detected: **n/a** (Phase 1+ feature, §6)
 - L6 broadcast alert messages: **`{python} N_L6_ALERTS if L6_ALERTS_PRESENT else "n/a (not aggregated)"`**
 
-# Performance
+# 性能
 
-## National Overview
+## 全国概況
 
-### Distribution of errors
+### 誤差の分布
 
 ```{python}
 #| label: fig-horiz-cdf
-#| fig-cap: "Cumulative distribution of horizontal error (pooled epochs, qualified-station-superset)"
+#| fig-cap: "水平誤差の累積分布(qualified 局のエポックをプール)"
 
 def _plot_cdf(values_m, p_marks, *, xlabel, fig=None, ax=None):
     fig, ax = (fig, ax) if ax is not None else plt.subplots(figsize=(8, 4))
@@ -560,7 +560,7 @@ _plot_cdf(_vals_h, _marks, xlabel="Horizontal error (cm)")
 
 ```{python}
 #| label: fig-vert-cdf
-#| fig-cap: "Cumulative distribution of vertical error (pooled epochs, qualified-station-superset)"
+#| fig-cap: "垂直誤差の累積分布(qualified 局のエポックをプール)"
 
 if EPOCH_ERRORS_PRESENT:
     _vals_v = EPOCH_ERRORS_DF["vertical_m"].to_numpy()
@@ -573,12 +573,12 @@ _plot_cdf(_vals_v, _marks_v, xlabel="Vertical error (cm)")
 
 ```{python}
 #| label: tbl-ttff-headline
-#| tbl-cap: "TTFF percentiles (15-minute reset, qualified stations, full-day window)"
+#| tbl-cap: "TTFF パーセンタイル(15 分リセット、qualified 局、全日)"
 
 if TTFF_PRESENT:
     ttff_table = pd.DataFrame({
-        "Percentile": ["50%", "90%", "95%", "99%"],
-        "TTFF (s)": [
+        "パーセンタイル": ["50%", "90%", "95%", "99%"],
+        "TTFF [秒]": [
             f"{TTFF_P50_SEC:.1f}",
             f"{TTFF_P90_SEC:.1f}",
             f"{TTFF_P95_SEC:.1f}",
@@ -587,8 +587,8 @@ if TTFF_PRESENT:
     })
 else:
     ttff_table = pd.DataFrame({
-        "Percentile": ["50%", "95%"],
-        "TTFF (s)": [
+        "パーセンタイル": ["50%", "95%"],
+        "TTFF [秒]": [
             f"{np.quantile(ttff_15min, 0.50):.1f} (synthetic)",
             f"{np.quantile(ttff_15min, 0.95):.1f} (synthetic)",
         ],
@@ -613,7 +613,7 @@ if TTFF_PRESENT:
 
 ```{python}
 #| label: fig-ttff-15min
-#| fig-cap: "Distribution of TTFF (15-minute reset period) — synthetic preview; real distribution pending B3-3 (raw epoch_errors load)"
+#| fig-cap: "TTFF 分布(15 分リセット) — 暫定 synthetic 表示。実分布は B3-3(epoch_errors の生データ読み込み)で対応予定"
 
 fig, ax = plt.subplots(figsize=(8, 4))
 ax.hist(ttff_15min, bins=60, color=COLOR_PRIMARY, alpha=0.85, edgecolor="white")
@@ -627,7 +627,7 @@ ax.legend()
 plt.tight_layout()
 ```
 
-### Recent trends
+### 近月のトレンド
 
 **Coming Soon.** This subsection will show the past 13 months of
 national 95th-percentile horizontal and vertical errors, with the
@@ -636,9 +636,9 @@ trend becomes meaningful once the Phase 0 / Phase 1 retroactive
 backfill (ADR 0007) covers Apr 2025 onwards — until then the single
 recent month is reported in the headline tables above.
 
-## Detailed Analysis
+## 詳細分析
 
-### Integrity Analysis
+### 完全性指標
 
 ::: {.callout-note appearance="default"}
 **Coming Soon (Phase 1+)**
@@ -654,7 +654,7 @@ Phase 1 target: end of 2026 (PL distributions per target use case).
 Phase 2 target: 2027/Q4 (IASB monitor outputs, post-acceptance).
 :::
 
-## Cross Validation
+## 相互検証
 
 ::: {.callout-note appearance="default"}
 **Coming Soon (Phase 1+)**
@@ -672,13 +672,13 @@ Phase 2 target (2027/Q4): direction reversal — MRTKLIB primary,
 CLASLIB historical reference.
 :::
 
-# Data Availability
+# データ可用性
 
-## Overview
+## 概要
 
 ```{python}
 #| label: fig-availability
-#| fig-cap: "Station-level availability distribution"
+#| fig-cap: "観測局別データ可用性分布"
 
 # Synthetic per-station availability
 station_avail = rng.beta(50, 1, size=N_STATIONS)
@@ -700,7 +700,7 @@ For up-to-date GEONET maintenance announcements, see the GSI
 official maintenance page at
 [https://terras.gsi.go.jp/](https://terras.gsi.go.jp/).
 
-## Message Generation Facility Switching
+## メッセージ生成局(MGF)切替
 
 CLAS messages are generated by multiple facilities (Hitachi-Ota,
 Kobe, Tsukuba) which may switch during operations. Switching events
@@ -710,7 +710,7 @@ characteristics.
 
 For `{python} PERIOD_LABEL`: **No facility switching events detected.**
 
-## Data efficiency
+## データ効率
 
 ::: {.callout-note appearance="default"}
 **Coming Soon (Phase 1+)**
@@ -722,9 +722,9 @@ into the operational health of CLAS broadcast.
 Phase 1 target: end of 2026.
 :::
 
-## Anomalies
+## 異常
 
-### Alert flags
+### アラートフラグ
 
 L6 broadcast alert messages are flags transmitted within the CLAS
 correction stream indicating known issues at the source (CSSR
@@ -755,7 +755,7 @@ else:
     )
 ```
 
-### Divergences (Tropospheric)
+### 補正値の発散(対流圏)
 
 PNT Moni detects tropospheric divergence events—periods when CLAS
 troposphere correction values deviate physically from expected
@@ -772,9 +772,9 @@ For `{python} PERIOD_LABEL`: **0 tropospheric divergence events
 detected.** Detailed methodology will be documented in
 `30-evaluation-methodology/07-anomaly-detection.md`.
 
-# Appendix
+# 付録
 
-## GNSS System Events: NAGU/NANU/NAQU
+## GNSS システム通知:NAGU / NANU / NAQU
 
 The following operational advisories were issued for the GNSS
 constellations during `{python} PERIOD_LABEL`. These are tracked
@@ -782,7 +782,7 @@ for cross-reference with anomalies and signal availability.
 
 ```{python}
 #| label: tbl-system-events
-#| tbl-cap: "GNSS system events for the reporting period (synthetic)"
+#| tbl-cap: "対象期間中の GNSS システム通知(暫定)"
 
 events = pd.DataFrame({
     "Date": ["—"],
@@ -796,7 +796,7 @@ events
 In production, NAGU (GPS), NANU (GPS), and NAQU (QZSS) advisories
 are collected and listed here.
 
-## List of Satellites
+## 衛星一覧
 
 This section provides a reference snapshot of the satellite
 constellation status during `{python} PERIOD_LABEL`. The information
@@ -807,7 +807,7 @@ broadcast by each satellite.
 
 ```{python}
 #| label: tbl-gps-satellites
-#| tbl-cap: "GPS constellation status (synthetic)"
+#| tbl-cap: "GPS 衛星コンステレーション状況(暫定)"
 
 gps = pd.DataFrame({
     "PRN": [f"{i:02d}" for i in [1, 2, 3, 4, 5]],
@@ -823,11 +823,11 @@ gps
 
 (In production, full GPS constellation listed.)
 
-### QZSS
+### QZSS(みちびき)
 
 ```{python}
 #| label: tbl-qzss-satellites
-#| tbl-cap: "QZSS constellation status (synthetic)"
+#| tbl-cap: "QZSS 衛星コンステレーション状況(暫定)"
 
 qzss = pd.DataFrame({
     "PRN": ["J01", "J02", "J03", "J07"],
@@ -846,7 +846,7 @@ qzss
 
 ```{python}
 #| label: tbl-galileo-satellites
-#| tbl-cap: "Galileo constellation status (synthetic)"
+#| tbl-cap: "Galileo 衛星コンステレーション状況(暫定)"
 
 galileo = pd.DataFrame({
     "ID": [f"E{i:02d}" for i in [1, 2, 3, 4, 5]],
@@ -863,13 +863,13 @@ galileo
 (In production, full Galileo constellation listed. PNT Moni's
 evaluation also covers Galileo signals received by GEONET stations.)
 
-### Status changes during this month
+### 当月の状態変化
 
 For `{python} PERIOD_LABEL`: **No status changes recorded.**
 
 ---
 
-## Methodology Version Tag
+## 方法論バージョンタグ
 
 | Field                  | Value |
 |------------------------|-------|
