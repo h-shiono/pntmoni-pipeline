@@ -281,6 +281,33 @@ if ACCURACY_PRESENT:
                              # operationally meaningful availability
                              # of a CLAS fix.
     N_STATIONS = N_QUALIFIED_STATIONS
+
+    # B3-5: inside / outside scope rows from accuracy_network.
+    def _scope_row(scope):
+        r = ACCURACY_NETWORK_DF[
+            (ACCURACY_NETWORK_DF["network_id"] == "all")
+            & (ACCURACY_NETWORK_DF["scope"] == scope)
+            & (ACCURACY_NETWORK_DF["station_set"] == "qualified")
+            & (ACCURACY_NETWORK_DF["window"] == "all")
+        ]
+        return r.iloc[0] if not r.empty else None
+    _in = _scope_row("inside")
+    _out = _scope_row("outside")
+    INSIDE_N_STATIONS = OUTSIDE_N_STATIONS = None
+    INSIDE_FIX_RATE = OUTSIDE_FIX_RATE = None
+    if _in is not None:
+        inside_h95 = float(_in["hor_p95"])
+        inside_v95 = float(_in["ver_p95"])
+        INSIDE_N_STATIONS = int(_in["n_stations"])
+        INSIDE_FIX_RATE = float(_in["fix_rate"])
+    if _out is not None:
+        outside_h95 = float(_out["hor_p95"])
+        outside_v95 = float(_out["ver_p95"])
+        OUTSIDE_N_STATIONS = int(_out["n_stations"])
+        OUTSIDE_FIX_RATE = float(_out["fix_rate"])
+else:
+    INSIDE_N_STATIONS = OUTSIDE_N_STATIONS = None
+    INSIDE_FIX_RATE = OUTSIDE_FIX_RATE = None
 if TTFF_PRESENT:
     TTFF50 = TTFF_P50_SEC
     TTFF95 = TTFF_P95_SEC
@@ -289,11 +316,14 @@ if TTFF_PRESENT:
 station_h95 = np.array([np.quantile(horiz_errors[i], 0.95) for i in range(N_STATIONS)])
 station_v95 = np.array([np.quantile(vert_errors[i], 0.95) for i in range(N_STATIONS)])
 
-# Inside vs Outside network statistics
-inside_h95 = np.quantile(horiz_errors[inside_network].flatten(), 0.95)
-outside_h95 = np.quantile(horiz_errors[~inside_network].flatten(), 0.95)
-inside_v95 = np.quantile(vert_errors[inside_network].flatten(), 0.95)
-outside_v95 = np.quantile(vert_errors[~inside_network].flatten(), 0.95)
+# Inside vs Outside network statistics (synthetic preview fallback;
+# the B3-5 override above already set these from accuracy_network
+# when ACCURACY_PRESENT, so don't overwrite the real values).
+if not ACCURACY_PRESENT:
+    inside_h95 = np.quantile(horiz_errors[inside_network].flatten(), 0.95)
+    outside_h95 = np.quantile(horiz_errors[~inside_network].flatten(), 0.95)
+    inside_v95 = np.quantile(vert_errors[inside_network].flatten(), 0.95)
+    outside_v95 = np.quantile(vert_errors[~inside_network].flatten(), 0.95)
 
 # ---- Synthetic past 13 months of monthly aggregates ----
 # Phase 0 ADR 0007 scope: Apr 2025 onwards. Phase 0 launch in mid-2026
@@ -728,20 +758,30 @@ analysis quantifies the performance gap.
 
 ```{python}
 #| label: tbl-inside-outside
-#| tbl-cap: "Inside vs Outside Network performance (synthetic)"
+#| tbl-cap: "Inside vs Outside network performance (qualified stations, full-day window)"
 
-io_table = pd.DataFrame({
-    "Group": ["網内 (Inside)", "網外 (Outside)"],
-    "Stations": [int(inside_network.sum()), int((~inside_network).sum())],
-    "H 95% (cm)": [f"{inside_h95*100:.2f}", f"{outside_h95*100:.2f}"],
-    "V 95% (cm)": [f"{inside_v95*100:.2f}", f"{outside_v95*100:.2f}"],
-})
+if ACCURACY_PRESENT and INSIDE_N_STATIONS is not None:
+    io_table = pd.DataFrame({
+        "Group": ["網内 (Inside)", "網外 (Outside)"],
+        "Stations": [INSIDE_N_STATIONS, OUTSIDE_N_STATIONS],
+        "H 95% (cm)": [f"{inside_h95*100:.2f}", f"{outside_h95*100:.2f}"],
+        "V 95% (cm)": [f"{inside_v95*100:.2f}", f"{outside_v95*100:.2f}"],
+        "Fix rate": [f"{INSIDE_FIX_RATE*100:.2f}%", f"{OUTSIDE_FIX_RATE*100:.2f}%"],
+    })
+else:
+    # Standalone-preview fallback (synthetic).
+    io_table = pd.DataFrame({
+        "Group": ["網内 (Inside)", "網外 (Outside)"],
+        "Stations": [int(inside_network.sum()), int((~inside_network).sum())],
+        "H 95% (cm)": [f"{inside_h95*100:.2f}", f"{outside_h95*100:.2f}"],
+        "V 95% (cm)": [f"{inside_v95*100:.2f}", f"{outside_v95*100:.2f}"],
+    })
 io_table
 ```
 
 ```{python}
 #| label: fig-inside-outside-cdf
-#| fig-cap: "CDF comparison: inside vs outside network"
+#| fig-cap: "CDF comparison: inside vs outside network (synthetic preview — real CDF pending B3-3)"
 
 fig, ax = plt.subplots(figsize=(8, 4))
 inside_h = horiz_errors[inside_network].flatten()
