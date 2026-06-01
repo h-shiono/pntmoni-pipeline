@@ -484,33 +484,71 @@ CLAS は全国を 12 のネットワーク(網)に分割し、各観測局は CL
 
 ```{python}
 #| label: fig-network-map
-#| fig-cap: "CLAS 網のカバレッジと観測局分布"
+#| fig-cap: "CLAS 12 ネットワークのグリッド点と GEONET 観測局の分布"
 
-fig, ax = plt.subplots(figsize=(7, 7))
+import cartopy.crs as _ccrs_nm
+import cartopy.feature as _cfeature_nm
+from pathlib import Path as _Path_nm
 
-# Background: rough Japan outline (very simple coastline approximation)
-# In production, replace with proper basemap or shapefile
-ax.set_xlim(127, 147)
-ax.set_ylim(28, 47)
-ax.set_aspect("equal")
+# Albers Equal-Area Conic over Japan — matches methodology v1.0.0
+# figures (`pntmoni-web/scripts/figures/v1.0.0/_shared.py`).
+_proj_aea = _ccrs_nm.AlbersEqualArea(
+    central_longitude=137.0, central_latitude=35.0,
+    standard_parallels=(30.0, 43.0),
+)
+# Data files vendored from pntmoni-web (methodology v1.0.0 figure set).
+# Path is relative to the qmd's own directory (reports/templates/).
+_data_dir = _Path_nm("../data/methodology/v1.0.0")
+_clas_grid = pd.read_csv(
+    _data_dir / "clas_grid.def", skiprows=1, sep=r" +",
+    names=["Compact Network ID", "GRID No.", "Latitude",
+           "Longitude", "Ellipsoidal height"],
+    engine="python",
+)
+_station_list = pd.read_csv(_data_dir / "station_list.csv.gz")
 
-# Network polygon (filled)
-network_patch = Polygon(NETWORK_POLYGON, closed=True,
-                         facecolor=COLOR_PRIMARY, alpha=0.10,
-                         edgecolor=COLOR_PRIMARY, linewidth=1.5,
-                         linestyle="--", label="CLAS 網カバレッジ")
-ax.add_patch(network_patch)
+_NETWORK_LABEL = [
+    "石垣", "沖縄", "九州", "四国", "中国", "関西",
+    "関東", "南東北", "北東北", "西北海道", "東北海道", "小笠原",
+]
 
-# Station points: inside (green) and outside (orange)
-ax.scatter(station_lons[inside_network], station_lats[inside_network],
-           c=COLOR_INSIDE, s=6, alpha=0.6, label=f"網内 (n={int(inside_network.sum())})")
-ax.scatter(station_lons[~inside_network], station_lats[~inside_network],
-           c=COLOR_OUTSIDE, s=6, alpha=0.7, label=f"網外 (n={int((~inside_network).sum())})")
+fig = plt.figure(figsize=(8, 7))
+ax = fig.add_subplot(1, 1, 1, projection=_proj_aea)
+ax.set_extent((122, 156, 19, 47), _ccrs_nm.PlateCarree())
+ax.add_feature(_cfeature_nm.OCEAN.with_scale("50m"),
+               facecolor="#f3f5f9", edgecolor="none")
+ax.coastlines(resolution="50m", linewidth=0.5, color="#162e50")
 
-ax.set_xlabel("Longitude (°E)")
-ax.set_ylabel("Latitude (°N)")
-ax.legend(loc="upper left", fontsize=9, framealpha=0.95)
-ax.grid(True, alpha=0.3)
+# All GEONET CORS (small open dots, navy edge).
+ax.scatter(
+    _station_list["Lon. (deg.)"], _station_list["Lat. (deg.)"],
+    s=4, color="white", edgecolors="#6c7280", linewidths=0.3,
+    marker=".", transform=_ccrs_nm.PlateCarree(), zorder=5,
+    label=f"GEONET 観測局({len(_station_list):,})",
+)
+
+# CLAS grid points coloured by Compact Network ID (1..12).
+for _net_id in range(1, 13):
+    _sub = _clas_grid[_clas_grid["Compact Network ID"] == _net_id]
+    _c = plt.cm.Paired.colors[_net_id - 1]
+    ax.scatter(
+        _sub["Longitude"], _sub["Latitude"],
+        s=18, color=_c, edgecolors="#061128", linewidths=0.4,
+        marker="o", transform=_ccrs_nm.PlateCarree(), zorder=10,
+        label=f"{_net_id}: {_NETWORK_LABEL[_net_id - 1]}",
+    )
+
+ax.legend(loc="upper left", fontsize=6, ncols=2, framealpha=0.95,
+          title="Compact Network ID", title_fontsize=7)
+gl = ax.gridlines(draw_labels=True, linewidth=0.4, color="#9aa1ad",
+                  alpha=0.6, linestyle=":", crs=_ccrs_nm.PlateCarree())
+gl.top_labels = False
+gl.right_labels = False
+gl.xlabel_style = {"size": 7}
+gl.ylabel_style = {"size": 7}
+for _spine in ax.spines.values():
+    _spine.set_edgecolor("#9aa1ad")
+    _spine.set_linewidth(0.6)
 plt.tight_layout()
 ```
 

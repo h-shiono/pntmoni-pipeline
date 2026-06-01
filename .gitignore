@@ -18,6 +18,9 @@ reports/.quarto/
 
 # Local data and acquisition artifacts
 data/
+# Tracked figure inputs vendored from pntmoni-web (methodology v1.0.0).
+!reports/data/
+!reports/data/**
 logs/
 *.partial
 .env
