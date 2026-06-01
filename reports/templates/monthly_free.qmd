@@ -125,6 +125,71 @@ else:
 ```
 
 ```{python}
+#| label: accuracy-ttff-data
+#| include: false
+
+# Monthly accuracy / TTFF aggregations for the period (paths in INPUTS
+# come from the driver). Headline scope is national x qualified
+# stations x full-day window (methodology §5.1 / §5.3). When the
+# parquets are missing the variables are None and the existing
+# synthetic generation (next cell) supplies preview values.
+import pandas as _pd_at
+from pathlib import Path as _Path_at
+
+def _read_input_parquet(key: str):
+    p = INPUTS.get(key) if isinstance(INPUTS, dict) else None
+    return _pd_at.read_parquet(p) if p and _Path_at(p).is_file() else None
+
+ACCURACY_NETWORK_DF = _read_input_parquet("accuracy_network")
+TTFF_NETWORK_DF = _read_input_parquet("ttff_network")
+ACCURACY_PRESENT = ACCURACY_NETWORK_DF is not None
+TTFF_PRESENT = TTFF_NETWORK_DF is not None
+
+def _headline_row(df, *, network="all", scope="all",
+                  station_set="qualified", window="all"):
+    if df is None:
+        return None
+    sel = df[
+        (df["network_id"] == network) & (df["scope"] == scope)
+        & (df["station_set"] == station_set) & (df["window"] == window)
+    ]
+    return None if sel.empty else sel.iloc[0]
+
+_arow = _headline_row(ACCURACY_NETWORK_DF)
+_trow = _headline_row(TTFF_NETWORK_DF)
+
+# Accuracy headline (metres; helpers convert to cm for display).
+H_P50_M = float(_arow["hor_p50"]) if _arow is not None else None
+H_P95_M = float(_arow["hor_p95"]) if _arow is not None else None
+H_P99_M = float(_arow["hor_p99"]) if _arow is not None else None
+V_P50_M = float(_arow["ver_p50"]) if _arow is not None else None
+V_P95_M = float(_arow["ver_p95"]) if _arow is not None else None
+V_P99_M = float(_arow["ver_p99"]) if _arow is not None else None
+FIX_RATE = float(_arow["fix_rate"]) if _arow is not None else None
+N_QUALIFIED_STATIONS = int(_arow["n_stations"]) if _arow is not None else None
+N_EPOCHS_MONTH = int(_arow["n_epoch"]) if _arow is not None else None
+
+# TTFF headline (seconds).
+TTFF_P50_SEC = float(_trow["ttff_p50_sec"]) if _trow is not None else None
+TTFF_P90_SEC = float(_trow["ttff_p90_sec"]) if _trow is not None else None
+TTFF_P95_SEC = float(_trow["ttff_p95_sec"]) if _trow is not None else None
+TTFF_P99_SEC = float(_trow["ttff_p99_sec"]) if _trow is not None else None
+TTFF_FIX_RATE = float(_trow["fix_success_rate"]) if _trow is not None else None
+N_TTFF_WINDOWS = int(_trow["n_windows"]) if _trow is not None else None
+N_TTFF_FIXED = int(_trow["n_windows_fixed"]) if _trow is not None else None
+
+# Tiny display helpers used by later inline `{python}` expressions.
+def fmt_cm(m, nd=1):
+    return f"{m*100:.{nd}f}" if m is not None else "n/a"
+def fmt_pct(x, nd=2):
+    return f"{x*100:.{nd}f}" if x is not None else "n/a"
+def fmt_sec(s, nd=0):
+    return f"{s:.{nd}f}" if s is not None else "n/a"
+def fmt_count(n):
+    return f"{n:,}" if n is not None else "n/a"
+```
+
+```{python}
 #| label: setup
 #| include: false
 
