@@ -43,7 +43,7 @@ METHODOLOGY_VERSION = "1.0.0"
 ENGINE_NAME = "pntmoni-claslib"
 DEFAULT_ENGINE_VERSION = "v0.8.3-pntmoni-1"   # asserted by methodology §3.1
 
-DEFAULT_TEMPLATE = Path("reports/templates/monthly.qmd")
+DEFAULT_TEMPLATE = Path("reports/templates/monthly_free.qmd")
 DEFAULT_OUTPUT_ROOT = Path("data/reports")
 DEFAULT_PROCESSING_LOG = Path("data/metadata/processing.jsonl")
 DEFAULT_CONFIG_DIR = Path("configs")

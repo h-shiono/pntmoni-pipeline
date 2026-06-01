@@ -87,7 +87,7 @@ def test_run_monthly_no_render_writes_params_and_provenance(tmp_path: Path):
 
     res = D.run_monthly(
         period="2026-04", mode="kinematic_p30_verify", stream="final",
-        template=Path("reports/templates/monthly.qmd"),
+        template=Path("reports/templates/monthly_free.qmd"),
         output_root=out_root, processing_log=log,
         processed_root=processed, config_dir=cfg,
         do_render=False,
