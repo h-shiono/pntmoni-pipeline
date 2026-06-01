@@ -215,6 +215,7 @@ if _ep_dir_str:
 # headline rule at hex resolution. Populated cells only — empty cells
 # render blank (per ADR 0013 Postscript scope decision).
 HEX_PRESENT = False
+HEX_REAL_DATA = False
 HEX_GRID = None
 HEX_SUMMARY = None
 _rc_dir_str = INPUTS.get("reference_coords_dir") if isinstance(INPUTS, dict) else None
@@ -229,8 +230,42 @@ if _ep_dir_str and _rc_dir_str:
                 reference_coords_dir=_rc_dir,
             )
             HEX_PRESENT = len(HEX_SUMMARY) > 0
+            HEX_REAL_DATA = HEX_PRESENT
         except Exception as _e:
             HEX_PRESENT = False
+
+# Synthetic fallback so `quarto preview` (no INPUTS, no env var) still
+# shows the hex figure. Uses a coarse rectangular mask approximating
+# the Japan archipelago and gamma-distributed per-cell percentiles.
+if not HEX_PRESENT:
+    import numpy as _np_hex
+    from pntmoni_pipeline.analysis._hex_grid import make_hex_grid as _make_hex_grid_at
+    HEX_GRID = _make_hex_grid_at()
+    _hex_centers = HEX_GRID.centers
+    _land_mask = (
+        # Honshu + Shikoku + Kyushu band
+        ((_hex_centers[:, 0] >= 129.5) & (_hex_centers[:, 0] <= 142.0)
+         & (_hex_centers[:, 1] >= 30.5) & (_hex_centers[:, 1] <= 41.5))
+        # Hokkaido
+        | ((_hex_centers[:, 0] >= 139.5) & (_hex_centers[:, 0] <= 145.5)
+           & (_hex_centers[:, 1] >= 41.5) & (_hex_centers[:, 1] <= 45.5))
+        # Okinawa chain
+        | ((_hex_centers[:, 0] >= 124.0) & (_hex_centers[:, 0] <= 131.0)
+           & (_hex_centers[:, 1] >= 24.0) & (_hex_centers[:, 1] <= 28.5))
+    )
+    _hex_idxs = _np_hex.where(_land_mask)[0]
+    _rng_hex = _np_hex.random.default_rng(42)
+    _n_demo = min(220, len(_hex_idxs))
+    _sel = _rng_hex.choice(_hex_idxs, size=_n_demo, replace=False)
+    HEX_SUMMARY = _pd_at.DataFrame({
+        "hex_idx": _sel,
+        "n_stations": _rng_hex.integers(1, 15, size=_n_demo),
+        "n_epochs": _rng_hex.integers(50_000, 500_000, size=_n_demo),
+        "horizontal_p95": _rng_hex.gamma(3.0, 0.035, size=_n_demo),
+        "vertical_p95": _rng_hex.gamma(3.0, 0.06, size=_n_demo),
+    })
+    HEX_PRESENT = True
+    HEX_REAL_DATA = False
 
 # Tiny display helpers used by later inline `{python}` expressions.
 def fmt_cm(m, nd=1):
@@ -630,6 +665,8 @@ H_THRESHOLDS_CM = (6.0, 12.0)
 V_THRESHOLDS_CM = (12.0, 24.0)
 
 if HEX_PRESENT:
+    if not HEX_REAL_DATA:
+        print("> **プレビュー(合成データ)**:本図は INPUTS 未注入のための合成サンプルです。実データは driver 経由(`pntmoni-pipeline report monthly --render`)で生成されます。\n")
     fig, axes = plt.subplots(
         1, 2, figsize=(12, 6),
         subplot_kw={"projection": ccrs.PlateCarree()},
