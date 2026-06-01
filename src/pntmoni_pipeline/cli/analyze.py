@@ -12,6 +12,7 @@ from ..acquisition import geonet_f5
 from ..analysis import (
     _accuracy_stats,
     _epoch_errors,
+    _l6_alerts,
     _monthly,
     _reference_coords,
     _ttff,
@@ -577,4 +578,47 @@ def cmd_qualification(
         f"  force_eval: {n_fe}\n"
         f"  out_of_svc: {n_oos}\n"
         f"  wrote     : {dest}"
+    )
+
+
+@app.command("l6-alerts")
+def cmd_l6_alerts(
+    period: Annotated[
+        str, typer.Option("--period", help="Target month, YYYY-MM."),
+    ],
+    l6_root: Annotated[
+        Path, typer.Option("--l6-root", help="Root of daily L6 files (the …/l6 dir)."),
+    ] = _l6_alerts.DEFAULT_L6_ROOT,
+    grid_path: Annotated[
+        Path, typer.Option("--grid", help="CSSR grid file required by ssr2osr."),
+    ] = _l6_alerts.DEFAULT_GRID,
+    outages_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--outages",
+            help="Satellite-outage parquet for NAGU/NANU/NAQU cross-reference.",
+        ),
+    ] = None,
+    out_root: Annotated[
+        Path, typer.Option("--out", help="Output root for {year}/{period}.parquet."),
+    ] = _l6_alerts.DEFAULT_OUT_ROOT,
+    provenance_log: Annotated[
+        Path, typer.Option("--provenance-log", help="JSONL provenance log (appended)."),
+    ] = _l6_alerts.DEFAULT_PROVENANCE,
+) -> None:
+    """Extract & aggregate L6 broadcast Alert flags for a month (§6)."""
+    try:
+        y, m = (int(x) for x in period.split("-"))
+    except ValueError as exc:
+        raise typer.BadParameter("period must be YYYY-MM") from exc
+    summary, dest = _l6_alerts.process_month(
+        y, m,
+        l6_root=l6_root, grid_path=grid_path,
+        outages_path=outages_path, out_root=out_root, provenance_log=provenance_log,
+    )
+    typer.echo(
+        f"L6 alerts {summary.period}: {summary.n_alerts} alerts / "
+        f"{summary.n_messages} messages (rate={summary.alert_rate:.4g})\n"
+        f"  per-PRN: {summary.per_prn}\n"
+        f"  wrote  : {dest}"
     )
