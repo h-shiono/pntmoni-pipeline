@@ -104,6 +104,10 @@ def gather_inputs(
     bundle = InputsBundle(period=period, mode=mode, paths=paths)
     for k, p in paths.items():
         setattr(bundle, k, _read_if_present(p))
+    # Directory-style inputs (passed through to INPUTS but not loaded
+    # into the bundle DataFrame fields). epoch_errors is per-day and
+    # too large for a single read; the qmd streams + subsamples it.
+    bundle.paths["epoch_errors_dir"] = processed_root / "epoch_errors" / mode
     return bundle
 
 

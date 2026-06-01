@@ -178,6 +178,37 @@ TTFF_FIX_RATE = float(_trow["fix_success_rate"]) if _trow is not None else None
 N_TTFF_WINDOWS = int(_trow["n_windows"]) if _trow is not None else None
 N_TTFF_FIXED = int(_trow["n_windows_fixed"]) if _trow is not None else None
 
+# B3-3: epoch_errors streaming-subsample for real CDF figures.
+# 30 daily parquets total ~2 GB / ~112 M rows is too large to load in
+# full at render time; we stream per-day, sample to a fixed budget,
+# then concat. The resulting ~500 K-row sample is enough for a smooth
+# CDF visual while keeping render cheap.
+RAW_CDF_TARGET_ROWS = 500_000
+EPOCH_ERRORS_DF = None
+EPOCH_ERRORS_PRESENT = False
+_ep_dir_str = INPUTS.get("epoch_errors_dir") if isinstance(INPUTS, dict) else None
+if _ep_dir_str:
+    _ep_dir = _Path_at(_ep_dir_str)
+    if _ep_dir.is_dir():
+        import calendar as _cal_at
+        _yy, _mm = int(PERIOD[:4]), int(PERIOD[5:7])
+        _days = [f"{_yy}{_mm:02d}{d:02d}"
+                 for d in range(1, _cal_at.monthrange(_yy, _mm)[1] + 1)]
+        _ep_paths = [
+            p for p in (_ep_dir / f"{_yy}" / f"{d}.parquet" for d in _days)
+            if p.is_file()
+        ]
+        if _ep_paths:
+            _per_day = max(1, RAW_CDF_TARGET_ROWS // len(_ep_paths))
+            _frames = []
+            for _p in _ep_paths:
+                _d = _pd_at.read_parquet(_p, columns=["horizontal_m", "vertical_m"])
+                if len(_d) > _per_day:
+                    _d = _d.sample(n=_per_day, random_state=42)
+                _frames.append(_d)
+            EPOCH_ERRORS_DF = _pd_at.concat(_frames, ignore_index=True)
+            EPOCH_ERRORS_PRESENT = True
+
 # Tiny display helpers used by later inline `{python}` expressions.
 def fmt_cm(m, nd=1):
     return f"{m*100:.{nd}f}" if m is not None else "n/a"
@@ -533,46 +564,48 @@ exec_summary
 
 ```{python}
 #| label: fig-horiz-cdf
-#| fig-cap: "Cumulative distribution of horizontal error across all stations (synthetic preview — real CDF pending B3-3)"
+#| fig-cap: "Cumulative distribution of horizontal error (pooled epochs, qualified-station-superset)"
 
-fig, ax = plt.subplots(figsize=(8, 4))
-sorted_h = np.sort(all_horiz)
-cdf = np.arange(1, len(sorted_h) + 1) / len(sorted_h)
-ax.plot(sorted_h * 100, cdf, color=COLOR_PRIMARY, linewidth=2)
+def _plot_cdf(values_m, p_marks, *, xlabel, fig=None, ax=None):
+    fig, ax = (fig, ax) if ax is not None else plt.subplots(figsize=(8, 4))
+    sorted_v = np.sort(values_m)
+    cdf = np.arange(1, len(sorted_v) + 1) / len(sorted_v)
+    ax.plot(sorted_v * 100, cdf, color=COLOR_PRIMARY, linewidth=2)
+    for q, qm in p_marks.items():
+        if qm is None:
+            continue
+        v_cm = qm * 100
+        ax.axvline(v_cm, linestyle="--", color=COLOR_SECONDARY, alpha=0.4)
+        ax.annotate(f"{int(q*100)}% = {v_cm:.2f} cm",
+                    xy=(v_cm, q), xytext=(v_cm + 1, q - 0.05),
+                    fontsize=8, alpha=0.7)
+    ax.set_xlabel(xlabel); ax.set_ylabel("Cumulative probability")
+    # Clip x-axis at a generous 99.9th percentile for readability.
+    p999 = np.quantile(values_m, 0.999) * 100
+    ax.set_xlim(0, max(p999 * 1.05, 1.0))
+    ax.set_ylim(0, 1.02)
+    plt.tight_layout()
 
-for q, label in [(0.50, "50%"), (0.95, "95%"), (0.99, "99%")]:
-    v = np.quantile(all_horiz, q) * 100
-    ax.axvline(v, linestyle="--", color=COLOR_SECONDARY, alpha=0.4)
-    ax.annotate(f"{label} = {v:.2f} cm", xy=(v, q), xytext=(v + 1, q - 0.05),
-                fontsize=8, alpha=0.7)
-
-ax.set_xlabel("Horizontal error (cm)")
-ax.set_ylabel("Cumulative probability")
-ax.set_xlim(0, max(sorted_h) * 100 * 0.6)
-ax.set_ylim(0, 1.02)
-plt.tight_layout()
+if EPOCH_ERRORS_PRESENT:
+    _vals_h = EPOCH_ERRORS_DF["horizontal_m"].to_numpy()
+    _marks = {0.50: H_P50_M, 0.95: H_P95_M, 0.99: H_P99_M}
+else:
+    _vals_h = all_horiz
+    _marks = {q: float(np.quantile(all_horiz, q)) for q in (0.50, 0.95, 0.99)}
+_plot_cdf(_vals_h, _marks, xlabel="Horizontal error (cm)")
 ```
 
 ```{python}
 #| label: fig-vert-cdf
-#| fig-cap: "Cumulative distribution of vertical error across all stations (synthetic preview — real CDF pending B3-3)"
+#| fig-cap: "Cumulative distribution of vertical error (pooled epochs, qualified-station-superset)"
 
-fig, ax = plt.subplots(figsize=(8, 4))
-sorted_v = np.sort(all_vert)
-cdf = np.arange(1, len(sorted_v) + 1) / len(sorted_v)
-ax.plot(sorted_v * 100, cdf, color=COLOR_PRIMARY, linewidth=2)
-
-for q, label in [(0.50, "50%"), (0.95, "95%"), (0.99, "99%")]:
-    v = np.quantile(all_vert, q) * 100
-    ax.axvline(v, linestyle="--", color=COLOR_SECONDARY, alpha=0.4)
-    ax.annotate(f"{label} = {v:.2f} cm", xy=(v, q), xytext=(v + 1, q - 0.05),
-                fontsize=8, alpha=0.7)
-
-ax.set_xlabel("Vertical error (cm)")
-ax.set_ylabel("Cumulative probability")
-ax.set_xlim(0, max(sorted_v) * 100 * 0.6)
-ax.set_ylim(0, 1.02)
-plt.tight_layout()
+if EPOCH_ERRORS_PRESENT:
+    _vals_v = EPOCH_ERRORS_DF["vertical_m"].to_numpy()
+    _marks_v = {0.50: V_P50_M, 0.95: V_P95_M, 0.99: V_P99_M}
+else:
+    _vals_v = all_vert
+    _marks_v = {q: float(np.quantile(all_vert, q)) for q in (0.50, 0.95, 0.99)}
+_plot_cdf(_vals_v, _marks_v, xlabel="Vertical error (cm)")
 ```
 
 ```{python}
