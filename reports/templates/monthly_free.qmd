@@ -659,22 +659,39 @@ trend_table
 
 ```{python}
 #| label: tbl-regional
-#| tbl-cap: "95th percentile errors by region (synthetic)"
+#| tbl-cap: "95th percentile errors by CLAS compact network (qualified stations, full-day window)"
 
-regions = ["Hokkaido", "Tohoku", "Kanto", "Chubu", "Kinki", "Chugoku", "Shikoku", "Kyushu", "Okinawa"]
-n_per_region = N_STATIONS // len(regions)
-regional = []
-for i, region in enumerate(regions):
-    start, end = i * n_per_region, (i + 1) * n_per_region
-    region_horiz = horiz_errors[start:end].flatten()
-    region_vert = vert_errors[start:end].flatten()
-    regional.append({
-        "Region": region,
-        "Stations": n_per_region,
-        "H 95% (cm)": f"{np.quantile(region_horiz, 0.95)*100:.2f}",
-        "V 95% (cm)": f"{np.quantile(region_vert, 0.95)*100:.2f}",
+if ACCURACY_PRESENT:
+    _reg = ACCURACY_NETWORK_DF[
+        (ACCURACY_NETWORK_DF["scope"] == "all")
+        & (ACCURACY_NETWORK_DF["station_set"] == "qualified")
+        & (ACCURACY_NETWORK_DF["window"] == "all")
+        & (ACCURACY_NETWORK_DF["network_id"] != "all")
+    ].copy()
+    _reg["_n_int"] = _reg["network_id"].astype(int)
+    _reg = _reg.sort_values("_n_int")
+    regional_df = pd.DataFrame({
+        "網 (network_id)": [f"網 {n}" for n in _reg["network_id"]],
+        "Stations": _reg["n_stations"].astype(int).values,
+        "H 95% (cm)": [f"{v*100:.2f}" for v in _reg["hor_p95"]],
+        "V 95% (cm)": [f"{v*100:.2f}" for v in _reg["ver_p95"]],
+        "Fix rate": [f"{v*100:.2f}%" for v in _reg["fix_rate"]],
     })
-regional_df = pd.DataFrame(regional)
+else:
+    # Standalone-preview fallback (synthetic regions).
+    regions = ["Hokkaido", "Tohoku", "Kanto", "Chubu", "Kinki",
+               "Chugoku", "Shikoku", "Kyushu", "Okinawa"]
+    n_per_region = N_STATIONS // len(regions)
+    _rows = []
+    for i, region in enumerate(regions):
+        s, e = i * n_per_region, (i + 1) * n_per_region
+        _rows.append({
+            "Region (synthetic)": region,
+            "Stations": n_per_region,
+            "H 95% (cm)": f"{np.quantile(horiz_errors[s:e].flatten(), 0.95)*100:.2f}",
+            "V 95% (cm)": f"{np.quantile(vert_errors[s:e].flatten(), 0.95)*100:.2f}",
+        })
+    regional_df = pd.DataFrame(_rows)
 regional_df
 ```
 
