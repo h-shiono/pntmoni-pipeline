@@ -533,7 +533,7 @@ exec_summary
 
 ```{python}
 #| label: fig-horiz-cdf
-#| fig-cap: "Cumulative distribution of horizontal error across all stations"
+#| fig-cap: "Cumulative distribution of horizontal error across all stations (synthetic preview — real CDF pending B3-3)"
 
 fig, ax = plt.subplots(figsize=(8, 4))
 sorted_h = np.sort(all_horiz)
@@ -555,7 +555,7 @@ plt.tight_layout()
 
 ```{python}
 #| label: fig-vert-cdf
-#| fig-cap: "Cumulative distribution of vertical error across all stations"
+#| fig-cap: "Cumulative distribution of vertical error across all stations (synthetic preview — real CDF pending B3-3)"
 
 fig, ax = plt.subplots(figsize=(8, 4))
 sorted_v = np.sort(all_vert)
@@ -576,8 +576,48 @@ plt.tight_layout()
 ```
 
 ```{python}
+#| label: tbl-ttff-headline
+#| tbl-cap: "TTFF percentiles (15-minute reset, qualified stations, full-day window)"
+
+if TTFF_PRESENT:
+    ttff_table = pd.DataFrame({
+        "Percentile": ["50%", "90%", "95%", "99%"],
+        "TTFF (s)": [
+            f"{TTFF_P50_SEC:.1f}",
+            f"{TTFF_P90_SEC:.1f}",
+            f"{TTFF_P95_SEC:.1f}",
+            f"{TTFF_P99_SEC:.1f}",
+        ],
+    })
+else:
+    ttff_table = pd.DataFrame({
+        "Percentile": ["50%", "95%"],
+        "TTFF (s)": [
+            f"{np.quantile(ttff_15min, 0.50):.1f} (synthetic)",
+            f"{np.quantile(ttff_15min, 0.95):.1f} (synthetic)",
+        ],
+    })
+ttff_table
+```
+
+```{python}
+#| echo: false
+#| output: asis
+
+if TTFF_PRESENT:
+    print(
+        f"For **{PERIOD_LABEL}**: TTFF success rate "
+        f"**{TTFF_FIX_RATE*100:.2f} %** "
+        f"({N_TTFF_FIXED:,}/{N_TTFF_WINDOWS:,} reset windows reached a "
+        f"valid fix). At 30 s observation interval most fixes occur on "
+        f"the first post-reset epoch, so P50/P95 are often 0 s; the "
+        f"P99 reflects the convergence tail."
+    )
+```
+
+```{python}
 #| label: fig-ttff-15min
-#| fig-cap: "Distribution of TTFF (15-minute reset period)"
+#| fig-cap: "Distribution of TTFF (15-minute reset period) — synthetic preview; real distribution pending B3-3 (raw epoch_errors load)"
 
 fig, ax = plt.subplots(figsize=(8, 4))
 ax.hist(ttff_15min, bins=60, color=COLOR_PRIMARY, alpha=0.85, edgecolor="white")
