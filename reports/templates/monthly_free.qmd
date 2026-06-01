@@ -321,7 +321,7 @@ station_h95 = np.array([np.quantile(horiz_errors[i], 0.95) for i in range(N_STAT
 station_v95 = np.array([np.quantile(vert_errors[i], 0.95) for i in range(N_STATIONS)])
 
 # ---- Synthetic past 13 months of monthly aggregates ----
-# Phase 0 ADR 0007 scope: Apr 2025 onwards. Phase 0 launch in mid-2026
+# Phase 0 scope: Apr 2025 onwards. Phase 0 launch in mid-2026
 # means ~13+ months of history is available at first publication.
 months_back = 13
 trend_months = []
@@ -371,9 +371,9 @@ marked "Coming Soon" appear in Phase 1+ per the rollout plan in
 
 # はじめに
 
-本レポートは、**`{python} PERIOD_LABEL`** における QZSS CLAS(センチメータ級補強サービス)の性能を、PNT Moni が公開データとオープンソースのツール群を用いて評価した結果をまとめたものです。
+本レポートは、**`{python} PERIOD_LABEL`** における QZSS CLAS(センチメータ級測位補強サービス)の性能を、PNT Moni が公開データとオープンソースのツール群を用いて評価した結果をまとめたものです。
 
-PNT Moni は GNSS 補強サービスの独立評価サービスとして、内閣府／QSS が公開する公式 Service Performance Report より高い空間・時間解像度で CLAS の性能を継続的にモニタリングしています。月次レポート(本書)は公式の半年次レポートを補完するもので、月次の更新頻度、独立した第三者評価、実務に資する分析深度を提供します。観測局単位のドリルダウンは **Pro 層** の領域、地域別表示は **Free Live Dashboard** の領域で、本月次の Free 層は **全国 aggregate のみ**を対象とします([ADR 0013](https://pntmoni.com/decisions/adr-0013))。
+PNT Moni は GNSS 補強サービスの独立評価サービスとして、内閣府／準天頂衛星システムサービス株式会社(Quasi-Zenith Satellite System Services Inc.; QSS)が公開する公式 Service Performance Report より高い空間・時間解像度で CLAS の性能を継続的にモニタリングしています。月次レポート(本書)は公式の半期毎レポートを補完するもので、月次の更新頻度、独立した第三者評価、実務に資する分析深度を提供します。本 Free tier 月次レポートは **全国 aggregate のみ** を対象とし、観測局単位のドリルダウンは **Pro tier** で提供されます。
 
 本レポート末尾の「方法論バージョンタグ」は、本レポートを生成した処理構成を一意に識別します。完全な方法論文書は [https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0) を参照してください。
 
@@ -383,15 +383,15 @@ PNT Moni は GNSS 補強サービスの独立評価サービスとして、内�
 
 **データソース**:国土地理院(GSI)が PDL 1.0 で配布する GEONET 約 1,300 観測局の 30 秒 RINEX 観測データ(出典:国土地理院 電子基準点データ提供サービス)、QSS が Web で公開する CLAS L6 補強情報アーカイブ、および CDDIS の IGS 放送暦・地球回転パラメータ。
 
-**処理エンジン**:`{python} f"{ENGINE} {ENGINE_VERSION}"`、PPP-RTK モード(`kinematic`、`l1+l2+l5`)で処理。詳細は [ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md) および [ADR 0004](../../../pntmoni-docs/70-decisions/adr-0004.md) を参照。
+**処理エンジン**:`{python} f"{ENGINE} {ENGINE_VERSION}"`、PPP-RTK モード(`kinematic`、`l1+l2+l5`)で処理。
 
 **参照座標**:GSI 日座標解(対象期間に対応する系列。F5 期 = ITRF2014、F5.1 期 = ITRF2020。Rapid 系列を用いる場合は R5 / R5.1)を観測局 92110(つくば1)を基準として相対化し、対象日 $d$ を中心とする **±7 日(計 15 暦日)の中央値フィルタ**で平滑化します(共通モード除去、Method B)。手法バージョン:`{python} REFERENCE_COORD_VERSION`。
 
-**品質管理(QC)**:`{python} f"{QC_TOOL} {QC_VERSION}"` を 2026〜2027 年に使用。2027/Q4 を目処に MRTKLIB の `mrtk qc` へ移行予定([ADR 0008](../../../pntmoni-docs/70-decisions/adr-0008.md))。
+**品質管理(QC)**:`{python} f"{QC_TOOL} {QC_VERSION}"` を 2026〜2027 年に使用。2027/Q4 を目処に MRTKLIB の `mrtk qc` へ移行予定。
 
-**統計集計**:95% / 99% パーセンタイル誤差は、各集計セルに属する**全観測局・全日のエポック誤差をプール**して算出します(方法論 §5.1、NAVIGATION 2026 と同一規則)。公式レポートとの解像度差・比較粒度については [ADR 0006 Postscript](https://pntmoni.com/decisions/adr-0006) を参照。TTFF は **15 分リセット**(NAVIGATION 2026 との連続性、方法論 §5.2)。60 分リセットは Phase 1 で追加予定([ADR 0005](https://pntmoni.com/decisions/adr-0005))。
+**統計集計**:95% / 99% パーセンタイル誤差は、各集計セルに属する**全観測局・全日のエポック誤差をプール**して算出します(方法論 §5.1、NAVIGATION 2026 と同一規則)。TTFF は **15 分リセット**(NAVIGATION 2026 との連続性、方法論 §5.2)。60 分リセットは Phase 1 で追加予定。
 
-**公式 QSS 数値との既知の構造的差**:PNT Moni の方法論は公式 QSS Service Performance Report と以下 4 点で構造的に異なります — サンプリングレート(30 秒 vs 1 秒)、30 秒向けに再調整したパラメータ設定、CLASLIB 版差、これらに起因する Kalman Filter 挙動。詳細は [ADR 0001 Postscript](../../../pntmoni-docs/70-decisions/adr-0001.md#postscript) および [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762) を参照。これはバグではなく**構造的特性**として扱います。絶対値の比較や数値の同一視は意味を持ちません(方法論 §8.3)。
+**公式 QSS 数値との既知の構造的差**:PNT Moni の方法論は公式 QSS Service Performance Report と以下 4 点で構造的に異なります — サンプリングレート(30 秒 vs 1 秒)、30 秒向けに再調整したパラメータ設定、CLASLIB 版差、これらに起因する Kalman Filter 挙動。詳細は [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762) を参照。これはバグではなく**構造的特性**として扱います。絶対値の比較や数値の同一視は意味を持ちません(方法論 §8.3)。
 
 ## 評価ネットワーク
 
@@ -429,7 +429,7 @@ ax.grid(True, alpha=0.3)
 plt.tight_layout()
 ```
 
-CLAS の網ポリゴンは、補強情報が仕様通りの性能を提供することを意図された領域を定義します。網外の観測局は外挿によって導出された補正情報を受け取るため、誤差特性が異なり得ます(網内/網外の集計分析は **Pro Monthly Detailed** および将来の **Free Live Dashboard** にて提供)。
+CLAS の網ポリゴンは、補強情報が仕様通りの性能を提供することを意図された領域を定義します。網外の観測局は外挿によって導出された補正情報を受け取るため、誤差特性が異なり得ます(網内/網外の集計分析は **Pro tier** で提供)。
 
 # エグゼクティブサマリ
 
@@ -580,7 +580,7 @@ plt.tight_layout()
 
 ### 近月のトレンド
 
-**Coming Soon。** 本節では、過去 13 ヶ月の全国 95 パーセンタイル水平・垂直誤差の推移を、当月をハイライト・前年同月を比較マーカー付きで掲載する予定です。トレンド表示は、Phase 0 / Phase 1 の遡及処理(ADR 0007)で 2025 年 4 月以降が揃った時点で意味を持ちます。それまでは上のテーブルに当月の値のみを掲載します。
+**Coming Soon。** 本節では、過去 13 ヶ月の全国 95 パーセンタイル水平・垂直誤差の推移を、当月をハイライト・前年同月を比較マーカー付きで掲載する予定です。トレンド表示は、Phase 0 / Phase 1 の遡及処理で 2025 年 4 月以降が揃った時点で意味を持ちます。それまでは上のテーブルに当月の値のみを掲載します。
 
 ## 詳細分析
 
@@ -589,10 +589,9 @@ plt.tight_layout()
 ::: {.callout-note appearance="default"}
 **Coming Soon(Phase 1+)**
 
-完全性指標(Integrity Analysis)は、Phase 1 にて用途別の Protection Level(PL)レポーティングを導入予定です。車線維持自動運転、ドローン運用、測量、農業自動化など、用途ごとに異なる完全性要件に対応します。GPS Solutions に投稿中の IASB(Inter-Augmentation SIS Bias)モニタは、論文採録後に追加します。
+完全性指標(Integrity Analysis)は、Phase 1 にて用途別の Protection Level(PL)レポーティングを導入予定です。車線維持自動運転、ドローン運用、測量、農業自動化など、用途ごとに異なる完全性要件に対応します。
 
 Phase 1 目標:2026 年末(用途別 PL 分布)。
-Phase 2 目標:2027/Q4(IASB モニタ出力、採録後)。
 :::
 
 ## 相互検証
@@ -600,7 +599,7 @@ Phase 2 目標:2027/Q4(IASB モニタ出力、採録後)。
 ::: {.callout-note appearance="default"}
 **Coming Soon(Phase 1+)**
 
-相互検証では、主エンジンである CLASLIB ベース処理と、並走評価エンジン MRTKLIB の間の合意統計を、約 100 局のサンプルに対して報告します。独立した OSS 実装間で PNT Moni の評価が一致していることを示し、2027/Q4 の MRTKLIB 主エンジン化([ADR 0001](../../../pntmoni-docs/70-decisions/adr-0001.md))への準備とします。
+相互検証では、主エンジンである CLASLIB ベース処理と、並走評価エンジン MRTKLIB の間の合意統計を、約 100 局のサンプルに対して報告します。独立した OSS 実装間で PNT Moni の評価が一致していることを示し、2027/Q4 の MRTKLIB 主エンジン化への準備とします。
 
 Phase 1 目標:並走サンプル局での相互検証公開。
 Phase 2 目標(2027/Q4):主従反転 — MRTKLIB を主、CLASLIB は履歴参照。
@@ -793,7 +792,7 @@ galileo
 ::: {.callout-note appearance="minimal"}
 **出典・利用条件**:GEONET データは国土地理院が PDL 1.0 で配布(出典:国土地理院 電子基準点データ提供サービス)。QSS 公式 Service Performance Report は[政府標準利用規約 v2.0](https://qzss.go.jp/policy/rule.html) に基づきます。
 
-**PNT Moni について**:PNT Moni は GNSS 補強サービスの継続評価を提供する独立サービスで、QZSS CLAS を出発点としています。月次レポートは公式半年次レポートを月次解像度・独立性・解析の深さで補完し、公式サイクルに同期した半年次の比較レポート(Comparison Archive)も別途提供します([ADR 0006](../../../pntmoni-docs/70-decisions/adr-0006.md))。
+**PNT Moni について**:PNT Moni は GNSS 補強サービスの継続評価を提供する独立サービスで、QZSS CLAS を出発点としています。月次レポートは公式半期毎レポートを月次解像度・独立性・解析の深さで補完し、公式サイクルに同期した半期毎の比較レポート(Comparison Archive)も別途提供します。
 
 **お問い合わせ**:hello@pntmoni.com · [https://pntmoni.com](https://pntmoni.com)
 :::
