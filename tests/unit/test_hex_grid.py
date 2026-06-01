@@ -49,35 +49,36 @@ def test_make_hex_grid_default_covers_japan_at_60km():
 
 def test_hex_vertices_shape_and_distance_to_center():
     g = H.make_hex_grid(spacing_km=60.0)
-    # pick a hex near the bbox mid-latitude (cleanest km/deg approximation)
-    mid_lat = (g.bbox[2] + g.bbox[3]) / 2.0
-    idx = int(np.argmin(np.abs(g.centers[:, 1] - mid_lat)))
+    idx = 0
     verts = g.vertices(idx)
     assert verts.shape == (6, 2)
-    # vertex radius = spacing / sqrt(3) — distance from center should match
+    # Vertex radius = spacing / sqrt(3) measured in km using *this hex's
+    # own* latitude for the lon → km scaling (the per-hex projection
+    # correction `vertices()` applies).
     cx, cy = g.centers[idx]
-    km_lat, km_lon = g.km_per_deg
+    km_per_deg_lat = 111.0
+    km_per_deg_lon = 111.0 * math.cos(math.radians(cy))
     distances_km = np.sqrt(
-        ((verts[:, 0] - cx) * km_lon) ** 2
-        + ((verts[:, 1] - cy) * km_lat) ** 2,
+        ((verts[:, 0] - cx) * km_per_deg_lon) ** 2
+        + ((verts[:, 1] - cy) * km_per_deg_lat) ** 2,
     )
     expected = 60.0 / math.sqrt(3.0)
     np.testing.assert_allclose(distances_km, expected, rtol=1e-9)
 
 
-def test_hex_grid_horizontal_spacing_matches_flat_to_flat():
+def test_hex_grid_horizontal_spacing_matches_flat_to_flat_at_any_row():
     g = H.make_hex_grid(spacing_km=60.0)
-    # Find two horizontally-adjacent centers (same lat, distance ~spacing_km
-    # at the bbox mid-latitude).
+    # Pick a row and verify adjacent centers are spacing_km apart on the
+    # ground (km), using *that row's* km/deg lon — i.e. ground spacing
+    # is uniform across the grid even though deg spacing varies by lat.
     lats = np.unique(g.centers[:, 1])
-    # Use a row near the bbox mid-latitude so km/deg approximation is exact.
-    target_lat = lats[len(lats) // 2]
-    row = g.centers[np.isclose(g.centers[:, 1], target_lat)]
-    row = row[np.argsort(row[:, 0])]
-    assert len(row) >= 2
-    km_lon = g.km_per_deg[1]
-    diff_km = (row[1, 0] - row[0, 0]) * km_lon
-    assert diff_km == pytest.approx(60.0, rel=1e-9)
+    for target_lat in (lats[2], lats[len(lats) // 2], lats[-3]):
+        row = g.centers[np.isclose(g.centers[:, 1], target_lat)]
+        row = row[np.argsort(row[:, 0])]
+        assert len(row) >= 2
+        km_per_deg_lon_at_row = 111.0 * math.cos(math.radians(target_lat))
+        diff_km = (row[1, 0] - row[0, 0]) * km_per_deg_lon_at_row
+        assert diff_km == pytest.approx(60.0, rel=1e-6)
 
 
 # --- Station assignment ----------------------------------------------

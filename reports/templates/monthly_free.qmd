@@ -235,34 +235,52 @@ if _ep_dir_str and _rc_dir_str:
             HEX_PRESENT = False
 
 # Synthetic fallback so `quarto preview` (no INPUTS, no env var) still
-# shows the hex figure. Uses a coarse rectangular mask approximating
-# the Japan archipelago and gamma-distributed per-cell percentiles.
+# shows the hex figure. Prefers real reference_coords for hex placement
+# (so preview hexes sit on real GEONET stations) and falls back to a
+# rectangular land mask only when no coords are reachable.
 if not HEX_PRESENT:
     import numpy as _np_hex
-    from pntmoni_pipeline.analysis._hex_grid import make_hex_grid as _make_hex_grid_at
-    HEX_GRID = _make_hex_grid_at()
-    _hex_centers = HEX_GRID.centers
-    _land_mask = (
-        # Honshu + Shikoku + Kyushu band
-        ((_hex_centers[:, 0] >= 129.5) & (_hex_centers[:, 0] <= 142.0)
-         & (_hex_centers[:, 1] >= 30.5) & (_hex_centers[:, 1] <= 41.5))
-        # Hokkaido
-        | ((_hex_centers[:, 0] >= 139.5) & (_hex_centers[:, 0] <= 145.5)
-           & (_hex_centers[:, 1] >= 41.5) & (_hex_centers[:, 1] <= 45.5))
-        # Okinawa chain
-        | ((_hex_centers[:, 0] >= 124.0) & (_hex_centers[:, 0] <= 131.0)
-           & (_hex_centers[:, 1] >= 24.0) & (_hex_centers[:, 1] <= 28.5))
-    )
-    _hex_idxs = _np_hex.where(_land_mask)[0]
+    from pntmoni_pipeline.analysis import _hex_grid as _hex_mod_at
+    HEX_GRID = _hex_mod_at.make_hex_grid()
     _rng_hex = _np_hex.random.default_rng(42)
-    _n_demo = min(220, len(_hex_idxs))
-    _sel = _rng_hex.choice(_hex_idxs, size=_n_demo, replace=False)
+    _real_rc = None
+    for _cand in (
+        _Path_at("data/processed/reference_coords"),
+        _Path_at("../../data/processed/reference_coords"),
+    ):
+        if _cand.is_dir():
+            _real_rc = _cand
+            break
+    _populated_idxs: list[int] | None = None
+    if _real_rc is not None:
+        try:
+            _st = _hex_mod_at.load_station_coords(_real_rc, period=PERIOD)
+            _s2h = _hex_mod_at.assign_stations(_st, HEX_GRID)
+            _populated_idxs = sorted(int(i) for i in _s2h.unique().tolist())
+        except Exception:
+            _populated_idxs = None
+    if _populated_idxs is None:
+        # Fallback: rectangular land mask + uniform-random hex sampling.
+        _hex_centers = HEX_GRID.centers
+        _land_mask = (
+            ((_hex_centers[:, 0] >= 129.5) & (_hex_centers[:, 0] <= 142.0)
+             & (_hex_centers[:, 1] >= 30.5) & (_hex_centers[:, 1] <= 41.5))
+            | ((_hex_centers[:, 0] >= 139.5) & (_hex_centers[:, 0] <= 145.5)
+               & (_hex_centers[:, 1] >= 41.5) & (_hex_centers[:, 1] <= 45.5))
+            | ((_hex_centers[:, 0] >= 124.0) & (_hex_centers[:, 0] <= 131.0)
+               & (_hex_centers[:, 1] >= 24.0) & (_hex_centers[:, 1] <= 28.5))
+        )
+        _hex_idxs = _np_hex.where(_land_mask)[0]
+        _populated_idxs = list(_rng_hex.choice(
+            _hex_idxs, size=min(220, len(_hex_idxs)), replace=False,
+        ).tolist())
+    _n = len(_populated_idxs)
     HEX_SUMMARY = _pd_at.DataFrame({
-        "hex_idx": _sel,
-        "n_stations": _rng_hex.integers(1, 15, size=_n_demo),
-        "n_epochs": _rng_hex.integers(50_000, 500_000, size=_n_demo),
-        "horizontal_p95": _rng_hex.gamma(3.0, 0.035, size=_n_demo),
-        "vertical_p95": _rng_hex.gamma(3.0, 0.06, size=_n_demo),
+        "hex_idx": _populated_idxs,
+        "n_stations": _rng_hex.integers(1, 15, size=_n),
+        "n_epochs": _rng_hex.integers(50_000, 500_000, size=_n),
+        "horizontal_p95": _rng_hex.gamma(3.0, 0.035, size=_n),
+        "vertical_p95": _rng_hex.gamma(3.0, 0.06, size=_n),
     })
     HEX_PRESENT = True
     HEX_REAL_DATA = False
@@ -313,6 +331,15 @@ mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.grid'] = True
 mpl.rcParams['grid.alpha'] = 0.3
 mpl.rcParams['figure.dpi'] = 100
+# CJK font support — Quarto's matplotlib defaults to DejaVu Sans which
+# has no JP glyphs; titles/axis labels render as tofu boxes. Prefer the
+# macOS-bundled Hiragino family, then Yu Gothic, then Noto CJK on Linux.
+mpl.rcParams['font.sans-serif'] = [
+    'Hiragino Sans', 'Hiragino Maru Gothic Pro',
+    'Yu Gothic', 'Noto Sans CJK JP', 'DejaVu Sans',
+]
+mpl.rcParams['font.family'] = 'sans-serif'
+mpl.rcParams['axes.unicode_minus'] = False
 
 # ---- Derived from the parameters cell ----
 # YEAR / MONTH / PERIOD / STREAM / MODE / version strings / CONFIG_HASH /
@@ -690,8 +717,8 @@ if HEX_PRESENT:
             color = _hex_color(float(row[col]), thresholds)
             ax.add_patch(MplPolygon(
                 verts, closed=True,
-                facecolor=color, edgecolor="white", linewidth=0.3,
-                alpha=0.85, transform=ccrs.PlateCarree(),
+                facecolor=color, edgecolor=color, linewidth=0.2,
+                alpha=0.55, transform=ccrs.PlateCarree(),
                 zorder=10,
             ))
         ax.set_title(title + f" [cm]", fontsize=11)

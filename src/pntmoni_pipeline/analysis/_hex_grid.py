@@ -99,20 +99,33 @@ class HexGrid:
 
     @property
     def km_per_deg(self) -> tuple[float, float]:
-        """(km/deg lat, km/deg lon) at the bbox mid-latitude."""
+        """(km/deg lat, km/deg lon) at the bbox mid-latitude.
+
+        Used only by station assignment for a uniform-scale distance
+        comparison; per-hex vertex rendering uses the hex's own latitude
+        (see :meth:`vertices`) so a 60 km ground-distance hex is drawn
+        narrower in PlateCarree at high latitudes.
+        """
         lat0 = (self.bbox[2] + self.bbox[3]) / 2.0
         return 111.0, 111.0 * math.cos(math.radians(lat0))
 
     def vertices(self, hex_idx: int) -> np.ndarray:
-        """(6, 2) array of (lon, lat) vertices for the given hex (pointy-top)."""
+        """(6, 2) array of (lon, lat) vertices for the given hex (pointy-top).
+
+        Uses the hex center's own latitude for the lon → km scaling so a
+        60 km flat-to-flat hex is drawn at the right *ground* size at
+        every latitude when plotted in PlateCarree (no projection-driven
+        distortion of the hex visual).
+        """
         cx, cy = self.centers[hex_idx]
-        km_lat, km_lon = self.km_per_deg
+        km_per_deg_lat = 111.0
+        km_per_deg_lon = 111.0 * math.cos(math.radians(cy))
         r_km = self.spacing_km / math.sqrt(3.0)
         verts = np.empty((6, 2), dtype=np.float64)
         for i in range(6):
             angle = math.radians(60.0 * i - 30.0)
-            verts[i, 0] = cx + r_km * math.cos(angle) / km_lon
-            verts[i, 1] = cy + r_km * math.sin(angle) / km_lat
+            verts[i, 0] = cx + r_km * math.cos(angle) / km_per_deg_lon
+            verts[i, 1] = cy + r_km * math.sin(angle) / km_per_deg_lat
         return verts
 
 
@@ -128,16 +141,18 @@ def make_hex_grid(
       - every other row is offset by half the horizontal spacing
     """
     lon_min, lon_max, lat_min, lat_max = bbox
-    lat0 = (lat_min + lat_max) / 2.0
     km_per_deg_lat = 111.0
-    km_per_deg_lon = 111.0 * math.cos(math.radians(lat0))
-    d_lon = spacing_km / km_per_deg_lon
     d_lat = spacing_km * math.sqrt(3.0) / 2.0 / km_per_deg_lat
 
     centers: list[tuple[float, float]] = []
     row = 0
     lat = lat_min
     while lat <= lat_max + 1e-9:
+        # Use this row's own latitude for the lon spacing so adjacent
+        # hex centers are ~spacing_km apart on the ground (not in
+        # degrees) at every latitude.
+        km_per_deg_lon = 111.0 * math.cos(math.radians(lat))
+        d_lon = spacing_km / km_per_deg_lon
         offset = d_lon / 2.0 if (row % 2) else 0.0
         lon = lon_min + offset
         while lon <= lon_max + 1e-9:
@@ -208,13 +223,20 @@ def assign_stations(
     *,
     lon_col: str = "lon", lat_col: str = "lat", id_col: str = "station",
 ) -> pd.Series:
-    """Return Series indexed by station id -> nearest hex_idx."""
-    km_per_deg_lat, km_per_deg_lon = hex_grid.km_per_deg
+    """Return Series indexed by station id -> nearest hex_idx.
+
+    Uses each station's own latitude to scale the lon-distance term, so
+    nearest-neighbour selection is accurate at high latitudes (Hokkaido)
+    and low latitudes (Okinawa) — not just at the bbox mid-latitude.
+    """
     centers = hex_grid.centers
     s_lon = stations[lon_col].to_numpy()
     s_lat = stations[lat_col].to_numpy()
-    # Pairwise distance in km (deg deltas converted via the bbox mid-lat
-    # km/deg ratio — fine for our flat-Earth approximation scale).
+    # Scale lon at each station's latitude. Hex centers are within ~30km
+    # of any nearest station, so using the station's lat rather than the
+    # midpoint is sub-meter accurate at our scale.
+    km_per_deg_lat = 111.0
+    km_per_deg_lon = (111.0 * np.cos(np.radians(s_lat)))[:, None]   # (n_stat, 1)
     dlon_km = (s_lon[:, None] - centers[None, :, 0]) * km_per_deg_lon
     dlat_km = (s_lat[:, None] - centers[None, :, 1]) * km_per_deg_lat
     d2 = dlon_km * dlon_km + dlat_km * dlat_km
