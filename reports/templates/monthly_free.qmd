@@ -266,6 +266,25 @@ TTFF50 = np.quantile(ttff_15min, 0.50)
 TTFF95 = np.quantile(ttff_15min, 0.95)
 AVAIL = 0.987  # synthetic national availability
 
+# B3-2: when the monthly accuracy / TTFF parquets are present (via
+# INPUTS, see `accuracy-ttff-data` cell), replace the synthetic
+# headline scalars with the real values. The synthetic numbers above
+# stay as the standalone-preview fallback.
+if ACCURACY_PRESENT:
+    H50 = H_P50_M
+    H95 = H_P95_M
+    H99 = H_P99_M
+    V50 = V_P50_M
+    V95 = V_P95_M
+    V99 = V_P99_M
+    AVAIL = FIX_RATE         # exec-summary "Fix rate (Q=4)" — the
+                             # operationally meaningful availability
+                             # of a CLAS fix.
+    N_STATIONS = N_QUALIFIED_STATIONS
+if TTFF_PRESENT:
+    TTFF50 = TTFF_P50_SEC
+    TTFF95 = TTFF_P95_SEC
+
 # Per-station 95th percentile (for heatmaps)
 station_h95 = np.array([np.quantile(horiz_errors[i], 0.95) for i in range(N_STATIONS)])
 station_v95 = np.array([np.quantile(vert_errors[i], 0.95) for i in range(N_STATIONS)])
@@ -450,7 +469,7 @@ exec_summary = pd.DataFrame({
         "Vertical error 95% (cm)",
         "TTFF 50% (s, 15-min reset)",
         "TTFF 95% (s, 15-min reset)",
-        "National availability",
+        "National Fix rate (Q=4)",
     ],
     "Value": [
         f"{N_STATIONS:,}",
@@ -472,8 +491,8 @@ exec_summary
 - National 95th percentile vertical error: **`{python} f"{V95*100:.2f} cm"`**
 - TTFF (15-min reset, 95th percentile): **`{python} f"{TTFF95:.1f} s"`**
 - Inside vs outside network: 網内 95% horizontal = **`{python} f"{inside_h95*100:.2f} cm"`**, 網外 95% horizontal = **`{python} f"{outside_h95*100:.2f} cm"`**
-- National availability: **`{python} f"{AVAIL*100:.1f}%"`**
-- Tropospheric divergence events detected: **0** (this synthetic month)
+- National Fix rate (Q=4): **`{python} f"{AVAIL*100:.2f}%"`**
+- Tropospheric divergence events detected: **n/a** (Phase 1+ feature, §6)
 - L6 broadcast alert messages: **`{python} N_L6_ALERTS if L6_ALERTS_PRESENT else "n/a (not aggregated)"`**
 
 # Performance

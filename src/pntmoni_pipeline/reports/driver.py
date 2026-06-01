@@ -169,8 +169,9 @@ def assemble_params(
         "qc_version": QC_TOOL_VERSION,
         "reference_coord_version": _reference_coords.METHODOLOGY_VERSION,
         "data_mode": data_mode,
-        # Parquet input paths (string for YAML/JSON friendliness).
-        "inputs": {k: str(p) for k, p in inputs.paths.items()},
+        # Parquet input paths — absolute so the qmd reads them
+        # regardless of Quarto's render cwd (which is the qmd's dir).
+        "inputs": {k: str(p.resolve()) for k, p in inputs.paths.items()},
         "inputs_status": inputs.status(),
     }
 
