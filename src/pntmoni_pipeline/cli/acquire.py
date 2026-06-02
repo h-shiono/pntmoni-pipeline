@@ -342,3 +342,56 @@ def cmd_satellite_outages(
         f"{len(written)} parquet(s)\n"
         f"  events      : {len(events_list)} normalised → {events_path}"
     )
+
+
+@app.command("constellation")
+def cmd_constellation_status(
+    out_root: Annotated[
+        Path,
+        typer.Option(
+            "--out",
+            help="Output root for {YYYY}/{date}.parquet + latest.parquet.",
+        ),
+    ] = Path("data/processed/constellation_status"),
+    provenance_log: Annotated[
+        Path,
+        typer.Option(
+            "--provenance-log",
+            help="JSONL provenance log (appended per fetch).",
+        ),
+    ] = Path("data/metadata/constellation_status.jsonl"),
+) -> None:
+    """Snapshot GPS / QZSS / Galileo constellation status from operator pages.
+
+    Sources (HTML scrape):
+      gps : https://www.navcen.uscg.gov/gps-constellation
+      qzs : https://sys.qzss.go.jp/dod/en/constellation.html
+      gal : https://www.gsc-europa.eu/system-service-status/constellation-information
+
+    Writes a timestamped snapshot under ``<out>/YYYY/YYYY-MM-DD.parquet``
+    and overwrites ``<out>/latest.parquet`` with the same content. The
+    monthly report driver reads ``latest.parquet`` by default.
+    """
+    from pntmoni_pipeline.acquisition.constellation_status import fetch_all, write_snapshot
+
+    typer.echo("fetching constellation snapshots …")
+    res = fetch_all()
+    for src, ok in res.sources_ok.items():
+        if ok:
+            typer.echo(f"  {src}: OK ({(res.df['constellation'] == src).sum()} sats)")
+        else:
+            typer.echo(f"  {src}: FAILED — {res.errors.get(src, 'unknown error')}")
+
+    if len(res.df) == 0:
+        typer.echo("no satellites fetched; aborting.")
+        raise typer.Exit(code=1)
+
+    dated, latest = write_snapshot(
+        res, out_root=out_root, provenance_log=provenance_log,
+    )
+    typer.echo(
+        f"\n--- summary ---\n"
+        f"  {len(res.df)} satellites written to {dated}\n"
+        f"  latest snapshot → {latest}\n"
+        f"  provenance      → {provenance_log}"
+    )

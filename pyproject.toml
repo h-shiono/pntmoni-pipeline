@@ -16,6 +16,7 @@ dependencies = [
     "papermill>=2.5",
     "matplotlib>=3.10.9",
     "cartopy>=0.25.0",
+    "beautifulsoup4>=4.12",
 ]
 
 [project.optional-dependencies]

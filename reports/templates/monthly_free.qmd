@@ -1060,70 +1060,130 @@ else:
 
 ## 衛星一覧
 
-本節は `{python} PERIOD_LABEL` 期間中のコンステレーション状況のリファレンス・スナップショットです。各衛星がどの CLAS 補強対象信号を放送していたかの把握に役立ちます。
+本節は **コンステレーション運用者の公式ページのスナップショット**(取得時点の状態)です。出典:GPS = USCG NAVCEN、QZSS = QSS DoD、Galileo = GSC Europa。
+
+```{python}
+#| label: constellation-status-setup
+#| include: false
+
+# Load constellation snapshot from the latest fetch
+# (`pntmoni-pipeline acquire constellation`). The qmd renders one
+# table per constellation below.
+_cs_p = INPUTS.get("constellation_status") if isinstance(INPUTS, dict) else None
+_cs_present = bool(_cs_p and _Path(_cs_p).is_file())
+if _cs_present:
+    CONSTELLATION_DF = _pd.read_parquet(_cs_p)
+    CONSTELLATION_FETCHED_AT = (
+        pd.to_datetime(CONSTELLATION_DF["fetched_at"]).max()
+        if "fetched_at" in CONSTELLATION_DF.columns else None
+    )
+else:
+    CONSTELLATION_DF = None
+    CONSTELLATION_FETCHED_AT = None
+
+_STATUS_JP = {
+    "operational":    "運用中",
+    "outage":         "停止中",
+    "unusable":       "使用不可",
+    "decommissioned": "退役",
+    "commissioning":  "試験運用",
+}
+
+def _format_satellite_table(df, *, columns):
+    """Subset+rename the given columns into a JP-labelled display frame."""
+    out = df.copy()
+    out["状態"] = out["status"].map(lambda s: _STATUS_JP.get(s, s))
+    out["通知"] = out.apply(
+        lambda r: f"{r['notice_type']} {r['notice_id']}".strip()
+        if r.get("notice_type") or r.get("notice_id") else "",
+        axis=1,
+    )
+    return out[columns].reset_index(drop=True)
+```
+
+```{python}
+#| echo: false
+#| output: asis
+if not _cs_present:
+    print(":::: {.callout-warning}\n"
+          "コンステレーション状態の parquet が未取得です。"
+          "`pntmoni-pipeline acquire constellation` を実行してください。\n"
+          "::::\n")
+elif CONSTELLATION_FETCHED_AT is not None:
+    print(f"**取得時刻**:{CONSTELLATION_FETCHED_AT.strftime('%Y-%m-%d %H:%M UTC')}\n")
+```
 
 ### GPS
 
 ```{python}
 #| label: tbl-gps-satellites
-#| tbl-cap: "GPS 衛星コンステレーション状況(暫定)"
+#| tbl-cap: "GPS 衛星コンステレーション状況"
 
-gps = pd.DataFrame({
-    "PRN": [f"{i:02d}" for i in [1, 2, 3, 4, 5]],
-    "ブロック": ["IIIA", "IIR", "IIIA", "IIR-M", "IIF"],
-    "L1 C/A": ["✓"] * 5,
-    "L1C": ["✓", "—", "✓", "—", "—"],
-    "L2C": ["✓", "—", "✓", "✓", "✓"],
-    "L5": ["✓", "—", "✓", "—", "✓"],
-    "状態": ["健全"] * 5,
-})
-gps
+if _cs_present:
+    _gps = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "gps"].copy()
+    _gps["PRN"] = _gps["prn"].apply(
+        lambda x: f"G{int(x):02d}" if pd.notna(x) else "—"
+    )
+    _gps = _gps.rename(columns={
+        "svn": "SVN", "block": "ブロック", "slot": "スロット",
+        "clock": "原子時計",
+    })
+    gps_table = _format_satellite_table(
+        _gps,
+        columns=["PRN", "SVN", "ブロック", "スロット", "原子時計",
+                 "状態", "通知"],
+    )
+else:
+    gps_table = pd.DataFrame({"—": ["—"]})
+gps_table
 ```
-
-(実運用では GPS の全コンステレーションを掲載。)
 
 ### QZSS(みちびき)
 
 ```{python}
 #| label: tbl-qzss-satellites
-#| tbl-cap: "QZSS 衛星コンステレーション状況(暫定)"
+#| tbl-cap: "QZSS 衛星コンステレーション状況"
 
-qzss = pd.DataFrame({
-    "PRN": ["J01", "J02", "J03", "J07"],
-    "ブロック": ["I", "I", "I", "I"],
-    "L1 C/A": ["✓"] * 4,
-    "L1C": ["✓"] * 4,
-    "L2C": ["✓"] * 4,
-    "L5": ["✓"] * 4,
-    "L6": ["✓"] * 4,
-    "状態": ["健全"] * 4,
-})
-qzss
+if _cs_present:
+    _qzs = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "qzs"].copy()
+    _qzs["PRN"] = _qzs["prn"].apply(
+        lambda x: f"J{int(x)}" if pd.notna(x) else "—"
+    )
+    _qzs = _qzs.rename(columns={
+        "satellite_id": "衛星", "svn": "SVN", "block": "ブロック",
+        "signals": "送信信号",
+    })
+    qzss_table = _format_satellite_table(
+        _qzs,
+        columns=["PRN", "SVN", "ブロック", "送信信号", "状態", "通知"],
+    )
+else:
+    qzss_table = pd.DataFrame({"—": ["—"]})
+qzss_table
 ```
 
 ### Galileo
 
 ```{python}
 #| label: tbl-galileo-satellites
-#| tbl-cap: "Galileo 衛星コンステレーション状況(暫定)"
+#| tbl-cap: "Galileo 衛星コンステレーション状況"
 
-galileo = pd.DataFrame({
-    "ID": [f"E{i:02d}" for i in [1, 2, 3, 4, 5]],
-    "世代": ["FOC", "FOC", "FOC", "FOC", "FOC"],
-    "E1": ["✓"] * 5,
-    "E5a": ["✓"] * 5,
-    "E5b": ["✓"] * 5,
-    "E6": ["✓"] * 5,
-    "状態": ["健全"] * 5,
-})
-galileo
+if _cs_present:
+    _gal = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "gal"].copy()
+    _gal["E#"] = _gal["satellite_id"]
+    _gal = _gal.rename(columns={
+        "svn": "GSAT", "clock": "原子時計",
+    })
+    galileo_table = _format_satellite_table(
+        _gal,
+        columns=["E#", "GSAT", "原子時計", "状態", "通知"],
+    )
+else:
+    galileo_table = pd.DataFrame({"—": ["—"]})
+galileo_table
 ```
 
-(実運用では Galileo の全コンステレーションを掲載。PNT Moni の評価は GEONET 観測局で受信される Galileo 信号も対象としています。)
-
-### 当月の状態変化
-
-`{python} PERIOD_LABEL`:**状態変化の記録はありません。**
+PNT Moni の評価は GEONET 観測局で受信される Galileo 信号も対象としています。
 
 ---
 

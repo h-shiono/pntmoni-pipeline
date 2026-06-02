@@ -140,6 +140,13 @@ def gather_inputs(
     bundle.paths["satellite_outages"] = (
         processed_root / "satellite_outages" / "events.parquet"
     )
+    # Constellation status snapshot (GPS/QZSS/Galileo operator pages;
+    # acquired via `acquire constellation`). Always reads the latest
+    # snapshot — the report renders "as of fetch time" because the
+    # operator pages are themselves snapshots, not period summaries.
+    bundle.paths["constellation_status"] = (
+        processed_root / "constellation_status" / "latest.parquet"
+    )
     return bundle
 
 
