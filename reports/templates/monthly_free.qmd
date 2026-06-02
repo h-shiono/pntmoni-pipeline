@@ -13,6 +13,39 @@ format:
     smooth-scroll: true
     number-sections: true
     theme: [cosmo, styles/pntmoni.scss]
+  pdf:
+    pdf-engine: xelatex
+    documentclass: scrartcl
+    papersize: a4
+    fontsize: 10pt
+    geometry:
+      - top=20mm
+      - bottom=20mm
+      - left=20mm
+      - right=20mm
+    mainfont: "Helvetica Neue"
+    sansfont: "Helvetica Neue"
+    monofont: "Menlo"
+    # Japanese body text. Hiragino is the macOS system JP family; xelatex
+    # picks it up via xeCJK. Without these, the default LaTeX font has no
+    # CJK glyphs and the Japanese prose silently drops from the PDF. (The
+    # matplotlib figures handle their own CJK via pdf.fonttype=42 in setup.)
+    CJKmainfont: "Hiragino Sans"
+    CJKsansfont: "Hiragino Sans"
+    CJKmonofont: "Hiragino Sans"
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    colorlinks: true
+    linkcolor: "blue"
+    urlcolor: "blue"
+    fig-pos: "H"
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{caption}
+        \captionsetup[figure]{font=small,labelfont=bf}
+        \captionsetup[table]{font=small,labelfont=bf}
 execute:
   echo: false
   warning: false
@@ -443,6 +476,14 @@ mpl.rcParams['font.sans-serif'] = [
 ]
 mpl.rcParams['font.family'] = 'sans-serif'
 mpl.rcParams['axes.unicode_minus'] = False
+# Embed fonts as TrueType (type 42), NOT Type 3. The default Type-3 PDF
+# path builds a per-glyph XObject whose name it then ASCII-encodes — CJK
+# glyph names (Hiragino) are non-ASCII and raise UnicodeEncodeError, so a
+# `--to pdf` render dies on the first figure with Japanese text. Type 42
+# embeds the subsetted TrueType font and addresses glyphs by id, avoiding
+# the ASCII-name encode entirely.
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
 
 # ---- Derived from the parameters cell ----
 # YEAR / MONTH / PERIOD / STREAM / MODE / version strings / CONFIG_HASH /

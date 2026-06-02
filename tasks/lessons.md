@@ -1438,3 +1438,29 @@ and keeps the setup cell legible. Concrete check:
 ``for v in <vars>; do echo "$v $(grep -c '\\b'$v'\\b' qmd)"; done`` —
 anything ``= 1`` is dead.
 **Tags:** #qmd #hygiene #refactoring
+
+## [2026-06-02] quarto: Japanese report PDF needs BOTH matplotlib fonttype 42 AND CJKmainfont
+
+**Mistake:** `quarto render monthly_free.qmd --to pdf` crashed with
+`UnicodeEncodeError: 'ascii' codec can't encode characters` deep in
+matplotlib's PDF backend (`Name.__init__` → `.encode('ascii')`), dying on
+the first figure carrying Japanese text (the fig-network-map legend).
+After fixing that, a second latent defect surfaced: the PDF rendered but
+all Japanese *body* text was silently dropped.
+**Root cause:** Two independent CJK-in-PDF gaps. (1) matplotlib's default
+`pdf.fonttype=3` embeds each glyph as an XObject whose name it ASCII-
+encodes; Hiragino's CJK glyph names are non-ASCII → crash. (2)
+monthly_free.qmd (Japanese) had no `pdf:` format block at all, so Quarto
+used a default LaTeX font with no CJK glyphs and dropped the prose —
+the report only ever shipped HTML, so PDF was never wired for CJK.
+**Fix applied:** (1) `mpl.rcParams['pdf.fonttype']=42` (+ `ps.fonttype`)
+in the setup cell → TrueType/CID embedding, no per-glyph ASCII name. (2)
+Added a `pdf:` block mirroring monthly_qc.qmd: `pdf-engine: xelatex` +
+`CJKmainfont/CJKsansfont/CJKmonofont: "Hiragino Sans"`. Verified both the
+matplotlib figures (Figure 1 legend) and the LaTeX body render Japanese.
+**Rule:** A Japanese (CJK) Quarto report needs BOTH, independently:
+`pdf.fonttype=42` for matplotlib figure text AND a `pdf:` block with
+`CJKmainfont` (xelatex) for LaTeX body text. Fixing only the crash leaves
+a "successful" PDF with blank Japanese prose. Verify a CJK report PDF by
+reading a body page AND a figure page, not just by exit code.
+**Tags:** #quarto #pdf #matplotlib #cjk #i18n
