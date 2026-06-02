@@ -209,81 +209,82 @@ if _ep_dir_str:
             EPOCH_ERRORS_DF = _pd_at.concat(_frames, ignore_index=True)
             EPOCH_ERRORS_PRESENT = True
 
-# B3-3b: hex-grid spatial aggregation (60 km flat-to-flat,
-# CLAS-spec-aligned). Pools epoch errors per cell and computes the
-# pooled percentile per methodology §5.1, mirroring the single-number
-# headline rule at hex resolution. Populated cells only — empty cells
-# render blank (per ADR 0013 Postscript scope decision).
-HEX_PRESENT = False
+# B3-3b: long-format epoch sample for matplotlib.hexbin spatial figure.
+# Methodology §5.1 demands each cell's percentile be computed over the
+# cell's *pooled* epoch errors. We stratify-subsample per station-day
+# (80 rows) to bound memory at ~3 M rows from ~110 M — every typical
+# hex still holds 10+ stations × 2.4 K samples = 24 K+ epochs, which
+# is plenty for a stable 95th percentile. matplotlib.hexbin then bins
+# and reduces in one call (`reduce_C_function=np.percentile(..., 95)`).
+HEX_EPOCHS_DF = None
 HEX_REAL_DATA = False
-HEX_GRID = None
-HEX_SUMMARY = None
 _rc_dir_str = INPUTS.get("reference_coords_dir") if isinstance(INPUTS, dict) else None
 if _ep_dir_str and _rc_dir_str:
-    _ep_dir = _Path_at(_ep_dir_str)
-    _rc_dir = _Path_at(_rc_dir_str)
-    if _ep_dir.is_dir() and _rc_dir.is_dir():
-        try:
-            from pntmoni_pipeline.analysis._hex_grid import build_hex_summary
-            HEX_GRID, HEX_SUMMARY = build_hex_summary(
-                period=PERIOD, epoch_errors_dir=_ep_dir,
-                reference_coords_dir=_rc_dir,
+    try:
+        from pntmoni_pipeline.analysis._hex_grid import load_station_coords as _lsc_at
+        import calendar as _cal_he
+        _st_coords = _lsc_at(_Path_at(_rc_dir_str), period=PERIOD)
+        _yy, _mm = int(PERIOD[:4]), int(PERIOD[5:7])
+        _ep_dir = _Path_at(_ep_dir_str)
+        _samp_per_st_day = 80
+        _frames_he = []
+        for _d in range(1, _cal_he.monthrange(_yy, _mm)[1] + 1):
+            _p = _ep_dir / f"{_yy}" / f"{_yy}{_mm:02d}{_d:02d}.parquet"
+            if not _p.is_file():
+                continue
+            _df = (
+                _pd_at.read_parquet(
+                    _p, columns=["station", "horizontal_m", "vertical_m"],
+                ).dropna()
+                .groupby("station", group_keys=False)
+                .apply(lambda g: g.sample(
+                    n=min(_samp_per_st_day, len(g)), random_state=42,
+                ))
             )
-            HEX_PRESENT = len(HEX_SUMMARY) > 0
-            HEX_REAL_DATA = HEX_PRESENT
-        except Exception as _e:
-            HEX_PRESENT = False
+            _frames_he.append(_df)
+        if _frames_he:
+            _big = _pd_at.concat(_frames_he, ignore_index=True)
+            HEX_EPOCHS_DF = (
+                _big.merge(_st_coords, on="station")
+                [["lon", "lat", "horizontal_m", "vertical_m"]]
+            )
+            HEX_REAL_DATA = True
+    except Exception:
+        HEX_EPOCHS_DF = None
 
-# Synthetic fallback so `quarto preview` (no INPUTS, no env var) still
-# shows the hex figure. Prefers real reference_coords for hex placement
-# (so preview hexes sit on real GEONET stations) and falls back to a
-# rectangular land mask only when no coords are reachable.
-if not HEX_PRESENT:
+# Synthetic fallback so `quarto preview` (no INPUTS) still shows the
+# figure. Prefers real reference_coords for station placement; falls
+# back to a coarse Japan-band uniform sampling.
+if HEX_EPOCHS_DF is None:
     import numpy as _np_hex
-    from pntmoni_pipeline.analysis import _hex_grid as _hex_mod_at
-    HEX_GRID = _hex_mod_at.make_hex_grid()
     _rng_hex = _np_hex.random.default_rng(42)
-    _real_rc = None
+    _real_st = None
     for _cand in (
         _Path_at("data/processed/reference_coords"),
         _Path_at("../../data/processed/reference_coords"),
     ):
         if _cand.is_dir():
-            _real_rc = _cand
-            break
-    _populated_idxs: list[int] | None = None
-    if _real_rc is not None:
-        try:
-            _st = _hex_mod_at.load_station_coords(_real_rc, period=PERIOD)
-            _s2h = _hex_mod_at.assign_stations(_st, HEX_GRID)
-            _populated_idxs = sorted(int(i) for i in _s2h.unique().tolist())
-        except Exception:
-            _populated_idxs = None
-    if _populated_idxs is None:
-        # Fallback: rectangular land mask + uniform-random hex sampling.
-        _hex_centers = HEX_GRID.centers
-        _land_mask = (
-            ((_hex_centers[:, 0] >= 129.5) & (_hex_centers[:, 0] <= 142.0)
-             & (_hex_centers[:, 1] >= 30.5) & (_hex_centers[:, 1] <= 41.5))
-            | ((_hex_centers[:, 0] >= 139.5) & (_hex_centers[:, 0] <= 145.5)
-               & (_hex_centers[:, 1] >= 41.5) & (_hex_centers[:, 1] <= 45.5))
-            | ((_hex_centers[:, 0] >= 124.0) & (_hex_centers[:, 0] <= 131.0)
-               & (_hex_centers[:, 1] >= 24.0) & (_hex_centers[:, 1] <= 28.5))
-        )
-        _hex_idxs = _np_hex.where(_land_mask)[0]
-        _populated_idxs = list(_rng_hex.choice(
-            _hex_idxs, size=min(220, len(_hex_idxs)), replace=False,
-        ).tolist())
-    _n = len(_populated_idxs)
-    HEX_SUMMARY = _pd_at.DataFrame({
-        "hex_idx": _populated_idxs,
-        "n_stations": _rng_hex.integers(1, 15, size=_n),
-        "n_epochs": _rng_hex.integers(50_000, 500_000, size=_n),
-        "horizontal_p95": _rng_hex.gamma(3.0, 0.035, size=_n),
-        "vertical_p95": _rng_hex.gamma(3.0, 0.06, size=_n),
-    })
-    HEX_PRESENT = True
-    HEX_REAL_DATA = False
+            try:
+                from pntmoni_pipeline.analysis._hex_grid import load_station_coords as _lsc_at
+                _real_st = _lsc_at(_cand, period=PERIOD)
+                break
+            except Exception:
+                pass
+    if _real_st is not None:
+        # Replicate each station 200x with gamma-distributed synthetic errors.
+        _expanded = _real_st.loc[_real_st.index.repeat(200)].reset_index(drop=True)
+        _expanded["horizontal_m"] = _rng_hex.gamma(3.0, 0.025, len(_expanded))
+        _expanded["vertical_m"] = _rng_hex.gamma(3.0, 0.04, len(_expanded))
+        HEX_EPOCHS_DF = _expanded[["lon", "lat", "horizontal_m", "vertical_m"]]
+    else:
+        _n_pts = 5000
+        HEX_EPOCHS_DF = _pd_at.DataFrame({
+            "lon": _rng_hex.uniform(129, 146, _n_pts),
+            "lat": _rng_hex.uniform(30, 45, _n_pts),
+            "horizontal_m": _rng_hex.gamma(3.0, 0.025, _n_pts),
+            "vertical_m": _rng_hex.gamma(3.0, 0.04, _n_pts),
+        })
+HEX_PRESENT = HEX_EPOCHS_DF is not None and len(HEX_EPOCHS_DF) > 0
 
 # Tiny display helpers used by later inline `{python}` expressions.
 def fmt_cm(m, nd=1):
@@ -749,17 +750,8 @@ CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、�
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from matplotlib.patches import Polygon as MplPolygon
+from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.lines import Line2D
-
-def _hex_color(val_m, thresholds_cm):
-    """Map metres → green/amber/red by absolute cm thresholds."""
-    val_cm = val_m * 100.0
-    if val_cm <= thresholds_cm[0]:
-        return COLOR_SUCCESS
-    if val_cm <= thresholds_cm[1]:
-        return COLOR_WARNING
-    return COLOR_DANGER
 
 H_THRESHOLDS_CM = (6.0, 12.0)
 V_THRESHOLDS_CM = (12.0, 24.0)
@@ -767,25 +759,33 @@ V_THRESHOLDS_CM = (12.0, 24.0)
 def _render_hex_panel(col, title, thresholds_cm):
     fig, ax = plt.subplots(
         figsize=(7, 7),
-        subplot_kw={"projection": _proj_aea},
+        subplot_kw={"projection": ccrs.PlateCarree()},
     )
-    extent = list(HEX_GRID.bbox)
-    ax.set_extent((122, 150, 22, 47), _ccrs_nm.PlateCarree())
+    ax.set_extent((123, 146, 24, 46), crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.LAND.with_scale("50m"),
                    facecolor="#f5f5f4", edgecolor="none")
     ax.add_feature(cfeature.OCEAN.with_scale("50m"),
                    facecolor="#fafafa", edgecolor="none")
     ax.add_feature(cfeature.COASTLINE.with_scale("50m"),
                    linewidth=0.4, edgecolor="#94a3b8")
-    for _, row in HEX_SUMMARY.iterrows():
-        verts = HEX_GRID.vertices(int(row["hex_idx"]))
-        color = _hex_color(float(row[col]), thresholds_cm)
-        ax.add_patch(MplPolygon(
-            verts, closed=True,
-            facecolor=color, edgecolor=color, linewidth=0.2,
-            alpha=0.55, transform=ccrs.PlateCarree(),
-            zorder=10,
-        ))
+
+    # Discrete absolute-threshold colormap: green / amber / red.
+    _thr_m = [t / 100.0 for t in thresholds_cm]
+    _cmap = ListedColormap([COLOR_SUCCESS, COLOR_WARNING, COLOR_DANGER])
+    _norm = BoundaryNorm([0.0, *_thr_m, 10.0], _cmap.N)
+
+    # matplotlib.hexbin: per-bin reduce_C_function pools all epochs
+    # landing in the hex and returns its 95 percentile (methodology
+    # §5.1). gridsize=35 → ~60 km flat-to-flat over the bbox.
+    ax.hexbin(
+        HEX_EPOCHS_DF["lon"], HEX_EPOCHS_DF["lat"],
+        C=HEX_EPOCHS_DF[col],
+        reduce_C_function=lambda v: np.percentile(v, 95),
+        gridsize=35, cmap=_cmap, norm=_norm,
+        edgecolors="white", linewidths=0.3,
+        mincnt=50, alpha=0.7, zorder=10,
+    )
+
     ax.set_title(title + " [cm]", fontsize=11)
     ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
     legend_handles = [
@@ -819,7 +819,7 @@ if HEX_PRESENT and not HEX_REAL_DATA:
 #| fig-cap: "水平誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
 
 if HEX_PRESENT:
-    _render_hex_panel("horizontal_p95", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM)
+    _render_hex_panel("horizontal_m", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM)
 else:
     print(
         "**`{python} PERIOD_LABEL`**:空間分布図は epoch_errors / "
@@ -832,7 +832,7 @@ else:
 #| fig-cap: "垂直誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
 
 if HEX_PRESENT:
-    _render_hex_panel("vertical_p95", "垂直誤差 95 パーセンタイル", V_THRESHOLDS_CM)
+    _render_hex_panel("vertical_m", "垂直誤差 95 パーセンタイル", V_THRESHOLDS_CM)
 ```
 
 ```{python}
@@ -841,25 +841,20 @@ if HEX_PRESENT:
 #| echo: false
 
 if HEX_PRESENT:
-    _hex_n = len(HEX_SUMMARY)
-    _hex_total = HEX_GRID.n_hex
-    _med_st = int(HEX_SUMMARY["n_stations"].median())
-    _med_h = HEX_SUMMARY["horizontal_p95"].median() * 100
-    _med_v = HEX_SUMMARY["vertical_p95"].median() * 100
+    _n_stations = HEX_EPOCHS_DF[["lon", "lat"]].drop_duplicates().shape[0]
+    _n_rows = len(HEX_EPOCHS_DF)
     _stats = pd.DataFrame({
         "指標": [
-            "Hex セル(値あり / グリッド全体)",
-            "セルあたり観測局数(中央値)",
-            "水平 95% 中央値 [cm]",
-            "垂直 95% 中央値 [cm]",
-            "セル間隔(flat-to-flat)",
+            "観測局数",
+            "サンプリングエポック数(全期間)",
+            "セル間隔(目安、flat-to-flat)",
+            "セル集計規則",
         ],
         "値": [
-            f"{_hex_n} / {_hex_total}",
-            f"{_med_st}",
-            f"{_med_h:.2f}",
-            f"{_med_v:.2f}",
-            f"{HEX_GRID.spacing_km:.0f} km",
+            f"{_n_stations:,}",
+            f"{_n_rows:,}",
+            "~ 60 km",
+            "セル内エポック・プール → 95 パーセンタイル",
         ],
     })
     _stats   # Quarto / IPython renders the DataFrame inline.
