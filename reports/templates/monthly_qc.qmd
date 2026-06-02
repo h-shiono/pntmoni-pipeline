@@ -356,6 +356,26 @@ def japan_axes(ax):
     gl.top_labels = gl.right_labels = False
     gl.xlabel_style = gl.ylabel_style = {"size": 8, "color": "#6b7280"}
     return ax
+
+# Hex-map projection. The spatial metric maps use matplotlib `hexbin`,
+# which bins in *axes* coordinates and ignores cartopy's `transform=`.
+# To get equal-ground-area hex cells we project onto Albers Equal-Area
+# (matches the CLAS Free report's spatial layer) and pre-project the
+# station (lon, lat) to Albers metres ONCE — hexbin then bins natively
+# in that space. Albers (not Lambert Conformal) because equal-area is
+# the right property for a cell-aggregation map: every hex covers the
+# same ground area, so cell colour is comparable across the country.
+JAPAN_HEX_PROJECTION = ccrs.AlbersEqualArea(
+    central_longitude=137.0, central_latitude=35.0,
+    standard_parallels=(30.0, 43.0),
+)
+_hxy = JAPAN_HEX_PROJECTION.transform_points(
+    ccrs.PlateCarree(),
+    station_monthly["lon"].to_numpy(),
+    station_monthly["lat"].to_numpy(),
+)
+station_monthly["_x_aea"] = _hxy[:, 0]
+station_monthly["_y_aea"] = _hxy[:, 1]
 ```
 
 ::: {.callout-note collapse="true"}
@@ -742,6 +762,14 @@ plt.show()
 
 ## Spatial Distribution
 
+The maps below aggregate the `{python} f"{N_STATIONS_REPORTED:,}"`
+station-monthly values into a national hex grid: each hexagon is
+**~60 km flat-to-flat** and is coloured by the **median** of the
+station-monthly values of the stations falling inside it. The grid is
+drawn on an Albers Equal-Area projection so every cell covers the same
+ground area, making colour directly comparable across the country and
+between months. Cells with no reporting station are left blank.
+
 ```{python}
 #| label: helpers-spatial
 #| include: false
@@ -749,19 +777,31 @@ plt.show()
 from matplotlib.colors import LogNorm
 
 def map_grid(metrics, n_rows, n_cols, fig_size, cmap, norm_factory, *, title_fn=None):
-    """Render a grid of cartopy maps for the given station_monthly metrics.
+    """Render a grid of hex maps for the given station_monthly metrics.
+
+    Each ~60 km hex cell is coloured by the **median** of the
+    station-monthly values whose stations fall in the cell (matplotlib
+    `hexbin` with `reduce_C_function=np.median`). `gridsize=50` over the
+    ~3000 km Albers-projected national width yields ~60 km flat-to-flat
+    cells, matching the CLAS Free report's spatial layer. Stations are
+    pre-projected to Albers metres (``_x_aea`` / ``_y_aea``) in setup so
+    hexbin bins in axes space — it ignores cartopy's `transform=`.
 
     norm_factory(metric) → matplotlib Normalize-like; cmap is shared.
     """
     fig = plt.figure(figsize=fig_size)
     for i, m in enumerate(metrics):
-        ax = fig.add_subplot(n_rows, n_cols, i + 1, projection=JAPAN_PROJECTION)
+        ax = fig.add_subplot(n_rows, n_cols, i + 1, projection=JAPAN_HEX_PROJECTION)
         japan_axes(ax)
         norm = norm_factory(m)
-        sc = ax.scatter(station_monthly["lon"], station_monthly["lat"],
-                        s=8, c=station_monthly[m], cmap=cmap, norm=norm,
-                        alpha=0.9, edgecolors="none",
-                        transform=ccrs.PlateCarree(), zorder=3)
+        # Drop stations with no value for this metric so a cell's median
+        # is taken over real observations only (a NaN in the pool would
+        # propagate to the whole cell via np.median).
+        sub = station_monthly[["_x_aea", "_y_aea", m]].dropna(subset=[m])
+        ax.hexbin(sub["_x_aea"].to_numpy(), sub["_y_aea"].to_numpy(),
+                  C=sub[m].to_numpy(), reduce_C_function=np.median,
+                  gridsize=50, cmap=cmap, norm=norm, mincnt=1,
+                  edgecolors="white", linewidths=0.3, zorder=3)
         title = title_fn(m) if title_fn else f"{METRIC_LABELS.get(m, m)} ({METRIC_UNITS.get(m, '')})"
         ax.set_title(title, loc="left", fontweight=600, fontsize=11)
         cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
@@ -819,15 +859,19 @@ map_grid(["MP17", "MP71"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
 #| label: fig-spatial-slips
 #| fig-cap: "Core cycle slips per station-day (ION + MP12/21/15/51 slips, elmask-15, daily mean over month). Paper-aligned definition. Logarithmic colour scale."
 fig = plt.figure(figsize=(8, 7))
-ax = fig.add_subplot(1, 1, 1, projection=JAPAN_PROJECTION)
+ax = fig.add_subplot(1, 1, 1, projection=JAPAN_HEX_PROJECTION)
 japan_axes(ax)
 vmin, vmax = METRIC_RANGES["cycle_slips_core"]
 norm = LogNorm(vmin=vmin, vmax=vmax)
-ax.scatter(station_monthly["lon"], station_monthly["lat"],
-           s=8, c=station_monthly["cycle_slips_core"].clip(lower=vmin),
-           cmap=CMAP_PERFORMANCE, norm=norm,
-           alpha=0.9, edgecolors="none",
-           transform=ccrs.PlateCarree(), zorder=3)
+# Per-cell median of station-monthly core slip counts (clipped to the
+# colour-scale floor so a zero-slip station maps onto the LogNorm).
+_cs = station_monthly[["_x_aea", "_y_aea", "cycle_slips_core"]].dropna(
+    subset=["cycle_slips_core"])
+ax.hexbin(_cs["_x_aea"].to_numpy(), _cs["_y_aea"].to_numpy(),
+          C=_cs["cycle_slips_core"].clip(lower=vmin).to_numpy(),
+          reduce_C_function=np.median, gridsize=50,
+          cmap=CMAP_PERFORMANCE, norm=norm, mincnt=1,
+          edgecolors="white", linewidths=0.3, zorder=3)
 ax.set_title("Core cycle slips per station-day (ION + MP12/21/15/51)",
              loc="left", fontweight=600, fontsize=11)
 cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=CMAP_PERFORMANCE),
@@ -838,10 +882,11 @@ plt.show()
 ```
 
 ::: {.callout-note}
-Per free-tier scope, only color-mapped values are shown — individual
-station identifiers are reserved for the Pro-tier report. Color
-scales are fixed per signal (see [§Methodology](#metric-definitions))
-so successive months can be compared at a glance.
+Per free-tier scope, only the hex-aggregated (per-cell median) values
+are shown — individual station identifiers and per-station values are
+reserved for the Pro-tier report. Color scales are fixed per signal
+(see [§Methodology](#metric-definitions)) so successive months can be
+compared at a glance.
 :::
 
 ## Receiver / Antenna Inventory

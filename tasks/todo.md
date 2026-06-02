@@ -1324,3 +1324,97 @@ content still unsettled).
   ranges whose raw inputs were tiered out.
 - Happy-path live run still owed once a real acquisition is run for a
   recent date.
+
+## [2026-06-02] Free QC report — port CLAS hexbin spatial maps
+
+### Context
+CLAS Free report (`monthly_free.qmd`) got a much-improved spatial layer:
+matplotlib `hexbin` pre-projected into Albers Equal-Area, replacing the
+old per-station scatter. The Free **QC** report (`monthly_qc.qmd`) still
+uses cartopy scatter in Lambert Conformal. Port the hexbin rendering
+method to the QC report's 9 spatial metric maps.
+
+### Confirmed decisions (user, 2026-06-02)
+- Per-hex value = **median of station-monthly values** in the cell
+  (QC has per-station scalars, not poolable epochs → median, not p95).
+- Colour = **continuous per-metric colorbar** (Normalize / LogNorm),
+  NOT CLAS's discrete green/amber/red — QC metrics have no absolute spec.
+- Scope = **all 9 spatial maps** (SN1/2/5, SN7, MP12/21, MP15/51,
+  MP17/71, cycle_slips_core). Network station map (fig-network) stays scatter.
+- Language = **English** (unchanged). Port the drawing method only.
+
+### Reference (what to copy from monthly_free.qmd:853-944)
+- Projection: `ccrs.AlbersEqualArea(central_longitude=137,
+  central_latitude=35, standard_parallels=(30,43))`.
+- Pre-project (lon,lat)→Albers metres ONCE; hexbin ignores cartopy
+  `transform=` and bins in axes coords (the key gotcha).
+- `ax.hexbin(x,y, C=value, reduce_C_function=<median>, gridsize=50,
+  edgecolors="white", linewidths=0.3, mincnt=1, ...)`.
+- `gridsize=50` over ~3000 km Albers width → ~60 km hex cells.
+
+### Plan
+1. Add an Albers projection + `japan_hex_axes()` styling helper to the
+   QC setup cell (mirrors CLAS land/ocean/coastline chrome). Keep the
+   existing Lambert `JAPAN_PROJECTION`/`japan_axes` for fig-network.
+2. Pre-project `station_monthly` (lon,lat) → Albers (x,y) once in setup.
+3. Rewrite `map_grid()` helper: replace `ax.scatter(...)` with
+   `ax.hexbin(x_aea, y_aea, C=station_monthly[m],
+   reduce_C_function=np.median, gridsize=50, cmap, norm, mincnt=1,
+   edgecolors="white", linewidths=0.3)`. Keep the per-metric
+   `norm_factory` + shared colorbar logic intact.
+4. Rewrite the standalone cycle-slips map (fig-spatial-slips, currently
+   inline scatter) the same way, keeping its `LogNorm`.
+5. mincnt sizing: with median over stations, set `mincnt=1` (a cell with
+   ≥1 station shows its median). Confirm sparse-cell behaviour visually.
+6. Update fig captions + the §Spatial callout to say "60 km hex cells,
+   per-cell median of station-monthly values".
+7. Render QC report to HTML (+ PDF spot check) and inspect all 9 maps
+   visually — coastline alignment, hex size, colorbar range, sparse
+   edges (Hokkaido / Okinawa / Ogasawara).
+
+### Verification gate
+- `quarto render reports/templates/monthly_qc.qmd --to html` succeeds.
+- All 9 hex maps render with correct Albers coastline + filled cells.
+- Colorbars match the existing per-metric ranges (no regression).
+- PDF path also renders (xelatex) without the U+2264 issue (QC legend
+  uses no ≤/> mathtext, but verify no new glyph gaps).
+
+### Open question to confirm before coding
+- QC loads data directly from `data/processed/qc_summary` (its own
+  `data_root` param), NOT via driver.py's INPUTS bundle like the CLAS
+  report. Leave that wiring as-is (out of scope), or also bring QC under
+  the driver? Proposing: leave as-is — orthogonal to the hex port.
+
+### Result (2026-06-02)
+- `monthly_qc.qmd` ported: added `JAPAN_HEX_PROJECTION`
+  (`ccrs.AlbersEqualArea`, 137E/35N, parallels 30/43) + one-time
+  pre-projection of `station_monthly` (lon,lat)→Albers (`_x_aea`/`_y_aea`)
+  in setup; reused the projection-agnostic `japan_axes` chrome. `map_grid`
+  scatter→`hexbin(C=…, reduce_C_function=np.median, gridsize=50, mincnt=1,
+  edgecolors="white")` with the per-metric `norm_factory`+colorbar kept
+  intact; the standalone cycle-slips map gets the same treatment with its
+  `LogNorm`. Per-metric NaN dropped before each hexbin so a cell median
+  is over real obs only. Added a §Spatial lead paragraph + updated the
+  free-tier callout. `fig-network` stays Lambert scatter (per plan).
+- **Verified (isolated render):** the real qc_summary is a symlink to an
+  unmounted external drive (`/Volumes/Humphrey-1/…`), so a full qmd render
+  isn't possible right now. Verified the changed code path in isolation
+  (`/tmp/verify_qc_hex.py`) against 350 synthetic stations — Albers
+  coastline alignment, gridline labels, Normalize + LogNorm colorbars,
+  white-edged median hexes, and the NaN-dropna path all render correctly.
+- **Real-data render DONE (Humphrey-1 mounted):** rendered
+  `monthly_qc.qmd` against real April-2026 data (1,298 stations × 30
+  days) to **both HTML and PDF** — no errors. Extracted the spatial
+  figures from the HTML and confirmed: dense contiguous Albers hex
+  cells tracing the full archipelago (Hokkaido→Okinawa + southern
+  islands), white edges, per-metric Normalize colorbars (SN/MP) and
+  LogNorm (cycle slips), `fig-network` still Lambert scatter. `gridsize=50`
+  / `mincnt=1` look right on the real extent — no tuning needed. PDF
+  (xelatex) embeds the cartopy/hexbin figures cleanly; QC legends use
+  continuous colorbars (no ≤/> mathtext) so the Hiragino U+2264 issue
+  doesn't apply.
+- **Dependency fix:** `md_table()`→`df.to_markdown()` needs `tabulate`,
+  which was missing from `pyproject.toml`. Added `tabulate>=0.9` to
+  `dependencies` + `uv sync`. Also note: Quarto must use the project
+  venv — render with `QUARTO_PYTHON=$REPO/.venv/bin/python3` (the bare
+  `quarto` picks up a system Python without jupyter/yaml/tabulate).
