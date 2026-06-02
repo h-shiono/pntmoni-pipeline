@@ -301,6 +301,55 @@ if HEX_EPOCHS_DF is None:
         })
 HEX_PRESENT = HEX_EPOCHS_DF is not None and len(HEX_EPOCHS_DF) > 0
 
+# B3-7: per-window TTFF for the §5.2 histogram. Daily TTFF parquets
+# store only per-station aggregates (p50/p95/p99); to plot the full
+# distribution we re-derive per-window first-fix times from the
+# ttff-mode epoch_errors. Stream per-day to bound memory; only the
+# resulting per-(station, window) ttff_sec values are accumulated.
+TTFF_WINDOW_SEC = None
+_ee_ttff_dir_str = (
+    INPUTS.get("epoch_errors_ttff_dir") if isinstance(INPUTS, dict) else None
+)
+if _ee_ttff_dir_str:
+    _ee_ttff_dir = _Path_at(_ee_ttff_dir_str)
+    if _ee_ttff_dir.is_dir():
+        try:
+            import calendar as _cal_tt
+            import numpy as _np_tt
+            _yy_tt, _mm_tt = int(PERIOD[:4]), int(PERIOD[5:7])
+            # 15-min reset window @ 30 s sampling → 30 epochs / window.
+            _EPW = 30
+            _H_THR, _V_THR = 0.12, 0.24
+            _SAMPLING_SEC = 30
+            _ttff_chunks = []
+            for _d in range(1, _cal_tt.monthrange(_yy_tt, _mm_tt)[1] + 1):
+                _p = (
+                    _ee_ttff_dir / f"{_yy_tt}"
+                    / f"{_yy_tt}{_mm_tt:02d}{_d:02d}.parquet"
+                )
+                if not _p.is_file():
+                    continue
+                _df = _pd_at.read_parquet(_p, columns=[
+                    "station", "epoch_idx", "quality",
+                    "horizontal_m", "vertical_m",
+                ]).dropna()
+                _df["_win"] = _df["epoch_idx"] // _EPW
+                _df["_within"] = _df["epoch_idx"] % _EPW
+                _fix = (
+                    (_df["quality"] == 4)
+                    & (_df["horizontal_m"] <= _H_THR)
+                    & (_df["vertical_m"] <= _V_THR)
+                )
+                _first = (
+                    _df.loc[_fix, ["station", "_win", "_within"]]
+                    .groupby(["station", "_win"])["_within"].min()
+                )
+                _ttff_chunks.append(_first.to_numpy() * _SAMPLING_SEC)
+            if _ttff_chunks:
+                TTFF_WINDOW_SEC = _np_tt.concatenate(_ttff_chunks).astype(float)
+        except Exception:
+            TTFF_WINDOW_SEC = None
+
 # Tiny display helpers used by later inline `{python}` expressions.
 def fmt_cm(m, nd=1):
     return f"{m*100:.{nd}f}" if m is not None else "n/a"
@@ -767,17 +816,35 @@ if TTFF_PRESENT:
 
 ```{python}
 #| label: fig-ttff-15min
-#| fig-cap: "TTFF 分布(15 分リセット) — 暫定 synthetic 表示。実分布は B3-3(epoch_errors の生データ読み込み)で対応予定"
+#| fig-cap: "TTFF 分布(15 分リセット、全国・全期間のリセットウィンドウをプール)"
+
+# Prefer the real per-window TTFF distribution (TTFF_WINDOW_SEC)
+# derived in the data-load cell from the ttff-mode epoch_errors.
+# Falls back to the synthetic preview when no real data is available.
+if TTFF_WINDOW_SEC is not None and len(TTFF_WINDOW_SEC) > 0:
+    _ttff_vals = TTFF_WINDOW_SEC
+    _ttff_real = True
+else:
+    _ttff_vals = ttff_15min
+    _ttff_real = False
 
 fig, ax = plt.subplots(figsize=(8, 4))
-ax.hist(ttff_15min, bins=60, color=COLOR_PRIMARY, alpha=0.85, edgecolor="white")
-for q, label, c in [(0.50, "50%", COLOR_SECONDARY),
-                     (0.95, "95%", COLOR_WARNING)]:
-    v = np.quantile(ttff_15min, q)
+# Cap the visible range at the 99.5 percentile so the long convergence
+# tail doesn't compress the body of the distribution to a single bar.
+_xmax = float(np.quantile(_ttff_vals, 0.995)) if len(_ttff_vals) else 600.0
+ax.hist(
+    _ttff_vals, bins=60, range=(0, _xmax),
+    color=COLOR_PRIMARY, alpha=0.85, edgecolor="white",
+)
+for q, label, c in [(0.50, "P50", COLOR_SECONDARY),
+                     (0.95, "P95", COLOR_WARNING)]:
+    v = float(np.quantile(_ttff_vals, q))
     ax.axvline(v, linestyle="--", color=c, label=f"{label} = {v:.1f} s")
-ax.set_xlabel("TTFF (seconds)")
-ax.set_ylabel("Frequency")
+ax.set_xlabel("TTFF [秒]")
+ax.set_ylabel("リセットウィンドウ数")
 ax.legend()
+if not _ttff_real:
+    ax.set_title("(プレビュー:合成データ)", fontsize=9, color=COLOR_SECONDARY)
 plt.tight_layout()
 ```
 

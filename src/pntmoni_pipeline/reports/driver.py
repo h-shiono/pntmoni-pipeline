@@ -133,6 +133,10 @@ def gather_inputs(
     # reference_coords_dir provides station ECEF coords used by the
     # hex-grid spatial figure (analysis/_hex_grid.py).
     bundle.paths["epoch_errors_dir"] = processed_root / "epoch_errors" / mode
+    # TTFF-mode epoch_errors used by the §5.2 TTFF histogram cell to
+    # rebuild per-window TTFF values (the daily TTFF parquets only
+    # carry per-station aggregates, not raw per-window times).
+    bundle.paths["epoch_errors_ttff_dir"] = processed_root / "epoch_errors" / ttff_mode
     bundle.paths["reference_coords_dir"] = processed_root / "reference_coords"
     # NAGU / NANU / NAQU satellite outage events (acquired via
     # `acquire satellite-outages`). Single events.parquet that holds
