@@ -819,7 +819,7 @@ if HEX_PRESENT and not HEX_REAL_DATA:
 #| fig-cap: "水平誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
 
 if HEX_PRESENT:
-    _render_hex_panel("horizontal_p95", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM)
+    _render_hex_panel("horizontal_m", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM)
 else:
     print(
         "**`{python} PERIOD_LABEL`**:空間分布図は epoch_errors / "
