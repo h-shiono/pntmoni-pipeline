@@ -816,7 +816,7 @@ if TTFF_PRESENT:
 
 ```{python}
 #| label: fig-ttff-15min
-#| fig-cap: "TTFF 分布(15 分リセット、全国・全期間のリセットウィンドウをプール)"
+#| fig-cap: "TTFF 累積分布(15 分リセット、全国・全期間のリセットウィンドウをプール)"
 
 # Prefer the real per-window TTFF distribution (TTFF_WINDOW_SEC)
 # derived in the data-load cell from the ttff-mode epoch_errors.
@@ -828,21 +828,28 @@ else:
     _ttff_vals = ttff_15min
     _ttff_real = False
 
+# CDF — same convention as the §5.1 horizontal/vertical figures so the
+# reader compares TTFF and accuracy on the same axes (cumulative
+# probability vs metric).
+_sorted = np.sort(_ttff_vals)
+_cdf = np.arange(1, len(_sorted) + 1) / len(_sorted)
 fig, ax = plt.subplots(figsize=(8, 4))
-# Cap the visible range at the 99.5 percentile so the long convergence
-# tail doesn't compress the body of the distribution to a single bar.
-_xmax = float(np.quantile(_ttff_vals, 0.995)) if len(_ttff_vals) else 600.0
-ax.hist(
-    _ttff_vals, bins=60, range=(0, _xmax),
-    color=COLOR_PRIMARY, alpha=0.85, edgecolor="white",
-)
-for q, label, c in [(0.50, "P50", COLOR_SECONDARY),
-                     (0.95, "P95", COLOR_WARNING)]:
+ax.plot(_sorted, _cdf, color=COLOR_PRIMARY, linewidth=2)
+for q, qcolor in [(0.50, COLOR_SECONDARY), (0.95, COLOR_WARNING)]:
     v = float(np.quantile(_ttff_vals, q))
-    ax.axvline(v, linestyle="--", color=c, label=f"{label} = {v:.1f} s")
+    ax.axvline(v, linestyle="--", color=qcolor, alpha=0.6)
+    ax.annotate(
+        f"{int(q*100)}% = {v:.0f} s",
+        xy=(v, q), xytext=(v + 5, q - 0.05),
+        fontsize=8, alpha=0.8,
+    )
+# Clip the long convergence tail at the 99.5 percentile so the body
+# of the distribution stays readable.
+_xmax = float(np.quantile(_ttff_vals, 0.995)) * 1.05
+ax.set_xlim(0, _xmax)
+ax.set_ylim(0, 1.02)
 ax.set_xlabel("TTFF [秒]")
-ax.set_ylabel("リセットウィンドウ数")
-ax.legend()
+ax.set_ylabel("累積確率")
 if not _ttff_real:
     ax.set_title("(プレビュー:合成データ)", fontsize=9, color=COLOR_SECONDARY)
 plt.tight_layout()
