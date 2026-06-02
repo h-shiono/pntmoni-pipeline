@@ -921,20 +921,20 @@ def _render_hex_panel(col, title, thresholds_cm):
 
     ax.set_title(title + " [cm]", fontsize=11)
     ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
-    # Use Japanese phrasing instead of the ≤ glyph (U+2264) — Hiragino
-    # Sans doesn't ship a glyph for it and matplotlib's font fallback
-    # path picks the no-glyph tofu box. "以下" / "超" are unambiguous
-    # in the report's locale and avoid the missing-glyph rendering.
+    # Inline-math labels via matplotlib mathtext ($...$): \leq and >
+    # come from matplotlib's bundled DejaVu Math / STIX fonts, which
+    # are independent of the CJK font (Hiragino) selected for plain
+    # text and so don't fall victim to Hiragino's missing U+2264 glyph.
     legend_handles = [
         Line2D([0], [0], marker="h", color="none",
                markerfacecolor=COLOR_SUCCESS, markeredgecolor="white",
-               markersize=10, label=f"{thresholds_cm[0]:.0f} 以下"),
+               markersize=10, label=rf"$\leq {thresholds_cm[0]:.0f}$"),
         Line2D([0], [0], marker="h", color="none",
                markerfacecolor=COLOR_WARNING, markeredgecolor="white",
                markersize=10, label=f"{thresholds_cm[0]:.0f}–{thresholds_cm[1]:.0f}"),
         Line2D([0], [0], marker="h", color="none",
                markerfacecolor=COLOR_DANGER, markeredgecolor="white",
-               markersize=10, label=f"{thresholds_cm[1]:.0f} 超"),
+               markersize=10, label=rf"$> {thresholds_cm[1]:.0f}$"),
     ]
     ax.legend(
         handles=legend_handles, loc="upper left", fontsize=8,
