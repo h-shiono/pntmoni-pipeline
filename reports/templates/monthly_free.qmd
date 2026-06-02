@@ -221,9 +221,15 @@ HEX_REAL_DATA = False
 _rc_dir_str = INPUTS.get("reference_coords_dir") if isinstance(INPUTS, dict) else None
 if _ep_dir_str and _rc_dir_str:
     try:
-        from pntmoni_pipeline.analysis._hex_grid import load_station_coords as _lsc_at
+        from pntmoni_pipeline.analysis._hex_grid import (
+            load_station_coords as _lsc_at,
+            stream_to_frame_subdir as _s2fs_at,
+        )
         import calendar as _cal_he
-        _st_coords = _lsc_at(_Path_at(_rc_dir_str), period=PERIOD)
+        _st_coords = _lsc_at(
+            _Path_at(_rc_dir_str), period=PERIOD,
+            frame_subdir=_s2fs_at(STREAM, PERIOD),
+        )
         _yy, _mm = int(PERIOD[:4]), int(PERIOD[5:7])
         _ep_dir = _Path_at(_ep_dir_str)
         _samp_per_st_day = 80
@@ -232,14 +238,17 @@ if _ep_dir_str and _rc_dir_str:
             _p = _ep_dir / f"{_yy}" / f"{_yy}{_mm:02d}{_d:02d}.parquet"
             if not _p.is_file():
                 continue
+            # Stratify-sample 80/station: global shuffle (random_state=42)
+            # then take the first 80 per station. Avoids the
+            # `groupby('station').apply(g.sample(...))` pattern which in
+            # pandas 2.2+ strips the grouping column from the result.
             _df = (
                 _pd_at.read_parquet(
                     _p, columns=["station", "horizontal_m", "vertical_m"],
                 ).dropna()
+                .sample(frac=1.0, random_state=42)
                 .groupby("station", group_keys=False)
-                .apply(lambda g: g.sample(
-                    n=min(_samp_per_st_day, len(g)), random_state=42,
-                ))
+                .head(_samp_per_st_day)
             )
             _frames_he.append(_df)
         if _frames_he:
@@ -265,8 +274,14 @@ if HEX_EPOCHS_DF is None:
     ):
         if _cand.is_dir():
             try:
-                from pntmoni_pipeline.analysis._hex_grid import load_station_coords as _lsc_at
-                _real_st = _lsc_at(_cand, period=PERIOD)
+                from pntmoni_pipeline.analysis._hex_grid import (
+                    load_station_coords as _lsc_at,
+                    stream_to_frame_subdir as _s2fs_at,
+                )
+                _real_st = _lsc_at(
+                    _cand, period=PERIOD,
+                    frame_subdir=_s2fs_at(STREAM, PERIOD),
+                )
                 break
             except Exception:
                 pass
@@ -455,6 +470,28 @@ marked "Coming Soon" appear in Phase 1+ per the rollout plan in
 |------------|------------|------------|
 | 1.0        | (発行待ち) | 初版       |
 
+```{python}
+#| echo: false
+#| output: asis
+
+# 速報版バナー — stream='rapid' の時のみ表示。GSI Rapid 系列
+# (R5/R5.1) を参照座標として使うため、確定 (Final, F5/F5.1) 版が
+# 公開され次第、別途確定版を発行する旨を明示。
+if STREAM == "rapid":
+    print(
+        ":::: {.callout-warning appearance='default'}\n"
+        "**速報版(Rapid)**:本レポートは **GSI Rapid 系列** "
+        "(2026 年 4 月以降は R5.1、それ以前は R5)を参照座標として "
+        "使用しています。Rapid 系列は観測の 2〜3 日後に公開される "
+        "速報値で、Final 系列(F5/F5.1、観測約 3 週間後に公開)が "
+        "揃った時点で**確定版を別途発行**します。\n\n"
+        "Rapid と Final の数値差は通常 mm 単位ですが、地震・"
+        "機器交換等のイベント直後はやや拡大することがあります "
+        "(方法論 §3.2 / §8.5)。\n"
+        "::::\n"
+    )
+```
+
 # はじめに
 
 本レポートは、**`{python} PERIOD_LABEL`** における QZSS CLAS(センチメータ級測位補強サービス)の性能を、PNT Moni が公開データとオープンソースのツール群を用いて評価した結果をまとめたものです。
@@ -520,8 +557,14 @@ for _cand in (
 ):
     if _cand.is_dir():
         try:
-            from pntmoni_pipeline.analysis._hex_grid import load_station_coords as _lsc
-            _stations_for_fig = _lsc(_cand, period=PERIOD)
+            from pntmoni_pipeline.analysis._hex_grid import (
+                load_station_coords as _lsc,
+                stream_to_frame_subdir as _s2fs,
+            )
+            _stations_for_fig = _lsc(
+                _cand, period=PERIOD,
+                frame_subdir=_s2fs(STREAM, PERIOD),
+            )
             _station_source = f"当月評価対象({PERIOD_LABEL})"
             break
         except Exception:

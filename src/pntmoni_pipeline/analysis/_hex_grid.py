@@ -170,6 +170,23 @@ def make_hex_grid(
 
 # --- Station coordinates + assignment --------------------------------
 
+def stream_to_frame_subdir(stream: str, period: str) -> str:
+    """Map ``(stream, period)`` → reference_coords subdirectory.
+
+    Per methodology v1.0.0 §3.2:
+      - F5/R5 (ITRF2014) for 2021-08 .. 2026-03
+      - F5.1/R5.1 (ITRF2020) for 2026-04 onwards
+    The Rapid family (R*) is published ~2–3 days after observation;
+    the Final family (F*) ~3 weeks after. The pipeline keeps each in
+    its own ``reference_coords/<subdir>/`` so callers pick the right
+    stream by passing the stream name + period.
+    """
+    yyyy, mm = int(period[:4]), int(period[5:7])
+    is_v51 = (yyyy, mm) >= (2026, 4)
+    base = "r5" if stream == "rapid" else "f5"
+    return f"{base}_1" if is_v51 else base
+
+
 def load_station_coords(
     reference_coords_dir: Path,
     *,

@@ -81,6 +81,20 @@ def test_hex_grid_horizontal_spacing_matches_flat_to_flat_at_any_row():
         assert diff_km == pytest.approx(60.0, rel=1e-6)
 
 
+# --- Stream → frame subdir ------------------------------------------
+
+@pytest.mark.parametrize("stream,period,expected", [
+    ("final", "2026-04", "f5_1"),
+    ("final", "2026-03", "f5"),
+    ("final", "2025-12", "f5"),
+    ("rapid", "2026-04", "r5_1"),
+    ("rapid", "2026-03", "r5"),
+    ("rapid", "2025-08", "r5"),
+])
+def test_stream_to_frame_subdir(stream, period, expected):
+    assert H.stream_to_frame_subdir(stream, period) == expected
+
+
 # --- Station assignment ----------------------------------------------
 
 def test_assign_stations_picks_nearest_center():
