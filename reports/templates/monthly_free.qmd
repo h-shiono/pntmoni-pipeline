@@ -756,12 +756,12 @@ ttff_table
 
 if TTFF_PRESENT:
     print(
-        f"For **{PERIOD_LABEL}**: TTFF success rate "
+        f"**{PERIOD_LABEL}**:TTFF 成功率 "
         f"**{TTFF_FIX_RATE*100:.2f} %** "
-        f"({N_TTFF_FIXED:,}/{N_TTFF_WINDOWS:,} reset windows reached a "
-        f"valid fix). At 30 s observation interval most fixes occur on "
-        f"the first post-reset epoch, so P50/P95 are often 0 s; the "
-        f"P99 reflects the convergence tail."
+        f"({N_TTFF_FIXED:,}/{N_TTFF_WINDOWS:,} の "
+        f"リセット窓で有効 Fix を獲得)。観測間隔 30 秒では "
+        f"多くの Fix が**リセット直後のエポック**で得られるため、"
+        f"P50/P95 が 0 秒となるケースも多く、P99 が収束テールを反映します。"
     )
 ```
 
@@ -785,7 +785,7 @@ plt.tight_layout()
 
 CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセルは空白で表示し、CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
 
-色階は絶対閾値ベースで、緑は CLAS 補強の典型的な性能、黄は注意水準、赤は性能逸脱を示します。
+色階は CLAS 補強仕様(水平 95% ≤ 12 cm、垂直 95% ≤ 24 cm)を基準とした絶対閾値です:**緑 = 仕様達成**、**黄 = 仕様の 2 倍以下まで**(劣化、要観察)、**赤 = 仕様の 2 倍超**(明確な劣化)。
 
 ```{python}
 #| label: hex-spatial-setup
@@ -796,8 +796,12 @@ import cartopy.feature as cfeature
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.lines import Line2D
 
-H_THRESHOLDS_CM = (6.0, 12.0)
-V_THRESHOLDS_CM = (12.0, 24.0)
+# Absolute thresholds expressed against the CLAS spec:
+#   緑 = 仕様達成(水平 ≤12 cm / 垂直 ≤24 cm)
+#   黄 = 仕様の2倍まで(劣化、要観察)
+#   赤 = 仕様の2倍超(明確な劣化)
+H_THRESHOLDS_CM = (12.0, 24.0)
+V_THRESHOLDS_CM = (24.0, 48.0)
 
 # Albers Equal-Area Conic over Japan — matches methodology v1.0.0
 # Figure 1 and the rest of the report's maps.
@@ -1002,18 +1006,57 @@ else:
 
 ```{python}
 #| label: tbl-system-events
-#| tbl-cap: "対象期間中の GNSS システム通知(暫定)"
+#| tbl-cap: "対象期間中の GNSS システム通知"
 
-events = pd.DataFrame({
-    "日付": ["—"],
-    "出典": ["—"],
-    "種別": ["—"],
-    "内容": ["本期間(暫定データ)では通知は記録されていません"],
-})
+# Load NAGU/NANU/NAQU events from driver-injected parquet path; filter
+# to the reporting period. The parquet is produced by `acquire
+# satellite-outages` and contains the full history; the qmd just
+# slices the current month.
+_so_p = INPUTS.get("satellite_outages") if isinstance(INPUTS, dict) else None
+_events_present = bool(_so_p and _Path(_so_p).is_file())
+if _events_present:
+    _all = pd.read_parquet(_so_p)
+    _all["start_at"] = pd.to_datetime(_all["start_at"], utc=True, errors="coerce")
+    _start = pd.Timestamp(f"{PERIOD}-01", tz="UTC")
+    _end = _start + pd.DateOffset(months=1)
+    _evt = _all[(_all["start_at"] >= _start) & (_all["start_at"] < _end)].copy()
+    if len(_evt) > 0:
+        _evt["日付"] = _evt["start_at"].dt.strftime("%Y-%m-%d %H:%M UTC")
+        _evt["通知"] = _evt["source_notice_ids"].apply(
+            lambda xs: ", ".join(xs) if hasattr(xs, "__iter__") and not isinstance(xs, str) else (xs or "")
+        )
+        _evt["衛星"] = _evt.apply(
+            lambda r: f'{str(r["constellation"]).upper()} PRN{int(r["prn"])}'
+            if pd.notna(r["prn"]) else str(r["constellation"]).upper(),
+            axis=1,
+        )
+        _evt["種別"] = _evt["event_type"].fillna("—")
+        _evt["重要度"] = _evt["severity"].fillna("—")
+        events = _evt[["日付", "衛星", "通知", "種別", "重要度"]].reset_index(drop=True)
+    else:
+        events = pd.DataFrame({
+            "日付": ["—"], "衛星": ["—"], "通知": ["—"],
+            "種別": ["—"], "重要度": ["—"],
+        })
+else:
+    events = pd.DataFrame({
+        "日付": ["—"], "衛星": ["—"], "通知": ["—"],
+        "種別": ["—"], "重要度": ["—"],
+    })
 events
 ```
 
-実運用では NAGU(GPS)、NANU(GPS)、NAQU(QZSS)の通知を収集し本一覧に掲載します。
+```{python}
+#| echo: false
+#| output: asis
+if _events_present and "_evt" in dir() and len(_evt) > 0:
+    print(f"`{PERIOD_LABEL}`:**{len(_evt)} 件**の通知を検出。"
+          "NAGU(Galileo)、NANU(GPS)、NAQU(QZSS)の公式通知から収集。")
+elif _events_present:
+    print(f"`{PERIOD_LABEL}`:本期間に該当する NAGU/NANU/NAQU 通知はありません。")
+else:
+    print("**未注入**:`pntmoni-pipeline acquire satellite-outages` を実行すると本表に反映されます。")
+```
 
 ## 衛星一覧
 

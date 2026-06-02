@@ -111,6 +111,12 @@ def gather_inputs(
     # hex-grid spatial figure (analysis/_hex_grid.py).
     bundle.paths["epoch_errors_dir"] = processed_root / "epoch_errors" / mode
     bundle.paths["reference_coords_dir"] = processed_root / "reference_coords"
+    # NAGU / NANU / NAQU satellite outage events (acquired via
+    # `acquire satellite-outages`). Single events.parquet that holds
+    # all history; qmd filters to the reporting period.
+    bundle.paths["satellite_outages"] = (
+        processed_root / "satellite_outages" / "events.parquet"
+    )
     return bundle
 
 
