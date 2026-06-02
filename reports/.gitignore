@@ -1,2 +1,8 @@
 /.quarto/
+# Quarto Jupyter intermediates — base name (*.quarto_ipynb) AND the
+# numbered variants Quarto emits per concurrent / repeat render
+# (*.quarto_ipynb_1, _2, ...). The previous `**/*.quarto_ipynb`
+# pattern only matched the base name.
+**/*.quarto_ipynb*
+
 **/*.quarto_ipynb

@@ -178,11 +178,34 @@ TTFF_FIX_RATE = float(_trow["fix_success_rate"]) if _trow is not None else None
 N_TTFF_WINDOWS = int(_trow["n_windows"]) if _trow is not None else None
 N_TTFF_FIXED = int(_trow["n_windows_fixed"]) if _trow is not None else None
 
+# B3-2b: load the period's qualified station set (§4) once. Every
+# figure that pools epoch errors is then filtered to this same set so
+# the visual matches the headline numbers (which already use
+# `station_set='qualified'`). Without this filter, accuracy / TTFF
+# CDFs and hex maps drift from the table values because the table
+# excludes the 200-ish stations that fail qc / are out-of-service /
+# are not yet qualified for §4 inclusion.
+QUALIFIED_STATIONS: set[str] | None = None
+_sq_dir_str = INPUTS.get("station_qualification_dir") if isinstance(INPUTS, dict) else None
+if _sq_dir_str:
+    _sq_dir = _Path_at(_sq_dir_str)
+    if _sq_dir.is_dir():
+        _sq_files = sorted(_sq_dir.glob("*.parquet"))
+        if _sq_files:
+            try:
+                _sq_df = _pd_at.read_parquet(_sq_files[-1])
+                QUALIFIED_STATIONS = set(
+                    _sq_df.loc[_sq_df["qualified"], "station"].astype(str)
+                )
+            except Exception:
+                QUALIFIED_STATIONS = None
+
 # B3-3: epoch_errors streaming-subsample for real CDF figures.
 # 30 daily parquets total ~2 GB / ~112 M rows is too large to load in
 # full at render time; we stream per-day, sample to a fixed budget,
 # then concat. The resulting ~500 K-row sample is enough for a smooth
-# CDF visual while keeping render cheap.
+# CDF visual while keeping render cheap. Filter to QUALIFIED_STATIONS
+# (when available) so the figure pool matches the headline table's pool.
 RAW_CDF_TARGET_ROWS = 500_000
 EPOCH_ERRORS_DF = None
 EPOCH_ERRORS_PRESENT = False
@@ -202,7 +225,12 @@ if _ep_dir_str:
             _per_day = max(1, RAW_CDF_TARGET_ROWS // len(_ep_paths))
             _frames = []
             for _p in _ep_paths:
-                _d = _pd_at.read_parquet(_p, columns=["horizontal_m", "vertical_m"])
+                _cols = ["horizontal_m", "vertical_m"]
+                if QUALIFIED_STATIONS is not None:
+                    _cols = ["station", *_cols]
+                _d = _pd_at.read_parquet(_p, columns=_cols)
+                if QUALIFIED_STATIONS is not None:
+                    _d = _d[_d["station"].isin(QUALIFIED_STATIONS)]
                 if len(_d) > _per_day:
                     _d = _d.sample(n=_per_day, random_state=42)
                 _frames.append(_d)
@@ -242,11 +270,13 @@ if _ep_dir_str and _rc_dir_str:
             # then take the first 80 per station. Avoids the
             # `groupby('station').apply(g.sample(...))` pattern which in
             # pandas 2.2+ strips the grouping column from the result.
+            _df = _pd_at.read_parquet(
+                _p, columns=["station", "horizontal_m", "vertical_m"],
+            ).dropna()
+            if QUALIFIED_STATIONS is not None:
+                _df = _df[_df["station"].isin(QUALIFIED_STATIONS)]
             _df = (
-                _pd_at.read_parquet(
-                    _p, columns=["station", "horizontal_m", "vertical_m"],
-                ).dropna()
-                .sample(frac=1.0, random_state=42)
+                _df.sample(frac=1.0, random_state=42)
                 .groupby("station", group_keys=False)
                 .head(_samp_per_st_day)
             )
@@ -333,6 +363,8 @@ if _ee_ttff_dir_str:
                     "station", "epoch_idx", "quality",
                     "horizontal_m", "vertical_m",
                 ]).dropna()
+                if QUALIFIED_STATIONS is not None:
+                    _df = _df[_df["station"].isin(QUALIFIED_STATIONS)]
                 _df["_win"] = _df["epoch_idx"] // _EPW
                 _df["_within"] = _df["epoch_idx"] % _EPW
                 _fix = (

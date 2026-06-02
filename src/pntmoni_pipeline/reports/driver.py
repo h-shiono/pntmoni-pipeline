@@ -151,6 +151,14 @@ def gather_inputs(
     bundle.paths["constellation_status"] = (
         processed_root / "constellation_status" / "latest.parquet"
     )
+    # Station qualification (§4 — periodic snapshot, currently a single
+    # "<ref_date>_<window>d.parquet" per qualification run). The qmd
+    # picks the latest snapshot file. Used to filter the CDF / hex /
+    # TTFF figures to the same qualified set the headline tables use,
+    # so a panel's median matches its summary value.
+    bundle.paths["station_qualification_dir"] = (
+        processed_root / "station_qualification"
+    )
     return bundle
 
 
@@ -228,7 +236,7 @@ def render(
     params: dict[str, Any],
     output_dir: Path,
     *,
-    formats: tuple[str, ...] = ("html", "pdf"),
+    formats: tuple[str, ...] = ("html",),
 ) -> dict[str, Path]:
     """Render the Quarto template with ``params``; return output paths.
 
@@ -271,6 +279,16 @@ def render(
         if not produced:
             raise RuntimeError(f"Quarto produced no {ext} under {output_dir}")
         out[fmt] = produced[0]
+
+    # Sweep Quarto's Jupyter intermediates left in the template's dir
+    # (``<template>.quarto_ipynb`` + numbered ``_1`` / ``_2`` ...
+    # variants that pile up on repeat renders). Quarto does not clean
+    # these up on its own once `--no-execute-daemon` is set.
+    for stray in template.parent.glob(f"{template.stem}.quarto_ipynb*"):
+        try:
+            stray.unlink()
+        except OSError as e:
+            logger.debug("could not remove stale intermediate %s: %s", stray, e)
     return out
 
 
@@ -325,7 +343,7 @@ def run_monthly(
     processed_root: Path = Path("data/processed"),
     config_dir: Path = DEFAULT_CONFIG_DIR,
     do_render: bool = False,
-    formats: tuple[str, ...] = ("html", "pdf"),
+    formats: tuple[str, ...] = ("html",),
 ) -> RunResult:
     """Gather inputs, compute config_hash, assemble params, optionally render."""
     inputs = gather_inputs(period, mode, processed_root=processed_root)

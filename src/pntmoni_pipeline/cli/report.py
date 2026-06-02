@@ -47,13 +47,31 @@ def cmd_monthly(
                  " must consume params for its output to reflect them).",
         ),
     ] = False,
+    formats: Annotated[
+        str,
+        typer.Option(
+            "--formats",
+            help="Comma-separated render formats: html, pdf. Default html."
+                 " PDF needs matplotlib's PDF backend to handle the figures'"
+                 " CJK fonts (Hiragino etc. fail the ASCII-only Name encoder"
+                 " on matplotlib<3.x); enable only if a working stack is"
+                 " staged.",
+        ),
+    ] = "html",
 ) -> None:
     """Drive the monthly report: gather → config_hash → params → (render)."""
+    _formats = tuple(
+        f.strip().lower() for f in formats.split(",") if f.strip()
+    )
+    bad = [f for f in _formats if f not in ("html", "pdf")]
+    if bad:
+        raise typer.BadParameter(f"unknown format(s): {bad} (allowed: html, pdf)")
     result = reports.run_monthly(
         period=period, mode=mode, stream=stream,
         engine_version=engine_version, data_mode=data_mode,
         template=template, output_root=output_root,
         processing_log=processing_log, do_render=render,
+        formats=_formats,
     )
     typer.echo(
         f"report monthly {result.period} stream={result.stream} mode={result.mode}\n"
