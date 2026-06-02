@@ -13,6 +13,38 @@ format:
     smooth-scroll: true
     number-sections: true
     theme: [cosmo, styles/pntmoni.scss]
+  pdf:
+    pdf-engine: xelatex
+    documentclass: scrartcl
+    papersize: a4
+    fontsize: 10pt
+    geometry:
+      - top=20mm
+      - bottom=20mm
+      - left=20mm
+      - right=20mm
+    mainfont: "Helvetica Neue"
+    sansfont: "Helvetica Neue"
+    monofont: "Menlo"
+    # Japanese tokens (網内 / 網外, GSI attribution) appear in the body
+    # and tables; xelatex needs a CJK font or they silently drop. (The
+    # matplotlib figures handle their own CJK via pdf.fonttype=42 in setup.)
+    CJKmainfont: "Hiragino Sans"
+    CJKsansfont: "Hiragino Sans"
+    CJKmonofont: "Hiragino Sans"
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    colorlinks: true
+    linkcolor: "blue"
+    urlcolor: "blue"
+    fig-pos: "H"
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{caption}
+        \captionsetup[figure]{font=small,labelfont=bf}
+        \captionsetup[table]{font=small,labelfont=bf}
 execute:
   echo: false
   warning: false
@@ -159,6 +191,23 @@ mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.grid'] = True
 mpl.rcParams['grid.alpha'] = 0.3
 mpl.rcParams['figure.dpi'] = 100
+# CJK font support — figure labels carry a few Japanese tokens (網内 /
+# 網外). The matplotlib default (DejaVu Sans) has no JP glyphs, so they
+# render as tofu boxes in HTML and PDF alike. Prefer macOS Hiragino, then
+# Yu Gothic, then Noto CJK on Linux.
+mpl.rcParams['font.sans-serif'] = [
+    'Hiragino Sans', 'Hiragino Maru Gothic Pro',
+    'Yu Gothic', 'Noto Sans CJK JP', 'DejaVu Sans',
+]
+mpl.rcParams['font.family'] = 'sans-serif'
+mpl.rcParams['axes.unicode_minus'] = False
+# Embed fonts as TrueType (type 42), NOT Type 3. The default Type-3 PDF
+# path ASCII-encodes a per-glyph XObject name; CJK glyph names (Hiragino)
+# are non-ASCII and raise UnicodeEncodeError, killing a `--to pdf` render
+# on the first figure with Japanese text. Type 42 embeds the subsetted
+# TrueType font and addresses glyphs by id, avoiding the ASCII-name encode.
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
 
 # ---- Derived from the parameters cell ----
 # YEAR / MONTH / PERIOD / STREAM / MODE / version strings / CONFIG_HASH /
