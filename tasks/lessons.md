@@ -1254,3 +1254,153 @@ or "missing", grep the source for the underlying function — a
 removed CLI front-end (DUMPCSSR) does not mean the capability is
 gone; it is often merged into a successor utility (SSR2OSR -dump).
 **Tags:** #claslib #cssr #l6 #methodology #verification
+
+## [2026-06-02] qmd: matplotlib.hexbin ignores cartopy `transform=`, bins in axes-native coords
+
+**Mistake:** First implementation of the §空間分布 figure used
+``ax.hexbin(lon, lat, C=value, ..., transform=ccrs.PlateCarree())``
+inside a cartopy Albers axes. The hex layer rendered empty — no error,
+no warning, just a blank map under the coastline chrome.
+**Root cause:** ``matplotlib.hexbin`` is a Collection generator that
+bins points BEFORE rendering, and it bins in the axes' native
+coordinate system. ``transform=`` is honoured for the FINAL Polygon
+rendering but not for the binning step. With Albers axes (units =
+metres) fed PlateCarree lon/lat (units = degrees), every bin centre
+landed at ~130 m (literal value of the longitude) so all hexes
+fell outside the ~3000 km Albers extent and were clipped.
+**Fix applied:** Pre-project the data once in the hex-spatial-setup
+cell using ``_PROJ_AEA.transform_points(ccrs.PlateCarree(), lon, lat)``
+and feed the resulting Albers (x, y) columns to hexbin without a
+``transform=`` kwarg. ``gridsize=50`` over the ~3000 km projected
+width yields ~60 km flat-to-flat hexes, matching the CLAS spec
+grid spacing.
+**Result:** Hexes render at correct ground positions in Albers
+projection, sized consistently across the Japan archipelago (no more
+latitude-dependent visual distortion from the previous manual-polygon
+PlateCarree approach).
+**Rule:** Any matplotlib binner (``hexbin``, ``hist2d``) used inside
+a non-rectangular cartopy axes must receive data ALREADY projected to
+the axes' coordinate system. ``transform=`` only fixes the rendering
+half of the pipeline. ``scatter``, ``plot``, ``add_patch`` honour
+``transform=`` end-to-end and do not need pre-projection.
+**Tags:** #matplotlib #cartopy #hexbin #quarto #figures
+
+## [2026-06-02] pandas: groupby('col').apply(g.sample(...)) silently drops the grouping column
+
+**Mistake:** The hex-data load cell stratify-sampled epoch errors via
+``df.groupby("station", group_keys=False).apply(lambda g: g.sample(n=80))``
+and then merged the result with station coordinates on ``"station"``.
+The merge raised ``KeyError: 'station'``. Because the qmd cell wrapped
+the whole try block in ``except Exception``, ``HEX_REAL_DATA`` stayed
+``False`` and the rapid render quietly fell through to the synthetic
+preview path — the 速報 banner and stream tag updated but the hex map
+showed synthetic data instead of real April values.
+**Root cause:** In pandas 2.2+ ``groupby.apply`` strips the grouping
+column from the returned DataFrame even when ``group_keys=False``
+(the latter only controls the index, not whether the column is
+preserved as a column). The ``include_groups=False`` flag is the
+explicit knob, but the default behaviour changed without a
+deprecation warning visible in our usage.
+**Fix applied:** Replaced the pattern with shuffle-then-head:
+``df.sample(frac=1, random_state=42).groupby("station", group_keys=False).head(80)``.
+Equivalent semantics (stratified per-station random subset, capped at
+80) but operates on rows already containing the station column.
+**Rule:** Never rely on ``groupby('X').apply(...)`` retaining the
+``X`` column in pandas 2.x. Either use ``include_groups=False`` AND
+``reset_index()``, or rewrite as ``sample(frac=1).groupby('X').head(n)``
+/ ``df.assign(_rnd=…).groupby('X').nsmallest(n, '_rnd')`` — both
+preserve the column trivially. Bonus rule: never wrap a multi-step
+pipeline in a bare ``except Exception`` without logging the exception
+type — it hides exactly this kind of silent fallback.
+**Tags:** #pandas #qmd #report #debugging
+
+## [2026-06-02] driver: TTFF parquets must be read from the paired `_ttff_verify` mode, not the accuracy mode
+
+**Mistake:** The monthly report's TTFF headline table showed
+P50 = 0 s, P95 = 0 s, P99 = 300 s, success = 98.25 % for April 2026.
+The numbers were technically loaded from a real parquet, but they
+were meaningless: every reset window's TTFF was 0 because there were
+no resets to start the timer from.
+**Root cause:** The driver hardcoded
+``ttff_*_monthly/<mode>/<period>.parquet`` using the same ``mode``
+as accuracy (``kinematic_p30_verify``). That mode runs CLAS
+continuously — there is no periodic reset — so its "TTFF" is
+just "time of first epoch", which is always at t=0 of the
+processing run. Per methodology §5.2, TTFF requires periodic 15-min
+resets and is processed in a paired ``_ttff_verify`` mode
+(``kinematic_p30_ttff_verify``) which already existed and produced
+the real numbers (P50=180, P95=300, P99=480, success=98.19%) — the
+driver just never looked there.
+**Fix applied:** New ``_ttff_mode_for(mode)`` helper maps the
+accuracy mode to its TTFF twin (``_verify`` → ``_ttff_verify``,
+preserved if already ``_ttff``). Driver exposes a ``ttff_mode=``
+kwarg defaulting to that derivation; the TTFF parquets are routed
+through it.
+**Rule:** TTFF and accuracy are NOT just different aggregations of
+the same processing run — they require different processing modes
+(reset vs continuous) and therefore different mode-namespaced parquet
+trees. Any code that loads "the TTFF parquet for this period" must
+derive the TTFF-specific mode from the caller's accuracy mode, never
+reuse it directly. Same rule will apply to future mode pairs (Phase 1+
+60-min reset → ``_ttff60_verify``).
+**Tags:** #ttff #methodology #driver #report
+
+## [2026-06-02] constellation: NAVCEN GPS lists ALL active NANUs including future-scheduled FCSTSUMM
+
+**Mistake:** First version of the GPS constellation scraper mapped
+``NANU Type == "FCSTSUMM"`` (forecast summary) to status ``outage``.
+The resulting report flagged 27 of 31 GPS satellites as currently
+down — clearly wrong, since the constellation is functionally healthy.
+**Root cause:** The NAVCEN GPS page lists every satellite that has at
+least one *active* NANU on its books. "Active" includes scheduled
+maintenance windows months in the future (FCSTSUMM) and historical
+extensions still on file. At any given time most GPS satellites have
+a pending FCSTSUMM, so "active NANU" is the norm, not an exception.
+**Fix applied:** Status mapping restricted to currently-in-effect
+notices: ``DECOMMISSION`` → ``decommissioned``, ``UNUSUFN``
+(Unusable Until Further Notice) / ``UNUSANO`` / subject contains
+``UNUSABLE`` or ``UNAVAILABLE`` → ``unusable``. Everything else,
+including FCSTSUMM and DELAYED, stays ``operational`` — the notice
+details remain in ``notice_type`` / ``notice_subject`` columns so a
+reader sees "scheduled maintenance on 04 SEP 2025" but doesn't
+mistake it for "currently down".
+**Rule:** When scraping operator-facing notice boards, distinguish
+"has an active notice" from "is currently in the state the notice
+describes". Effective-date / start-date / end-date logic must be
+applied per-notice; relying on the notice's mere presence to infer
+current status almost always overcounts. For GPS NANUs specifically,
+the in-effect types are ``UNUSUFN`` / ``UNUSANO`` / ``DECOMM`` —
+treat all others as informational unless paired with date-range
+evaluation.
+**Tags:** #constellation #gps #nanu #scraping
+
+## [2026-06-02] edit-safety: bulk regex `re.sub(r"  +", " ", src)` destroys YAML / Python indentation
+
+**Mistake:** While cleaning ADR / IASB references from
+``monthly_free.qmd`` I batched the edits with a Python script using
+``re.sub(r"\(\[ADR [0-9]+[^]]*?\]\([^)]*\)\)", "", src)`` etc.,
+and finished with a cosmetic ``re.sub(r"  +", " ", src)`` to collapse
+the trailing whitespace artefacts. The latter collapsed every multi-
+space run including all YAML and Python indentation in code cells.
+The 590-line diff (308 ins / 282 del) made the qmd unrenderable;
+``git checkout`` was needed to recover.
+**Root cause:** ``re.sub(r"  +", " ", src)`` matches "two or more
+spaces" anywhere — including the leading whitespace of indented YAML
+keys (``  toc: true``) and Python bodies (``    with open(_pp) as
+_fp:``). In a file format that mixes prose with indented code blocks,
+no whitespace-collapse heuristic is safe at file scope.
+**Fix applied:** Reverted via ``git checkout``, re-applied the ADR
+removals as discrete ``Edit`` tool calls with full surrounding
+context. Each call is bounded and visible in the diff. Adding three
+sentinel checks (``ADR``, ``IASB``, ``Free Live Dashboard`` count =
+0 after edits) confirmed completeness without resorting to a sweep.
+**Rule:** Never run a file-scope whitespace-collapsing regex on a
+file format that carries semantic whitespace (YAML, Python, Quarto
+.qmd, Markdown indented code blocks, Makefile). Bulk edits in such
+files must be either (a) per-edit through the ``Edit`` tool — slow
+but safe — or (b) regex restricted to runs of three or more spaces
+INSIDE non-indented prose, with explicit anchors (``(?<=\S)  +(?=\S)``
+to require non-space context). Diff size > 10× the count of intended
+changes is the early-warning sign — STOP and inspect before any
+git operation.
+**Tags:** #edit-safety #quarto #yaml #python
