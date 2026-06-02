@@ -650,20 +650,21 @@ def hist_panel(ax, col, color):
 ### Signal-to-noise ratio
 
 ```{python}
-#| label: fig-distributions-sn-core
-#| fig-cap: "Core SNR distributions — L1 C/A, L2, and L5 (Shiono & Kubo 2025 baseline)."
-fig, axes = plt.subplots(1, 3, figsize=(14, 4))
-for ax, m in zip(axes, ["SN1", "SN2", "SN5"]):
+#| label: fig-distributions-sn-l1l5
+#| fig-cap: "SNR distributions — L1 C/A and L5 (Shiono & Kubo 2025 core baseline)."
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+for ax, m in zip(axes, ["SN1", "SN5"]):
     hist_panel(ax, m, COLOR_SECONDARY)
 plt.tight_layout()
 plt.show()
 ```
 
 ```{python}
-#| label: fig-distributions-sn-ref
-#| fig-cap: "Reference SNR — Galileo E5b. Shown for monitoring; not part of the absolute-qualification baseline."
-fig, ax = plt.subplots(figsize=(6, 4))
-hist_panel(ax, "SN7", COLOR_NEUTRAL)
+#| label: fig-distributions-sn-l2e5b
+#| fig-cap: "SNR distributions — L2 (core) and Galileo E5b (reference; not part of the absolute-qualification baseline)."
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+for ax, m, color in zip(axes, ["SN2", "SN7"], [COLOR_SECONDARY, COLOR_NEUTRAL]):
+    hist_panel(ax, m, color)
 plt.tight_layout()
 plt.show()
 ```
@@ -671,18 +672,28 @@ plt.show()
 ### Multipath
 
 ```{python}
-#| label: fig-distributions-mp-core
-#| fig-cap: "Core multipath RMS — L1/L2/L5 signal pairs (Shiono & Kubo 2025 baseline)."
-fig, axes = plt.subplots(2, 2, figsize=(12, 7))
-for ax, m in zip(axes.flat, ["MP12", "MP21", "MP15", "MP51"]):
+#| label: fig-distributions-mp-l1l2
+#| fig-cap: "Multipath RMS distributions — L1/L2 pair (MP12 = L1 multipath using L2 partner; MP21 = L2 multipath using L1 partner). Shiono & Kubo 2025 core baseline."
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+for ax, m in zip(axes, ["MP12", "MP21"]):
     hist_panel(ax, m, COLOR_PRIMARY)
 plt.tight_layout()
 plt.show()
 ```
 
 ```{python}
-#| label: fig-distributions-mp-ref
-#| fig-cap: "Reference multipath — Galileo E5b pair (MP17/MP71). Larger numerical scale due to the L1/E5b frequency-pair coefficient. Shown for monitoring; not part of the absolute-qualification baseline (E5b exhibited too much site-to-site variance to function as a qualification metric in Shiono & Kubo 2025)."
+#| label: fig-distributions-mp-l1l5
+#| fig-cap: "Multipath RMS distributions — L1/L5 pair (MP15 = L1 multipath using L5 partner; MP51 = L5 multipath using L1 partner). Core baseline."
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+for ax, m in zip(axes, ["MP15", "MP51"]):
+    hist_panel(ax, m, COLOR_PRIMARY)
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: fig-distributions-mp-e5b
+#| fig-cap: "Reference multipath RMS distributions — L1/Galileo E5b pair (MP17/MP71). Larger numerical scale due to the L1/E5b frequency-pair coefficient. Not part of the absolute-qualification baseline (E5b exhibited too much site-to-site variance to function as a qualification metric in Shiono & Kubo 2025)."
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, m in zip(axes, ["MP17", "MP71"]):
     hist_panel(ax, m, COLOR_NEUTRAL)
@@ -707,55 +718,6 @@ ax.set_ylabel("Stations")
 ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
            linewidth=1, label=f"median = {s.median():.0f}")
 ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
-plt.tight_layout()
-plt.show()
-```
-
-## Recent Trends
-
-```{python}
-#| label: fig-trends
-#| fig-cap: "Daily national means across the reporting month, by signal family."
-fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharex=True)
-
-# Re-usable colours per signal index.
-SIGNAL_COLOURS = {
-    "1": COLOR_PRIMARY, "2": COLOR_SECONDARY,
-    "5": COLOR_WARNING, "7": COLOR_DANGER,
-}
-MARKERS = {"1": "o", "2": "s", "5": "^", "7": "D"}
-
-def trend_panel(ax, metrics, ylabel, title):
-    for m in metrics:
-        sig = m[-1] if m.startswith("SN") else m[-1]   # final signal digit
-        col = SIGNAL_COLOURS.get(sig, COLOR_NEUTRAL)
-        marker = MARKERS.get(sig, "o")
-        ax.plot(daily_national["date"], daily_national[f"{m}_mean"],
-                color=col, marker=marker, markersize=4,
-                label=METRIC_LABELS[m], linewidth=1.4)
-    ax.set_ylabel(ylabel)
-    ax.legend(loc="best", fontsize=8, ncol=2, framealpha=0.9)
-    ax.set_title(title, loc="left", fontweight=600)
-
-trend_panel(axes[0, 0], ["SN1", "SN2", "SN5", "SN7"],
-            "Mean SNR (dB-Hz)", "Signal strength (SN7 = reference)")
-
-trend_panel(axes[0, 1], ["MP12", "MP21", "MP15", "MP51"],
-            "Multipath RMS (m)", "Multipath — L1/L2/L5 (core)")
-
-trend_panel(axes[1, 0], ["MP17", "MP71"],
-            "Multipath RMS (m)", "Multipath — Galileo E5b (reference)")
-
-# Core cycle slips per station-day, mean across stations.
-ax = axes[1, 1]
-ax.bar(daily_national["date"], daily_national["cycle_slips_core"],
-       color=COLOR_DANGER, width=0.8, edgecolor="white", linewidth=0.4)
-ax.set_ylabel("Mean cycle slips per station (core)")
-ax.set_title("Cycle slips — ION + MP12/21/15/51 (core)", loc="left", fontweight=600)
-ax.set_xlabel("Date")
-
-axes[1, 0].set_xlabel("Date")
-fig.autofmt_xdate()
 plt.tight_layout()
 plt.show()
 ```
@@ -824,27 +786,15 @@ def sn_norm(m):
 ```
 
 ```{python}
-#| label: fig-spatial-sn1
-#| fig-cap: "Core SNR — station-monthly L1 C/A. Signal-specific colour scale."
-map_grid(["SN1"], 1, 1, (8, 7), sn_cmap, sn_norm)
+#| label: fig-spatial-sn-l1l5
+#| fig-cap: "Station-monthly SNR — L1 C/A and L5 (core baseline). Signal-specific colour scales."
+map_grid(["SN1", "SN5"], 1, 2, (13, 6), sn_cmap, sn_norm)
 ```
 
 ```{python}
-#| label: fig-spatial-sn2
-#| fig-cap: "Core SNR — station-monthly L2. Signal-specific colour scale."
-map_grid(["SN2"], 1, 1, (8, 7), sn_cmap, sn_norm)
-```
-
-```{python}
-#| label: fig-spatial-sn5
-#| fig-cap: "Core SNR — station-monthly L5. Signal-specific colour scale."
-map_grid(["SN5"], 1, 1, (8, 7), sn_cmap, sn_norm)
-```
-
-```{python}
-#| label: fig-spatial-sn-ref
-#| fig-cap: "Reference SNR — station-monthly Galileo E5b. Shown for monitoring; not part of the absolute-qualification baseline."
-map_grid(["SN7"], 1, 1, (8, 7), sn_cmap, sn_norm)
+#| label: fig-spatial-sn-l2e5b
+#| fig-cap: "Station-monthly SNR — L2 (core) and Galileo E5b (reference; not part of the absolute-qualification baseline). Signal-specific colour scales."
+map_grid(["SN2", "SN7"], 1, 2, (13, 6), sn_cmap, sn_norm)
 ```
 
 ### Multipath
