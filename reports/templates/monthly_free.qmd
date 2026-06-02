@@ -759,7 +759,7 @@ if TTFF_PRESENT:
         f"**{PERIOD_LABEL}**:TTFF 成功率 "
         f"**{TTFF_FIX_RATE*100:.2f} %** "
         f"({N_TTFF_FIXED:,}/{N_TTFF_WINDOWS:,} の "
-        f"リセット窓で有効 Fix を獲得)。観測間隔 30 秒では "
+        f"リセットウィンドウで有効 Fix を獲得)。観測間隔 30 秒では "
         f"多くの Fix が**リセット直後のエポック**で得られるため、"
         f"P50/P95 が 0 秒となるケースも多く、P99 が収束テールを反映します。"
     )

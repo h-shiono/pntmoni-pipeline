@@ -81,24 +81,47 @@ def _read_if_present(p: Path) -> pd.DataFrame | None:
     return None
 
 
+def _ttff_mode_for(mode: str) -> str:
+    """Map an accuracy mode → the matching TTFF measurement mode.
+
+    Accuracy is computed in the continuous mode (e.g.
+    ``kinematic_p30_verify``); TTFF needs periodic resets per
+    methodology §5.2 and is processed in a paired ``_ttff_verify``
+    mode (e.g. ``kinematic_p30_ttff_verify``). Continuous-mode TTFF
+    numbers exist in the parquet but are mostly 0 s (fix at first
+    epoch) — they would mislead readers if surfaced as "TTFF".
+    """
+    if "_ttff" in mode:
+        return mode
+    return mode.replace("_verify", "_ttff_verify")
+
+
 def gather_inputs(
     period: str,
     mode: str,
     *,
     processed_root: Path = Path("data/processed"),
+    ttff_mode: str | None = None,
 ) -> InputsBundle:
-    """Load monthly parquets for ``(period, mode)``; missing → None."""
+    """Load monthly parquets for ``(period, mode)``; missing → None.
+
+    ``ttff_mode`` controls which mode's TTFF parquets are loaded.
+    Defaults to ``_ttff_mode_for(mode)`` so TTFF figures pick up the
+    paired reset-measurement mode automatically.
+    """
     if len(period) != 7 or period[4] != "-":
         raise ValueError(f"period must be YYYY-MM, got {period!r}")
     yyyymm = period.replace("-", "")
     year = int(period[:4])
     sub = f"{mode}/{year}/{yyyymm}.parquet"
+    ttff_mode = ttff_mode or _ttff_mode_for(mode)
+    ttff_sub = f"{ttff_mode}/{year}/{yyyymm}.parquet"
 
     paths = {
         "accuracy_station":  processed_root / "accuracy_monthly"         / sub,
         "accuracy_network":  processed_root / "accuracy_network_monthly" / sub,
-        "ttff_station":      processed_root / "ttff_monthly"             / sub,
-        "ttff_network":      processed_root / "ttff_network_monthly"     / sub,
+        "ttff_station":      processed_root / "ttff_monthly"             / ttff_sub,
+        "ttff_network":      processed_root / "ttff_network_monthly"     / ttff_sub,
         "l6_alerts":         processed_root / "l6_alerts" / f"{year}" / f"{period}.parquet",
     }
     bundle = InputsBundle(period=period, mode=mode, paths=paths)
