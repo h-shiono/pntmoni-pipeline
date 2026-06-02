@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd agent template for the nightly PNT Moni daily pipeline.
+
+  This is a TEMPLATE: replace __REPO__ with the absolute repo path
+  (e.g. /Users/hayato/dev/pntmoni-pipeline) before installing. See
+  configs/launchd/README.md for install + machine-wake instructions.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.pntmoni.daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__REPO__/scripts/run_daily.sh</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO__</string>
+
+    <!-- Run nightly at 03:00 local time. -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Do not run immediately on load. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>__REPO__/data/logs/launchd.daily.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__REPO__/data/logs/launchd.daily.err.log</string>
+
+    <!-- Keep PATH sane for uv / quarto invoked from the wrapper. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

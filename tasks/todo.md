@@ -1213,3 +1213,114 @@ End-to-end render for 2026-04 rapid:
   retroactive monthly processing pipeline to populate 2025-04 onwards.
 - **相互検証** still Coming Soon — Phase 1+, requires MRTKLIB
   submodule + parallel evaluation pipeline.
+
+---
+
+## [2026-06-02] Task: Daily orchestration (acquire→process→QC) + backfill automation
+
+### Goal
+Stand up `pntmoni-pipeline daily --date` and
+`pntmoni-pipeline backfill --start --end` that drive the existing
+per-DOY building blocks (acquire RINEX/BRDC/L6 → CLASLIB positioning →
+teqc QC → QC summarize) idempotently and unattended, plus a launchd
+schedule for nightly daily runs and a resumable backfill over historical
+ranges. Replaces the ad-hoc `/tmp/*_driver.py` scripts. **Report
+generation is explicitly out of scope** (deferred per user — report
+content still unsettled).
+
+### Phase Guard
+[x] Phase 0 — operational automation of already-landed Phase 0 building
+    blocks (acquisition, CLASLIB processing, teqc QC). No new
+    analysis/report capability; purely orchestration + scheduling.
+
+### Design notes (grounding)
+- Per-day units are already idempotent + date-parameterised + bounded-
+  parallel (`process claslib` skips existing `.pos`; `qc teqc` skips
+  existing `.{yy}S`; `qc summarize` writes one parquet). So daily =
+  "call the units in dependency order"; backfill = "iterate days".
+- Backfill runs **days sequentially** — each day already saturates cores
+  via the per-station thread pool, so day-level concurrency would
+  oversubscribe this (founder's daily-driver) machine. Resumability comes
+  for free from the existing skip-if-exists behaviour.
+- Dependency order within a day:
+  `acquire {rinex,brdc,l6}` → { `process claslib` (×modes), `qc teqc` } →
+  `qc summarize`. process and teqc both consume RINEX; run sequentially
+  to avoid CPU oversubscription.
+
+### Plan
+- [x] `orchestration/` package (new):
+  - [x] `_steps.py` — thin callables wrapping existing engine entrypoints
+        (`geonet_rinex.fetch`, `cddis_brdc.fetch`, `qzss_l6.fetch`,
+        `claslib_engine.process_doy`, `_teqc.process_doy`,
+        `_summary.summarize_doy`) → uniform `StepResult`
+        (name, ok/skipped/failed, wall, error). Never raises.
+  - [x] `daily.py` — `run_day(date, modes, *, skip_acquire, force,
+        workers)` runs steps in dependency order, collects per-step
+        status, writes one record → `data/metadata/orchestration.jsonl`
+  - [x] `backfill.py` — `run_range(start, end, ...)` iterates days
+        sequentially, short-circuits already-complete days, continue-on-
+        error, returns a per-day status table + final summary
+- [x] CLI: top-level `pntmoni-pipeline daily` and `... backfill`
+      (registered in `cli/__init__.py`; new `cli/run.py`).
+      `daily` defaults to `today − 2d` when `--date` omitted.
+- [x] Idempotency: rely on existing per-unit skip; `is_day_complete()`
+      day-level short-circuit (qc_summary parquet + per-mode `.pos`) +
+      `--force` passthrough
+- [x] Failure isolation: one station/day failure never aborts the run;
+      collected + reported; CLI exits non-zero if a hard stage fails
+- [x] Observability: one JSONL record per day-run + a per-run log file
+      under `data/logs/`
+- [x] Scheduling: `configs/launchd/com.pntmoni.daily.plist` template +
+      `scripts/run_daily.sh` (caffeinate wrapper) + `configs/launchd/
+      README.md`; failure notification via `_notify.py` (log + optional
+      `PNTMONI_NTFY_URL`)
+- [x] Tests: `tests/unit/test_orchestration.py` — status rollup,
+      sequencing, dependency gating, short-circuit, continue-on-error
+      (17 tests; full suite 186 green)
+- [x] Verify (integration boundary): live `daily --date 2026-04-01
+      --skip-acquire` exercised the real engines on a cold-tiered day —
+      failure isolation, `qc_summarize` gating, JSONL record, log file,
+      and exit-code 1 all confirmed
+- [ ] Verify (happy path, heavy): one fresh `daily` for a recent date
+      (real ~7 GB acquire + 1298×2 process) — deferred; needs a real
+      acquisition run (offer to the user)
+
+### Done Criteria
+- `daily --date YYYY-MM-DD` runs acquire→process→qc end to end and is a
+  cheap no-op on re-run
+- `backfill --start --end` processes a range, is resumable, continue-on-
+  error, prints a final per-day summary
+- launchd plist installs + triggers a nightly run (machine-awake caveat
+  documented)
+- Report generation NOT included
+- Tests green
+
+### Result (2026-06-02)
+- New `orchestration/` package + top-level `daily` / `backfill` CLI; the
+  ad-hoc `/tmp/*_driver.py` pattern is now a first-class, idempotent,
+  failure-isolating driver. 17 new unit tests, 186 total green.
+- Confirmed decisions (all recommended): daily = acquire→process→QC;
+  modes = `kinematic_p30_verify` + `kinematic_p30_ttff_verify`; launchd
+  scheduling + ntfy failure notification included.
+- **Key finding:** `claslib_engine.process_doy` validates required raw
+  artefacts (L6 AX, BRDC, RINEX) **up front**, before the per-station
+  `.pos` skip. So a re-run is only cheap when `is_day_complete()`
+  short-circuits it (qc_summary parquet + per-mode `.pos` present). In
+  normal orchestrated operation a finished day always has the qc_summary,
+  so this holds; but a *partially* finished day whose raw was cold-tiered
+  will hard-fail on re-run (process step) rather than skip. Acceptable
+  edge — surfaced as a failed step, not a silent pass.
+
+### Open Issues / to confirm
+- Unattended credentials: GSI FTP (`GSI_FTP_USER/PASSWORD`) + Earthdata
+  (`.netrc`) must be present in the launchd environment (sourced from
+  `$REPO/.env` by `run_daily.sh`)
+- macOS launchd does not fire while the machine is asleep —
+  `caffeinate` (idle, in-run) + `pmset repeat wakeorpoweron` (wake at
+  02:55) documented as the mitigation in `configs/launchd/README.md`
+- Disk growth: `.pos` accumulates during backfill; storage tiering still
+  pending (tracked separately). Note the cold-storage interaction with
+  process_doy's upfront artefact check (Result above) when backfilling
+  ranges whose raw inputs were tiered out.
+- Happy-path live run still owed once a real acquisition is run for a
+  recent date.
