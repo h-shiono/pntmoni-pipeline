@@ -801,7 +801,7 @@ def map_grid(metrics, n_rows, n_cols, fig_size, cmap, norm_factory, *, title_fn=
         ax.hexbin(sub["_x_aea"].to_numpy(), sub["_y_aea"].to_numpy(),
                   C=sub[m].to_numpy(), reduce_C_function=np.median,
                   gridsize=50, cmap=cmap, norm=norm, mincnt=1,
-                  edgecolors="white", linewidths=0.3, zorder=3)
+                  edgecolors="white", linewidths=0.3, alpha=0.5, zorder=3)
         title = title_fn(m) if title_fn else f"{METRIC_LABELS.get(m, m)} ({METRIC_UNITS.get(m, '')})"
         ax.set_title(title, loc="left", fontweight=600, fontsize=11)
         cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
@@ -815,13 +815,30 @@ def map_grid(metrics, n_rows, n_cols, fig_size, cmap, norm_factory, *, title_fn=
 ### Signal-to-noise ratio
 
 ```{python}
-#| label: fig-spatial-sn-core
-#| fig-cap: "Core SNR — station-monthly L1 C/A, L2, and L5. Signal-specific colour scales."
+#| label: sn-core-setup
+#| include: false
 sn_cmap = CMAP_PERFORMANCE.reversed()
 def sn_norm(m):
     vmin, vmax = METRIC_RANGES[m]
     return Normalize(vmin=vmin, vmax=vmax)
-map_grid(["SN1", "SN2", "SN5"], 1, 3, (15, 6), sn_cmap, sn_norm)
+```
+
+```{python}
+#| label: fig-spatial-sn1
+#| fig-cap: "Core SNR — station-monthly L1 C/A. Signal-specific colour scale."
+map_grid(["SN1"], 1, 1, (8, 7), sn_cmap, sn_norm)
+```
+
+```{python}
+#| label: fig-spatial-sn2
+#| fig-cap: "Core SNR — station-monthly L2. Signal-specific colour scale."
+map_grid(["SN2"], 1, 1, (8, 7), sn_cmap, sn_norm)
+```
+
+```{python}
+#| label: fig-spatial-sn5
+#| fig-cap: "Core SNR — station-monthly L5. Signal-specific colour scale."
+map_grid(["SN5"], 1, 1, (8, 7), sn_cmap, sn_norm)
 ```
 
 ```{python}
@@ -871,7 +888,7 @@ ax.hexbin(_cs["_x_aea"].to_numpy(), _cs["_y_aea"].to_numpy(),
           C=_cs["cycle_slips_core"].clip(lower=vmin).to_numpy(),
           reduce_C_function=np.median, gridsize=50,
           cmap=CMAP_PERFORMANCE, norm=norm, mincnt=1,
-          edgecolors="white", linewidths=0.3, zorder=3)
+          edgecolors="white", linewidths=0.3, alpha=0.5, zorder=3)
 ax.set_title("Core cycle slips per station-day (ION + MP12/21/15/51)",
              loc="left", fontweight=600, fontsize=11)
 cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=CMAP_PERFORMANCE),
