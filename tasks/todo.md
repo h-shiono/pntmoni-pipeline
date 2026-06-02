@@ -1452,13 +1452,25 @@ free-tier design scope.
   list but informational context (no per-station QC data); consistent with
   the CLAS report + ADR 0012. Acceptable addition.
 
-### Known gap — track separately
-- **Product 1 (CLAS, monthly_free.qmd) does NOT implement station-count
-  suppression either.** Its `mincnt=50` is an *epoch* count (C = pooled
-  epoch errors), for percentile stability — orthogonal to anonymity. A
-  1-station cell (tens of thousands of epochs) passes it. ADR 0013 frames
-  the threshold as a shared parameter "defined once, rendered by a single
-  pipeline path" — currently unbuilt. Follow-up: add a station-count
-  suppression mechanism to the CLAS hex (epoch-pool path needs a separate
-  per-cell distinct-station count, unlike QC where C is already per
-  station), ideally factored into a shared `_hex_grid` helper used by both.
+### CLAS (Product 1) station-count suppression — DONE (2026-06-02)
+- `monthly_free.qmd` hex used `mincnt=50` = an *epoch* count (C = pooled
+  epoch errors), orthogonal to anonymity — a 1-station cell (tens of
+  thousands of epochs) passed it. Now implements the ADR 0013 mandate:
+  - HEX_EPOCHS_DF retains `station`; a `_stcode` (factorized id) is
+    pre-computed alongside `_x_aea/_y_aea`. Synthetic fallbacks carry a
+    station column too (coarse path = 200 stations × 25 epochs).
+  - `_render_hex_panel` runs two hexbins on an identical grid (same
+    x/y/gridsize/extent/mincnt=1 → bin arrays align, verified
+    `offsets identical: True`): pass 1 (undrawn) computes distinct-station
+    count per cell (`reduce_C_function=np.unique(v).size`); pass 2 is the
+    p95 metric layer. Cells with < MIN_STATIONS_PER_CELL (=3, equal to
+    Product 2) are dropped via `set_offsets`/`set_array` so both fill and
+    white outline disappear. §空間分布 prose updated.
+  - Verified: numeric (alignment + suppression counts), synthetic render,
+    and real-data render via `report monthly --period 2026-04 --render`.
+- **Remaining polish (low priority):** the threshold is now equal in both
+  products but defined in each qmd. ADR 0013's "defined once / single
+  pipeline path" ideal would factor the suppression into a shared
+  `_hex_grid` helper imported by both reports. Mechanisms differ (QC: C is
+  per-station so mincnt=stations; CLAS: epoch-pool needs the distinct
+  count pass), so a shared helper would need to cover both shapes.

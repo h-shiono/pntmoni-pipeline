@@ -285,7 +285,7 @@ if _ep_dir_str and _rc_dir_str:
             _big = _pd_at.concat(_frames_he, ignore_index=True)
             HEX_EPOCHS_DF = (
                 _big.merge(_st_coords, on="station")
-                [["lon", "lat", "horizontal_m", "vertical_m"]]
+                [["station", "lon", "lat", "horizontal_m", "vertical_m"]]
             )
             HEX_REAL_DATA = True
     except Exception:
@@ -320,14 +320,20 @@ if HEX_EPOCHS_DF is None:
         _expanded = _real_st.loc[_real_st.index.repeat(200)].reset_index(drop=True)
         _expanded["horizontal_m"] = _rng_hex.gamma(3.0, 0.025, len(_expanded))
         _expanded["vertical_m"] = _rng_hex.gamma(3.0, 0.04, len(_expanded))
-        HEX_EPOCHS_DF = _expanded[["lon", "lat", "horizontal_m", "vertical_m"]]
+        HEX_EPOCHS_DF = _expanded[["station", "lon", "lat", "horizontal_m", "vertical_m"]]
     else:
-        _n_pts = 5000
+        # 200 synthetic stations, 25 epochs each — so per-cell distinct-
+        # station counts are meaningful for the suppression preview.
+        _n_st, _rep = 200, 25
+        _st_lon = _rng_hex.uniform(129, 146, _n_st)
+        _st_lat = _rng_hex.uniform(30, 45, _n_st)
+        _idx = _np_hex.repeat(_np_hex.arange(_n_st), _rep)
         HEX_EPOCHS_DF = _pd_at.DataFrame({
-            "lon": _rng_hex.uniform(129, 146, _n_pts),
-            "lat": _rng_hex.uniform(30, 45, _n_pts),
-            "horizontal_m": _rng_hex.gamma(3.0, 0.025, _n_pts),
-            "vertical_m": _rng_hex.gamma(3.0, 0.04, _n_pts),
+            "station": [f"X{i:04d}" for i in _idx],
+            "lon": _st_lon[_idx],
+            "lat": _st_lat[_idx],
+            "horizontal_m": _rng_hex.gamma(3.0, 0.025, _n_st * _rep),
+            "vertical_m": _rng_hex.gamma(3.0, 0.04, _n_st * _rep),
         })
 HEX_PRESENT = HEX_EPOCHS_DF is not None and len(HEX_EPOCHS_DF) > 0
 
@@ -846,7 +852,7 @@ plt.tight_layout()
 
 ### 空間分布
 
-CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセルは空白で表示し、CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
+CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセル、および**異なる観測局が 3 局未満のセルは空白**で表示します(単独局セルは公開座標から逆引き可能で匿名性を欠き、かつパーセンタイルが不安定なため)。CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
 
 色階は CLAS 補強仕様(水平 95% ≤ 12 cm、垂直 95% ≤ 24 cm)を基準とした絶対閾値です:**緑 = 仕様達成**、**黄 = 仕様の 2 倍以下まで**(劣化、要観察)、**赤 = 仕様の 2 倍超**(明確な劣化)。
 
@@ -865,6 +871,17 @@ from matplotlib.lines import Line2D
 #   赤 = 仕様の2倍超(明確な劣化)
 H_THRESHOLDS_CM = (12.0, 24.0)
 V_THRESHOLDS_CM = (24.0, 48.0)
+
+# Mandatory minimum-stations-per-cell suppression (ADR 0013, shared
+# Product 1 / Product 2 hex requirement): a cell backed by fewer than
+# this many distinct stations is neither anonymous (GEONET coordinates
+# are public, so a near-single-station cell is reverse-engineerable) nor
+# a stable percentile. Because this map pools *epochs* (not per-station
+# values), the epoch-count `mincnt` does NOT enforce a station count —
+# `_render_hex_panel` computes the distinct-station count per cell in a
+# separate pass and drops cells below this threshold. Value kept equal to
+# Product 2's MIN_STATIONS_PER_CELL.
+MIN_STATIONS_PER_CELL = 3
 
 # Albers Equal-Area Conic over Japan — matches methodology v1.0.0
 # Figure 1 and the rest of the report's maps.
@@ -886,6 +903,8 @@ if HEX_PRESENT:
     )
     HEX_EPOCHS_DF = HEX_EPOCHS_DF.assign(
         _x_aea=_hxy[:, 0], _y_aea=_hxy[:, 1],
+        # Integer station code for the distinct-station-count hexbin pass.
+        _stcode=pd.factorize(HEX_EPOCHS_DF["station"])[0],
     )
 
 def _render_hex_panel(col, title, thresholds_cm):
@@ -910,14 +929,37 @@ def _render_hex_panel(col, title, thresholds_cm):
     # landing in the hex and returns its 95 percentile (methodology
     # §5.1). gridsize=50 over ~3000 km Albers-projected width
     # → ~60 km hex flat-to-flat (matches the CLAS grid spacing).
-    ax.hexbin(
-        HEX_EPOCHS_DF["_x_aea"], HEX_EPOCHS_DF["_y_aea"],
-        C=HEX_EPOCHS_DF[col],
-        reduce_C_function=lambda v: np.percentile(v, 95),
-        gridsize=50, cmap=_cmap, norm=_norm,
-        edgecolors="white", linewidths=0.3,
-        mincnt=50, alpha=0.5, zorder=10,
+    _x = HEX_EPOCHS_DF["_x_aea"].to_numpy()
+    _y = HEX_EPOCHS_DF["_y_aea"].to_numpy()
+    _ext = (_x.min(), _x.max(), _y.min(), _y.max())
+
+    # Pass 1 (not drawn): distinct stations per cell. Same grid params
+    # as the metric pass (x/y/gridsize/extent/mincnt=1) → identical bin
+    # set and order, so the two arrays align index-for-index.
+    _hb_cnt = ax.hexbin(
+        _x, _y, C=HEX_EPOCHS_DF["_stcode"].to_numpy(),
+        reduce_C_function=lambda v: np.unique(v).size,
+        gridsize=50, extent=_ext, mincnt=1,
     )
+    _counts = np.asarray(_hb_cnt.get_array())
+    _hb_cnt.remove()
+
+    # Pass 2: per-cell 95th percentile over pooled epochs (the drawn layer).
+    hb = ax.hexbin(
+        _x, _y, C=HEX_EPOCHS_DF[col].to_numpy(),
+        reduce_C_function=lambda v: np.percentile(v, 95),
+        gridsize=50, extent=_ext, cmap=_cmap, norm=_norm,
+        edgecolors="white", linewidths=0.3,
+        mincnt=1, alpha=0.5, zorder=10,
+    )
+
+    # Mandatory minimum-stations-per-cell suppression (ADR 0013): drop
+    # cells backed by < MIN_STATIONS_PER_CELL distinct stations — removing
+    # both the fill and the hex outline (set_offsets, not just a masked
+    # array, so suppressed cells leave no white edge).
+    _keep = _counts >= MIN_STATIONS_PER_CELL
+    hb.set_offsets(hb.get_offsets()[_keep])
+    hb.set_array(hb.get_array()[_keep])
 
     ax.set_title(title + " [cm]", fontsize=11)
     ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
