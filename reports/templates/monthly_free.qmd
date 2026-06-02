@@ -759,9 +759,9 @@ V_THRESHOLDS_CM = (12.0, 24.0)
 def _render_hex_panel(col, title, thresholds_cm):
     fig, ax = plt.subplots(
         figsize=(7, 7),
-        subplot_kw={"projection": _proj_aea},
+        subplot_kw={"projection": ccrs.PlateCarree()},
     )
-    ax.set_extent((122, 150, 22, 47), _ccrs_nm.PlateCarree())
+    ax.set_extent((123, 146, 24, 46), crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.LAND.with_scale("50m"),
                    facecolor="#f5f5f4", edgecolor="none")
     ax.add_feature(cfeature.OCEAN.with_scale("50m"),
@@ -819,7 +819,7 @@ if HEX_PRESENT and not HEX_REAL_DATA:
 #| fig-cap: "水平誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
 
 if HEX_PRESENT:
-    _render_hex_panel("horizontal_m", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM)
+    _render_hex_panel("horizontal_p95", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM)
 else:
     print(
         "**`{python} PERIOD_LABEL`**:空間分布図は epoch_errors / "
@@ -832,7 +832,7 @@ else:
 #| fig-cap: "垂直誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
 
 if HEX_PRESENT:
-    _render_hex_panel("vertical_p95", "垂直誤差 95 パーセンタイル", V_THRESHOLDS_CM)
+    _render_hex_panel("vertical_m", "垂直誤差 95 パーセンタイル", V_THRESHOLDS_CM)
 ```
 
 ```{python}
