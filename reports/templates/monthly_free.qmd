@@ -756,12 +756,34 @@ from matplotlib.lines import Line2D
 H_THRESHOLDS_CM = (6.0, 12.0)
 V_THRESHOLDS_CM = (12.0, 24.0)
 
+# Albers Equal-Area Conic over Japan — matches methodology v1.0.0
+# Figure 1 and the rest of the report's maps.
+_PROJ_AEA = ccrs.AlbersEqualArea(
+    central_longitude=137.0, central_latitude=35.0,
+    standard_parallels=(30.0, 43.0),
+)
+
+# Pre-project (lon, lat) → Albers metres ONCE for hexbin. matplotlib's
+# hexbin ignores cartopy's `transform=` and bins in axes (= Albers)
+# coordinates, so passing PlateCarree lon/lat makes every bin fall
+# outside the visible extent and the layer renders empty. Projecting
+# the data first lets hexbin bin in axes space natively.
+if HEX_PRESENT:
+    _hxy = _PROJ_AEA.transform_points(
+        ccrs.PlateCarree(),
+        HEX_EPOCHS_DF["lon"].to_numpy(),
+        HEX_EPOCHS_DF["lat"].to_numpy(),
+    )
+    HEX_EPOCHS_DF = HEX_EPOCHS_DF.assign(
+        _x_aea=_hxy[:, 0], _y_aea=_hxy[:, 1],
+    )
+
 def _render_hex_panel(col, title, thresholds_cm):
     fig, ax = plt.subplots(
         figsize=(7, 7),
-        subplot_kw={"projection": ccrs.PlateCarree()},
+        subplot_kw={"projection": _PROJ_AEA},
     )
-    ax.set_extent((123, 146, 24, 46), crs=ccrs.PlateCarree())
+    ax.set_extent((122, 150, 22, 47), crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.LAND.with_scale("50m"),
                    facecolor="#f5f5f4", edgecolor="none")
     ax.add_feature(cfeature.OCEAN.with_scale("50m"),
@@ -776,14 +798,15 @@ def _render_hex_panel(col, title, thresholds_cm):
 
     # matplotlib.hexbin: per-bin reduce_C_function pools all epochs
     # landing in the hex and returns its 95 percentile (methodology
-    # §5.1). gridsize=35 → ~60 km flat-to-flat over the bbox.
+    # §5.1). gridsize=50 over ~3000 km Albers-projected width
+    # → ~60 km hex flat-to-flat (matches the CLAS grid spacing).
     ax.hexbin(
-        HEX_EPOCHS_DF["lon"], HEX_EPOCHS_DF["lat"],
+        HEX_EPOCHS_DF["_x_aea"], HEX_EPOCHS_DF["_y_aea"],
         C=HEX_EPOCHS_DF[col],
         reduce_C_function=lambda v: np.percentile(v, 95),
-        gridsize=35, cmap=_cmap, norm=_norm,
+        gridsize=50, cmap=_cmap, norm=_norm,
         edgecolors="white", linewidths=0.3,
-        mincnt=50, alpha=0.7, zorder=10,
+        mincnt=50, alpha=0.5, zorder=10,
     )
 
     ax.set_title(title + " [cm]", fontsize=11)
