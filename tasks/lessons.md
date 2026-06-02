@@ -1404,3 +1404,37 @@ to require non-space context). Diff size > 10× the count of intended
 changes is the early-warning sign — STOP and inspect before any
 git operation.
 **Tags:** #edit-safety #quarto #yaml #python
+
+## [2026-06-02] qmd-hygiene: synthetic setup vars accrete; sweep when each preview-vs-real binding lands
+
+**Mistake:** Over the course of building out the Free Monthly report
+the setup cell accumulated synthetic placeholder variables — first
+``NETWORK_POLYGON`` + ``inside_network`` for the original synthetic
+Figure 1; then ``station_lats`` / ``station_lons`` / ``station_ids``
+for the same; then ``station_h95`` / ``station_v95`` for a planned
+heatmap; then ``trend_months`` / ``trend_h95`` / ``trend_v95`` +
+``current_idx`` / ``last6_start_idx`` / ``yago_idx`` for the §近月の
+トレンド figure. As each section was rewritten to consume real data
+(Figure 1 → cartopy + plot_map.py vendored data; trend → Coming Soon
+callout; heatmap dropped from Free scope) the original synthetic
+references were retained as part of "scope of the diff" discipline.
+After ~10 commits the setup cell carried ~30 lines of dead
+synthetic plumbing that no qmd consumer touched.
+**Root cause:** The "real-data wiring" commits intentionally kept the
+synthetic fallback path alive so previews still render. But once a
+section transitions from "synthetic-only" to "real-only" or
+"Coming Soon", the synthetic plumbing for that section is purely
+dead — yet "leave it for now" feels safer than removing it.
+**Fix applied:** Audited synthetic-var usage by counting word-boundary
+hits across the qmd; deleted any variable whose only reference was
+its own definition. Vars still in the fallback path (``horiz_errors``,
+``vert_errors``, ``ttff_15min``, ``rng``, ``N_STATIONS`` etc.) stay.
+Render verified after deletion.
+**Rule:** Whenever a qmd section transitions from synthetic-only to
+real-driven, do a one-shot dead-code sweep IN THE SAME COMMIT — count
+references for the synthetic vars that section used and delete any
+that drop to 1 (definition only). Saves the bulk-cleanup pass later
+and keeps the setup cell legible. Concrete check:
+``for v in <vars>; do echo "$v $(grep -c '\\b'$v'\\b' qmd)"; done`` —
+anything ``= 1`` is dead.
+**Tags:** #qmd #hygiene #refactoring

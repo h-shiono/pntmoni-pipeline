@@ -417,20 +417,13 @@ rng = np.random.default_rng(seed=42)
 N_STATIONS = 1300
 N_SAMPLES_PER_STATION = 200
 
-# Synthetic station identifiers and geographic distribution
-# Coordinates roughly cover the Japanese archipelago
-station_ids = [f"{i:04d}" for i in range(N_STATIONS)]
-station_lats = rng.uniform(30.5, 45.5, N_STATIONS)
-station_lons = rng.uniform(129.5, 145.5, N_STATIONS)
-
-# Synthetic per-epoch errors per station (gamma-distributed)
+# Synthetic per-epoch errors per station (gamma-distributed) — used
+# only by the CDF/headline fallbacks below when no real data is loaded.
 horiz_errors = rng.gamma(2.0, 0.025, size=(N_STATIONS, N_SAMPLES_PER_STATION))
 vert_errors = rng.gamma(2.0, 0.040, size=(N_STATIONS, N_SAMPLES_PER_STATION))
 
-# 80% inside-network, 20% outside-network (synthetic)
-inside_network = rng.choice([True, False], size=N_STATIONS, p=[0.80, 0.20])
-
-# TTFF samples
+# TTFF samples — used by the §5.2 CDF fallback when TTFF_WINDOW_SEC
+# is absent (preview without driver-injected real epoch_errors).
 ttff_15min = rng.gamma(2.5, 12, size=12000)
 
 # All-station aggregated quantiles
@@ -466,42 +459,6 @@ if TTFF_PRESENT:
     TTFF50 = TTFF_P50_SEC
     TTFF95 = TTFF_P95_SEC
 
-# Per-station 95th percentile (for heatmaps)
-station_h95 = np.array([np.quantile(horiz_errors[i], 0.95) for i in range(N_STATIONS)])
-station_v95 = np.array([np.quantile(vert_errors[i], 0.95) for i in range(N_STATIONS)])
-
-# ---- Synthetic past 13 months of monthly aggregates ----
-# Phase 0 scope: Apr 2025 onwards. Phase 0 launch in mid-2026
-# means ~13+ months of history is available at first publication.
-months_back = 13
-trend_months = []
-trend_h95 = []
-trend_v95 = []
-for i in range(months_back, 0, -1):
-    target = pd.Timestamp(YEAR, MONTH, 1) - pd.DateOffset(months=i-1)
-    trend_months.append(target.strftime("%Y-%m"))
-    seasonal = 0.005 * np.sin((target.month - 4) * np.pi / 6)
-    trend_h95.append(0.045 + seasonal + rng.normal(0, 0.0015))
-    trend_v95.append(0.080 + 1.5 * seasonal + rng.normal(0, 0.0025))
-trend_h95 = np.array(trend_h95)
-trend_v95 = np.array(trend_v95)
-
-# Mark current month, last 6 months, year-ago month
-current_idx = len(trend_months) - 1
-last6_start_idx = max(0, current_idx - 5)
-yago_idx = max(0, current_idx - 12)
-
-# ---- Synthetic CLAS evaluation network grid ----
-# In production, this is replaced with the actual CLAS network
-# definition. Here we use a simple polygon roughly enclosing the
-# core Japan archipelago for visualization.
-NETWORK_POLYGON = np.array([
-    [129.5, 31.0], [131.0, 30.7], [131.5, 32.5], [134.0, 33.5],
-    [136.5, 34.0], [138.5, 34.5], [140.5, 35.5], [141.5, 38.5],
-    [142.0, 41.0], [141.5, 43.0], [140.0, 44.5], [137.5, 44.5],
-    [136.0, 43.0], [133.0, 38.0], [131.0, 35.5], [130.0, 33.5],
-    [129.5, 31.0]
-])
 ```
 
 ::: {.callout-note appearance="minimal"}

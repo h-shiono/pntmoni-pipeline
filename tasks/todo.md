@@ -1142,3 +1142,74 @@ When finishing a task:
 2. Note any followups in Open Issues
 3. After ~2 months, move completed tasks to
    `tasks/archive/<YYYY-Q>.md` to keep this file lean
+
+---
+
+## [2026-06-02] Task: Free Monthly report — real-data render polish + constellation status
+
+Goal: bring the Free Monthly report to a state where 2026-04 (rapid)
+can be issued end-to-end with real data in every panel that has the
+inputs available. Phase Guard: Phase 0. Refs: methodology §5/§6/§7.4,
+ADR 0013 + Postscript (hex Free viz).
+
+- [x] Hex spatial figure: switch from manual MplPolygon loop to
+      `matplotlib.hexbin` (`reduce_C_function=p95`); per-station-day
+      stratified subsample bounds memory; pre-project to Albers
+      because hexbin ignores cartopy `transform=`
+- [x] Hex thresholds reframed against the CLAS spec
+      (緑 ≤12cm / 黄 12–24 / 赤 >24, vertical 24/48); spec basis
+      explained in §空間分布 prose
+- [x] Split horizontal & vertical hex into two separate figures
+- [x] Figure 1: real GEONET station distribution + CLAS 12-network
+      grid points (cartopy Albers, plot_map.py vendored data)
+- [x] Stream-aware reference_coords lookup: `('rapid', '2026-04')→r5_1`,
+      `('final', '2026-04')→f5_1` via `stream_to_frame_subdir()`
+- [x] 速報 banner — callout-warning when STREAM == 'rapid'
+- [x] TTFF driver fix: pair the accuracy mode with its `_ttff_verify`
+      twin via `_ttff_mode_for(mode)` (the continuous-mode TTFF
+      column was meaningless ≈ 0s)
+- [x] TTFF histogram → CDF (matches §5.1 accuracy CDF axes
+      convention) using real per-window TTFF re-derived at render
+      time from ttff-mode epoch_errors
+- [x] NAGU/NANU/NAQU appendix table now reads
+      `satellite_outages/events.parquet` filtered to the report period
+- [x] §衛星一覧 GPS / QZSS / Galileo tables driven by a new
+      `acquire constellation` CLI that scrapes the three operator
+      pages (NAVCEN / QSS DoD / GSC Europa) into a unified parquet;
+      11 unit tests with vendored HTML fixtures
+- [x] CJK font fallback (Hiragino → Yu Gothic → Noto CJK)
+- [x] Synthetic preview path uses real station coords + per-station
+      baseline variation so previews render meaningful spread
+- [x] Cleanup: removed unused synthetic setup vars (NETWORK_POLYGON,
+      inside_network, station_lats/lons, station_ids, station_h95/v95,
+      last6_start_idx, yago_idx, trend_*, current_idx)
+- [x] methodology v1.0.0: §5.1 — hex color-threshold table added,
+      §5.2 — TTFF table-vs-figure aggregation difference documented
+
+### Verification
+
+End-to-end render for 2026-04 rapid:
+- `pntmoni-pipeline acquire constellation` → 32 GPS + 5 QZSS + 32 Gal
+- `pntmoni-pipeline report monthly --period 2026-04 --stream rapid
+   --mode kinematic_p30_verify --render` → 82 MB HTML, all panels
+  populated, no synthetic-preview notices except where data missing
+- 16 unit tests across hex_grid + report_driver + constellation_status
+  all green
+
+### Open Issues (deferred)
+
+- **PDF render** still fails (driver invokes HTML+PDF; PDF path errors
+  on LaTeX/typst — HTML works). Either gate PDF behind a flag or fix
+  the typst toolchain.
+- **L6 alerts**: April raw L6 not yet acquired (`data/raw/l6/` empty).
+  Run `acquire l6 --date YYYY-MM-DD` × 30 then
+  `analyze l6-alerts --period 2026-04`.
+- **Constellation status snapshot freshness**: currently manual.
+  Consider monthly cron via `loop` or a pre-render hook in driver.
+- **TTFF table P99 vs figure P99 gap** (480s vs 540s): qualified-set
+  filter difference; documented in methodology §5.2 but could be
+  unified if a single semantic is preferred.
+- **近月のトレンド** still Coming Soon — needs the Phase 0/1
+  retroactive monthly processing pipeline to populate 2025-04 onwards.
+- **相互検証** still Coming Soon — Phase 1+, requires MRTKLIB
+  submodule + parallel evaluation pipeline.
