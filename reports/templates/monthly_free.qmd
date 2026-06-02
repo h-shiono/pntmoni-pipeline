@@ -534,21 +534,10 @@ if _stations_for_fig is None:
     })
     _station_source = "GEONET 全局(参考)"
 
-# Per-network label positions (hand-tuned from methodology plot_map.py
-# NETWORK_LABEL_POS). Each entry is (lon, lat, label).
-_NETWORK_LABELS = [
-    (124.28 + 4.2,  24.51 - 0.5,  "1: 石垣"),
-    (128.64 + 4.0,  27.13,        "2: 沖縄"),
-    (130.22 - 4.8,  32.09,        "3: 九州"),
-    (133.32 + 1.8,  33.55 - 2.7,  "4: 四国"),
-    (132.83 - 0.5,  35.09 + 2.3,  "5: 中国"),
-    (136.28 + 0.6,  35.47 - 3.2,  "6: 関西"),
-    (139.33 + 4.5,  35.38,        "7: 関東"),
-    (139.67 + 7.2,  37.71,        "8: 南東北"),
-    (140.91 - 6.5,  40.07,        "9: 北東北"),
-    (141.52 - 8.8,  42.70,        "10: 西北海道"),
-    (143.53 + 2.0,  44.09 + 2.2,  "11: 東北海道"),
-    (142.18 + 4.5,  26.86 - 1.5,  "12: 小笠原"),
+# Network names — shown in the legend (network id colour ↔ name).
+_NETWORK_NAMES = [
+    "石垣", "沖縄", "九州", "四国", "中国", "関西",
+    "関東", "南東北", "北東北", "西北海道", "東北海道", "小笠原",
 ]
 
 fig = plt.figure(figsize=(8, 7))
@@ -583,26 +572,11 @@ for _net_id in range(1, 13):
         _sub["Longitude"], _sub["Latitude"],
         s=18, color=_c, edgecolors="#061128", linewidths=0.4,
         marker="o", transform=_ccrs_nm.PlateCarree(), zorder=10,
+        label=f"{_net_id}: {_NETWORK_NAMES[_net_id - 1]}",
     )
 
-# Network ID labels (boxed text) at hand-tuned positions, each box
-# bordered in the matching network colour to tie label → grid points.
-for _i, (_lon, _lat, _label) in enumerate(_NETWORK_LABELS):
-    _c = plt.cm.Paired.colors[_i]
-    ax.text(
-        _lon, _lat, _label,
-        transform=_ccrs_nm.PlateCarree(),
-        fontsize=7, ha="center", va="center",
-        color="#061128", fontweight="bold",
-        bbox={
-            "facecolor": "white", "alpha": 0.92,
-            "edgecolor": _c, "boxstyle": "round,pad=0.25",
-            "linewidth": 0.9,
-        },
-        zorder=20,
-    )
-
-ax.legend(loc="lower left", fontsize=7, framealpha=0.95)
+ax.legend(loc="lower left", fontsize=6, ncols=2, framealpha=0.95,
+          title="Compact Network ID", title_fontsize=7)
 gl = ax.gridlines(draw_labels=True, linewidth=0.4, color="#9aa1ad",
                   alpha=0.5, linestyle=":", crs=_ccrs_nm.PlateCarree())
 gl.top_labels = False
