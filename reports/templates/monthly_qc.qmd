@@ -994,13 +994,65 @@ for the Pro-tier report.
 
 ## GNSS System Events: NAGU / NANU / NAQU
 
-::: {.callout-note}
-**Coming Soon.** This appendix will summarise the
-QZSS, GPS and Galileo notice-to-users events
-(NAQU, NANU, NAGU) that fell within the reporting period, sourced
-directly from QSS / USCG-NAVCEN / EUSPA. Implementation is part of
-the Phase 1 anomaly-monitoring rollout.
-:::
+Notices issued against GNSS constellation operations during
+`{python} PERIOD_LABEL`, recorded for cross-referencing against
+observation anomalies and signal availability. Sourced from the
+official **NAGU** (Galileo, EUSPA/GSC), **NANU** (GPS, USCG-NAVCEN)
+and **NAQU** (QZSS, QSS) notice feeds.
+
+```{python}
+#| label: tbl-system-events
+#| tbl-cap: "GNSS system notices within the reporting period."
+
+# Load the NAGU/NANU/NAQU event history (produced by `acquire
+# satellite-outages`) and slice to the reporting month. The parquet
+# holds the full history; we filter by event start time.
+_so_path = Path("../../data/processed/satellite_outages/events.parquet")
+_events_present = _so_path.is_file()
+N_SYSTEM_EVENTS = 0
+_EVENT_COLS = ["Date", "Satellite", "Notice", "Event type", "Severity"]
+if _events_present:
+    _all = pd.read_parquet(_so_path)
+    _all["start_at"] = pd.to_datetime(_all["start_at"], utc=True, errors="coerce")
+    _pstart = pd.Timestamp(YEAR, MONTH, 1, tz="UTC")
+    _pend = _pstart + pd.DateOffset(months=1)
+    _evt = _all[(_all["start_at"] >= _pstart) & (_all["start_at"] < _pend)].copy()
+    N_SYSTEM_EVENTS = len(_evt)
+    if N_SYSTEM_EVENTS:
+        _evt = _evt.sort_values("start_at")
+        _evt["Date"] = _evt["start_at"].dt.strftime("%Y-%m-%d %H:%M UTC")
+        _evt["Notice"] = _evt["source_notice_ids"].apply(
+            lambda xs: ", ".join(xs)
+            if hasattr(xs, "__iter__") and not isinstance(xs, str) else (xs or "")
+        )
+        _evt["Satellite"] = _evt.apply(
+            lambda r: f'{str(r["constellation"]).upper()} PRN{int(r["prn"])}'
+            if pd.notna(r["prn"]) else str(r["constellation"]).upper(),
+            axis=1,
+        )
+        _evt["Event type"] = _evt["event_type"].fillna("—")
+        _evt["Severity"] = _evt["severity"].fillna("—")
+        events = _evt[_EVENT_COLS].reset_index(drop=True)
+    else:
+        events = pd.DataFrame({c: ["—"] for c in _EVENT_COLS})
+else:
+    events = pd.DataFrame({c: ["—"] for c in _EVENT_COLS})
+md_table(events)
+```
+
+```{python}
+#| echo: false
+#| output: asis
+if _events_present and N_SYSTEM_EVENTS > 0:
+    print(f"**{N_SYSTEM_EVENTS}** notice(s) detected for {PERIOD_LABEL}, "
+          "collected from the official NAGU (Galileo), NANU (GPS) and "
+          "NAQU (QZSS) feeds.")
+elif _events_present:
+    print(f"No NAGU/NANU/NAQU notices fell within {PERIOD_LABEL}.")
+else:
+    print("**Not yet acquired** — run `pntmoni-pipeline acquire "
+          "satellite-outages` to populate this table.")
+```
 
 ## List of Earthquakes
 
@@ -1013,22 +1065,124 @@ Implementation pending source-feed integration.
 
 ## List of Satellites
 
+A **snapshot of the constellation operators' official status pages**
+at fetch time (not a period summary — the operator pages are themselves
+live snapshots). Sources: GPS = USCG NAVCEN, QZSS = QSS, Galileo =
+GSC Europa. GLONASS is excluded from this report's QC pipeline (per
+methodology); PNT Moni does, however, evaluate the Galileo signals
+received at GEONET stations.
+
 ```{python}
-#| label: tbl-satellites
-sats = pd.DataFrame([
-    ["G",  "GPS",          "31 active SVs across Block IIR / IIR-M / IIF / III; signals: L1 C/A, L1C, L2C, L5"],
-    ["R",  "GLONASS",       "Excluded from this report's QC pipeline (per methodology)"],
-    ["E",  "Galileo",       "Approx. 26 active SVs across IOV / FOC; signals: E1, E5a, E5b, E6"],
-    ["J",  "QZSS",          "4 active operational SVs (J01–J03, J07) plus QZS-1R; L1 C/A on most, L1C/B on QZS-1R"],
-], columns=["Sys ID", "Constellation", "Notes"])
-md_table(sats)
+#| label: constellation-status-setup
+#| include: false
+
+# Snapshot from the latest fetch (`pntmoni-pipeline acquire
+# constellation`); one table per constellation is rendered below.
+_cs_path = Path("../../data/processed/constellation_status/latest.parquet")
+_cs_present = _cs_path.is_file()
+if _cs_present:
+    CONSTELLATION_DF = pd.read_parquet(_cs_path)
+    CONSTELLATION_FETCHED_AT = (
+        pd.to_datetime(CONSTELLATION_DF["fetched_at"]).max()
+        if "fetched_at" in CONSTELLATION_DF.columns else None
+    )
+else:
+    CONSTELLATION_DF = None
+    CONSTELLATION_FETCHED_AT = None
+
+_STATUS_EN = {
+    "operational":    "Operational",
+    "outage":         "Outage",
+    "unusable":       "Unusable",
+    "decommissioned": "Decommissioned",
+    "commissioning":  "Commissioning",
+}
+
+def _format_satellite_table(df, *, columns):
+    """Subset + rename the given columns into a display frame."""
+    out = df.copy()
+    out["Status"] = out["status"].map(lambda s: _STATUS_EN.get(s, s))
+    out["Notice"] = out.apply(
+        lambda r: f"{r['notice_type']} {r['notice_id']}".strip()
+        if r.get("notice_type") or r.get("notice_id") else "",
+        axis=1,
+    )
+    return out[columns].reset_index(drop=True)
 ```
 
-::: {.callout-note}
-A complete reference dictionary of GNSS satellites — including PRN
-mapping, launch dates, and decommissioning notes — will be added in a
-future release.
-:::
+```{python}
+#| echo: false
+#| output: asis
+if not _cs_present:
+    print(":::: {.callout-warning}\n"
+          "Constellation-status parquet not yet acquired — run "
+          "`pntmoni-pipeline acquire constellation`.\n"
+          "::::\n")
+elif CONSTELLATION_FETCHED_AT is not None:
+    print(f"**Fetched at:** {CONSTELLATION_FETCHED_AT.strftime('%Y-%m-%d %H:%M UTC')}\n")
+```
+
+### GPS
+
+```{python}
+#| label: tbl-gps-satellites
+#| tbl-cap: "GPS satellite constellation status."
+
+if _cs_present:
+    _gps = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "gps"].copy()
+    _gps["PRN"] = _gps["prn"].apply(lambda x: f"G{int(x):02d}" if pd.notna(x) else "—")
+    _gps = _gps.rename(columns={
+        "svn": "SVN", "block": "Block", "slot": "Slot", "clock": "Clock",
+    })
+    gps_table = _format_satellite_table(
+        _gps, columns=["PRN", "SVN", "Block", "Slot", "Clock", "Status", "Notice"],
+    )
+    out = md_table(gps_table.sort_values("PRN"))
+else:
+    out = md_table(pd.DataFrame({"—": ["—"]}))
+out
+```
+
+### QZSS (Michibiki)
+
+```{python}
+#| label: tbl-qzss-satellites
+#| tbl-cap: "QZSS satellite constellation status."
+
+if _cs_present:
+    _qzs = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "qzs"].copy()
+    _qzs["PRN"] = _qzs["prn"].apply(lambda x: f"J{int(x)}" if pd.notna(x) else "—")
+    _qzs = _qzs.rename(columns={
+        "satellite_id": "Satellite", "svn": "SVN", "block": "Block",
+        "signals": "Signals",
+    })
+    qzss_table = _format_satellite_table(
+        _qzs, columns=["PRN", "SVN", "Block", "Signals", "Status", "Notice"],
+    )
+    out = md_table(qzss_table.sort_values("PRN"))
+else:
+    out = md_table(pd.DataFrame({"—": ["—"]}))
+out
+```
+
+### Galileo
+
+```{python}
+#| label: tbl-galileo-satellites
+#| tbl-cap: "Galileo satellite constellation status."
+
+if _cs_present:
+    _gal = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "gal"].copy()
+    _gal["E#"] = _gal["satellite_id"]
+    _gal = _gal.rename(columns={"svn": "GSAT", "clock": "Clock"})
+    galileo_table = _format_satellite_table(
+        _gal, columns=["E#", "GSAT", "Clock", "Status", "Notice"],
+    )
+    out = md_table(galileo_table.sort_values("E#"))
+else:
+    out = md_table(pd.DataFrame({"—": ["—"]}))
+out
+```
 
 ---
 
