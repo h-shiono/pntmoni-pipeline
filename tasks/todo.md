@@ -1418,3 +1418,47 @@ method to the QC report's 9 spatial metric maps.
   `dependencies` + `uv sync`. Also note: Quarto must use the project
   venv — render with `QUARTO_PYTHON=$REPO/.venv/bin/python3` (the bare
   `quarto` picks up a system Python without jupyter/yaml/tabulate).
+
+## [2026-06-02] Free QC report — scope review vs ADR 0009 / 0011 / 0013
+
+Reviewed monthly_qc.qmd against the Product 2 (GEONET Quality Monitoring)
+free-tier design scope.
+
+### Authoritative scope docs
+- `pntmoni-docs/70-decisions/adr-0009.md` Postscript — Product 2 free-tier
+  structure (distributions, daily trends, hex-grid spatial, receiver/
+  antenna inventory; per-station = Pro).
+- `adr-0013.md` Postscript / `00-overview/04-current-status.md` L221-234 —
+  **minimum-stations-per-cell suppression is MANDATORY** (shared Product 1
+  / Product 2 hex requirement; "1 cell = 1 station" risk).
+- `adr-0011.md` — Absolute Station Qualification: rolling 3-month × daily
+  (n≈91), 99.73 pct; deviation from NAVIGATION 2026 weekly-over-year.
+
+### Findings + actions
+- 🔴 **mincnt=1 violated the mandatory min-stations-per-cell suppression.**
+  Fixed: added `MIN_STATIONS_PER_CELL = 3` (setup) and applied to both the
+  map_grid and cycle-slips hexbin calls + §Spatial prose. Sparse southern-
+  island single-station cells now suppressed; mainland coverage retained.
+- 🟡 **Qualification "Coming Soon" text was pre-ADR-0011** ("53-week annual
+  rolling / weekly metrics over the rolling year"). Updated to rolling
+  3-month × daily (n≈91) + the deliberate-deviation rationale.
+- 🟡 **Recent Trends removal vs ADR 0009 "daily trends"** — user confirmed
+  keep removed; availability/visibility daily bars retain a daily-trend
+  surface. No action.
+- 🟢 In scope: hex median aggregation, fixed per-metric color scale, blank
+  empty cells, no station IDs/values, distributions, aggregate equipment
+  inventory, correct exclusions (positioning/TTFF/integrity/cross-engine).
+- 🟢 NAGU/NANU/NAQU + satellite list (Appendix): beyond ADR 0009's free
+  list but informational context (no per-station QC data); consistent with
+  the CLAS report + ADR 0012. Acceptable addition.
+
+### Known gap — track separately
+- **Product 1 (CLAS, monthly_free.qmd) does NOT implement station-count
+  suppression either.** Its `mincnt=50` is an *epoch* count (C = pooled
+  epoch errors), for percentile stability — orthogonal to anonymity. A
+  1-station cell (tens of thousands of epochs) passes it. ADR 0013 frames
+  the threshold as a shared parameter "defined once, rendered by a single
+  pipeline path" — currently unbuilt. Follow-up: add a station-count
+  suppression mechanism to the CLAS hex (epoch-pool path needs a separate
+  per-cell distinct-station count, unlike QC where C is already per
+  station), ideally factored into a shared `_hex_grid` helper used by both.
