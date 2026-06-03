@@ -29,6 +29,7 @@ import concurrent.futures
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -265,7 +266,10 @@ def process_station(
                     summary_path=None, duration_sec=time.time() - started,
                     error=f"teqc did not produce {produced_summary.name}",
                 )
-            produced_summary.rename(summary_path)
+            # shutil.move (not Path.rename) so a temp dir on a different
+            # filesystem than the output (e.g. /tmp internal vs data/ on the
+            # external 4TB) does not raise EXDEV "Cross-device link".
+            shutil.move(str(produced_summary), str(summary_path))
 
     except Exception as exc:                                # pragma: no cover
         return StationQCResult(

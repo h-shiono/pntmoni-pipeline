@@ -18,6 +18,9 @@ reports/.quarto/
 
 # Local data and acquisition artifacts
 data/
+# data/ is a symlink to the 4TB volume; ignore the link itself + any backup.
+/data
+/data.bak/
 # Tracked figure inputs vendored from pntmoni-web (methodology v1.0.0).
 !reports/data/
 !reports/data/**

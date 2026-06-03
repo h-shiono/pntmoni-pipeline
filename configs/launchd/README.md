@@ -34,6 +34,13 @@ loads a minimal environment, so `run_daily.sh` sources `$REPO/.env` if it
 exists. Put `GSI_FTP_USER` / `GSI_FTP_PASSWORD` there (and keep the
 Earthdata login in `~/.netrc`). `.env` is gitignored.
 
+## The data volume must be mounted
+
+The repo's `data/` is a symlink to `/Volumes/pntmoni/pntmoni-pipeline-data`
+(the local 4TB disk). If that volume is not mounted the symlink dangles
+and every step fails. APFS volumes auto-mount at login; confirm with
+`ls /Volumes/pntmoni` before relying on the nightly job.
+
 ## The machine must be awake
 
 **launchd does not fire a `StartCalendarInterval` job while the Mac is

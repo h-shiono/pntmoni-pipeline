@@ -191,6 +191,28 @@ def test_is_day_complete(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# acquire_brdc fetches target day + next day
+# ---------------------------------------------------------------------------
+
+def test_acquire_brdc_fetches_target_and_next_day(monkeypatch, tmp_path):
+    """Processing needs BRDC of target day AND next day — acquire both."""
+    calls: list[date] = []
+
+    class _FakeResult:
+        skipped = False
+
+    def fake_fetch(target, dest_root, *, overwrite=False):
+        calls.append(target)
+        return _FakeResult()
+
+    monkeypatch.setattr(_steps.cddis_brdc, "fetch", fake_fetch)
+    res = _steps.acquire_brdc(date(2026, 5, 1), raw_root=tmp_path)
+    assert calls == [date(2026, 5, 1), date(2026, 5, 2)]
+    assert res.status == "ok"
+    assert res.n_total == 2
+
+
+# ---------------------------------------------------------------------------
 # backfill
 # ---------------------------------------------------------------------------
 

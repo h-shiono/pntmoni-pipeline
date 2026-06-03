@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -112,15 +112,20 @@ def acquire_rinex(target: date, *, raw_root: Path, overwrite: bool = False) -> S
 
 
 def acquire_brdc(target: date, *, raw_root: Path, overwrite: bool = False) -> StepResult:
+    # CLASLIB processing needs the target day's BRDC *and* the next day's
+    # (claslib_engine: "BRDC of target day + next day"), so acquire both.
     def _do() -> StepResult:
-        r = cddis_brdc.fetch(target, raw_root, overwrite=overwrite)
-        skipped = getattr(r, "skipped", False)
+        results = [
+            cddis_brdc.fetch(target, raw_root, overwrite=overwrite),
+            cddis_brdc.fetch(target + timedelta(days=1), raw_root, overwrite=overwrite),
+        ]
+        n_skip = sum(1 for r in results if getattr(r, "skipped", False))
         return StepResult(
             "acquire_brdc",
-            "skipped" if skipped else "ok",
-            n_total=1,
-            n_ok=0 if skipped else 1,
-            n_skipped=1 if skipped else 0,
+            "ok",
+            n_total=len(results),
+            n_ok=len(results) - n_skip,
+            n_skipped=n_skip,
         )
 
     return _guard("acquire_brdc", _do)
@@ -152,6 +157,7 @@ def process(
     mode: str,
     raw_root: Path,
     output_root: Path,
+    data_dir: Path,
     workers: int | None = None,
     force: bool = False,
 ) -> StepResult:
@@ -163,6 +169,7 @@ def process(
             mode=mode,
             raw_root=raw_root,
             output_root=output_root,
+            data_dir=data_dir,
             max_workers=workers,
             force=force,
         )

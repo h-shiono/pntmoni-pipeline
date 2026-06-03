@@ -39,6 +39,9 @@ DEFAULT_MODES: tuple[str, ...] = (
 
 DEFAULT_RAW_ROOT = Path("data/raw")
 DEFAULT_OUTPUT_ROOT = Path("data/processed")
+#: Production aux-data dir (staged igs20_L5copy.atx / ERP / grid / blq / isb).
+#: NOT the engine default (vendor/pntmoni-claslib/data lacks igs20_L5copy.atx).
+DEFAULT_DATA_DIR = Path("configs/aux_data")
 DEFAULT_QC_TEQC_ROOT = Path("data/processed/qc_teqc")
 DEFAULT_QC_SUMMARY_ROOT = Path("data/processed/qc_summary")
 DEFAULT_RECORD_PATH = Path("data/metadata/orchestration.jsonl")
@@ -115,6 +118,7 @@ def run_day(
     workers: int | None = None,
     raw_root: Path = DEFAULT_RAW_ROOT,
     output_root: Path = DEFAULT_OUTPUT_ROOT,
+    data_dir: Path = DEFAULT_DATA_DIR,
     qc_teqc_root: Path = DEFAULT_QC_TEQC_ROOT,
     qc_summary_root: Path = DEFAULT_QC_SUMMARY_ROOT,
     record_path: Path | None = DEFAULT_RECORD_PATH,
@@ -179,6 +183,7 @@ def run_day(
                 mode=mode,
                 raw_root=raw_root,
                 output_root=output_root,
+                data_dir=data_dir,
                 workers=workers,
                 force=force,
             )
