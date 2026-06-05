@@ -8,18 +8,30 @@ Attribution required by GEONET PDL 1.0 — handled at report-render time.
 """
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
 
 from ._base import AcquisitionResult
-from ._ftp import GSI_HOST, connect, download_file, filter_by_prefix, list_dir
+from ._ftp import (
+    CONNECTION_ERRORS,
+    GSI_HOST,
+    download_file,
+    filter_by_prefix,
+    list_dir,
+    open_connection,
+    reopen,
+)
 
 logger = logging.getLogger(__name__)
 
 ARCHIVE_ROOT = "/data/GRJE_3.02"
 SOURCE = "geonet_rinex"
+
+#: Per-file reconnect attempts when the FTP connection dies mid-batch.
+FILE_RECONNECT_ATTEMPTS = 3
 
 
 def remote_dir(year: int, doy: int) -> str:
@@ -47,7 +59,9 @@ def fetch(
     local_dir = dest_root / "rinex" / f"{year}" / f"{doy:03d}"
 
     results: list[AcquisitionResult] = []
-    with connect() as ftp:
+    failed: list[str] = []
+    ftp = open_connection()
+    try:
         entries = list_dir(ftp, rdir)
         if not entries:
             raise FileNotFoundError(f"no entries at ftp://{GSI_HOST}{rdir}")
@@ -66,19 +80,48 @@ def fetch(
             name = Path(entry).name
             remote_path = entry if entry.startswith("/") else f"{rdir}/{name}"
             local_path = local_dir / name
-            results.append(
-                download_file(
-                    ftp,
-                    remote_path,
-                    local_path,
-                    source=SOURCE,
-                    metadata={
-                        "date": target.isoformat(),
-                        "year": year,
-                        "doy": doy,
-                        "station": name[:4],
-                    },
-                    overwrite=overwrite,
-                )
-            )
+            # A single long-lived connection can die mid-batch (read timeout).
+            # On a connection-level error, reconnect and retry the file so one
+            # dead socket does not abort the whole day's ~1300-file pull.
+            for attempt in range(1, FILE_RECONNECT_ATTEMPTS + 1):
+                try:
+                    results.append(
+                        download_file(
+                            ftp,
+                            remote_path,
+                            local_path,
+                            source=SOURCE,
+                            metadata={
+                                "date": target.isoformat(),
+                                "year": year,
+                                "doy": doy,
+                                "station": name[:4],
+                            },
+                            overwrite=overwrite,
+                        )
+                    )
+                    break
+                except CONNECTION_ERRORS as exc:
+                    if attempt == FILE_RECONNECT_ATTEMPTS:
+                        logger.error(
+                            "RINEX %s: giving up after %d reconnect attempts: %s",
+                            name, attempt, exc,
+                        )
+                        failed.append(name)
+                        break
+                    logger.warning(
+                        "RINEX %s failed (try %d/%d): %s — reconnecting",
+                        name, attempt, FILE_RECONNECT_ATTEMPTS, exc,
+                    )
+                    ftp = reopen(ftp)
+    finally:
+        with contextlib.suppress(Exception):
+            ftp.quit()
+
+    if failed:
+        logger.warning(
+            "RINEX %s: %d/%d files failed after reconnect retries "
+            "(those stations are skipped this day): %s",
+            target.isoformat(), len(failed), len(selected_full), failed[:15],
+        )
     return results

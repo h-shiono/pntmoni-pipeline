@@ -10,7 +10,7 @@ import logging
 import os
 import shutil
 from collections.abc import Iterable, Iterator
-from ftplib import FTP, error_perm
+from ftplib import FTP, error_perm, error_proto, error_temp
 from pathlib import Path
 
 from ._base import AcquisitionResult, sha256_file, utcnow, with_retry
@@ -19,6 +19,16 @@ from ._provenance import record as record_provenance
 logger = logging.getLogger(__name__)
 
 GSI_HOST = "terras.gsi.go.jp"
+
+#: Default control/data socket timeout for the GSI FTP server. Bumped from
+#: 60 s after observing recurring "cannot read from timed out object" read
+#: timeouts mid-batch during ~1300-file daily RINEX pulls.
+DEFAULT_TIMEOUT = 120.0
+
+#: Exceptions that mean the FTP connection is dead and must be re-established
+#: (vs a permission/path error). Callers downloading many files on one
+#: connection should reconnect (see ``reopen``) on these and retry the file.
+CONNECTION_ERRORS = (OSError, EOFError, error_temp, error_proto)
 
 
 def gsi_credentials() -> tuple[str, str]:
@@ -36,12 +46,31 @@ def gsi_credentials() -> tuple[str, str]:
     return user, pw
 
 
-@contextlib.contextmanager
-def connect(host: str = GSI_HOST, *, timeout: float = 60.0) -> Iterator[FTP]:
+def open_connection(host: str = GSI_HOST, *, timeout: float = DEFAULT_TIMEOUT) -> FTP:
+    """Open and log in a GSI FTP connection. Caller owns its lifecycle.
+
+    Use this (instead of the ``connect`` context manager) when downloading
+    many files in a loop that must survive a mid-batch connection death via
+    ``reopen``.
+    """
     user, pw = gsi_credentials()
     ftp = FTP(host, timeout=timeout)
+    ftp.login(user=user, passwd=pw)
+    return ftp
+
+
+def reopen(ftp: FTP | None, host: str = GSI_HOST, *, timeout: float = DEFAULT_TIMEOUT) -> FTP:
+    """Close a (possibly dead) connection and return a fresh logged-in one."""
+    if ftp is not None:
+        with contextlib.suppress(Exception):
+            ftp.close()
+    return open_connection(host, timeout=timeout)
+
+
+@contextlib.contextmanager
+def connect(host: str = GSI_HOST, *, timeout: float = DEFAULT_TIMEOUT) -> Iterator[FTP]:
+    ftp = open_connection(host, timeout=timeout)
     try:
-        ftp.login(user=user, passwd=pw)
         yield ftp
     finally:
         with contextlib.suppress(Exception):
