@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from pntmoni_pipeline.orchestration import _steps, backfill, daily
+from pntmoni_pipeline.orchestration import _steps, backfill, catchup, daily
 from pntmoni_pipeline.orchestration._steps import StepResult, status_from_counts
 
 
@@ -249,3 +249,57 @@ def test_run_range_continues_on_error(monkeypatch):
 def _now():
     from datetime import UTC, datetime
     return datetime.now(UTC)
+
+
+# ---------------------------------------------------------------------------
+# catchup
+# ---------------------------------------------------------------------------
+
+def _day_result(d, status="ok"):
+    return daily.DayResult(
+        target=d, steps=[_ok("process:verify")], status=status,
+        started_at=_now(), finished_at=_now(), wall_sec=1.0,
+    )
+
+
+def test_find_gaps_order_and_completeness(monkeypatch):
+    complete = {date(2026, 1, 2), date(2026, 1, 4)}
+    monkeypatch.setattr(catchup, "is_day_complete", lambda d, **k: d in complete)
+    gaps_new = catchup.find_gaps(date(2026, 1, 1), date(2026, 1, 5), order="newest")
+    assert gaps_new == [date(2026, 1, 5), date(2026, 1, 3), date(2026, 1, 1)]
+    gaps_old = catchup.find_gaps(date(2026, 1, 1), date(2026, 1, 5), order="oldest")
+    assert gaps_old == [date(2026, 1, 1), date(2026, 1, 3), date(2026, 1, 5)]
+
+
+def test_run_catchup_runs_daily_then_n_newest_gaps(monkeypatch):
+    ran: list[date] = []
+
+    def fake_run_day(d, **k):
+        ran.append(d)
+        return _day_result(d)
+
+    # All historical days are incomplete (gaps).
+    monkeypatch.setattr(catchup, "run_day", fake_run_day)
+    monkeypatch.setattr(catchup, "is_day_complete", lambda d, **k: False)
+
+    res = catchup.run_catchup(
+        date(2026, 6, 7), lag_days=2, backfill_start=date(2026, 6, 1),
+        backfill_days=2, order="newest",
+    )
+    # target = 6/7 - 2 = 6/5 (daily, runs first); window = 6/1..6/4
+    assert res.target == date(2026, 6, 5)
+    assert ran[0] == date(2026, 6, 5)                     # daily first
+    assert ran[1:] == [date(2026, 6, 4), date(2026, 6, 3)]  # 2 newest gaps
+    assert res.gaps_total == 4 and res.gaps_remaining == 2
+
+
+def test_run_catchup_no_backfill_window(monkeypatch):
+    ran: list[date] = []
+    monkeypatch.setattr(catchup, "run_day", lambda d, **k: ran.append(d) or _day_result(d))
+    monkeypatch.setattr(catchup, "is_day_complete", lambda d, **k: False)
+    # backfill_start after target-1 => only daily runs
+    res = catchup.run_catchup(
+        date(2026, 6, 7), lag_days=2, backfill_start=date(2026, 6, 10), backfill_days=2,
+    )
+    assert ran == [date(2026, 6, 5)]
+    assert res.backfill == []

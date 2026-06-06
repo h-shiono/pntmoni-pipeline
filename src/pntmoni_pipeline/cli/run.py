@@ -8,8 +8,13 @@ from typing import Annotated
 
 import typer
 
-from ..orchestration import DEFAULT_MODES, DayResult, run_day, run_range
+from ..orchestration import DEFAULT_MODES, DayResult, run_catchup, run_day, run_range
 from ..orchestration._notify import notify
+from ..orchestration.catchup import (
+    DEFAULT_BACKFILL_DAYS,
+    DEFAULT_BACKFILL_START,
+    DEFAULT_LAG_DAYS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +94,65 @@ def daily(
             priority="high" if result.status == "failed" else "default",
         )
         raise typer.Exit(code=1 if result.status == "failed" else 0)
+
+
+def catchup(
+    backfill_start: Annotated[
+        str, typer.Option("--backfill-start", help="Oldest date to backfill toward (YYYY-MM-DD)."),
+    ] = DEFAULT_BACKFILL_START.isoformat(),
+    backfill_days: Annotated[
+        int, typer.Option("--backfill-days", "-n", help="Max gap days to backfill per run."),
+    ] = DEFAULT_BACKFILL_DAYS,
+    order: Annotated[
+        str, typer.Option("--order", help="Gap fill order: newest | oldest."),
+    ] = "newest",
+    lag_days: Annotated[
+        int, typer.Option("--lag-days", help="Daily target is today - lag (data latency)."),
+    ] = DEFAULT_LAG_DAYS,
+    max_hours: Annotated[
+        float | None,
+        typer.Option("--max-hours", help="Stop backfill once total wall exceeds this (daily always runs)."),
+    ] = None,
+    modes: Annotated[
+        list[str] | None,
+        typer.Option("--mode", "-m", help="Config mode; repeat. Default: verify + ttff_verify."),
+    ] = None,
+    workers: Annotated[
+        int | None, typer.Option("--workers", "-j", help="Per-station thread pool size."),
+    ] = None,
+) -> None:
+    """Run the current day's daily, then backfill up to N incomplete days."""
+    log_path = _add_log_file("catchup")
+    logger.info("catchup run (log: %s)", log_path)
+
+    result = run_catchup(
+        date.today(),
+        lag_days=lag_days,
+        backfill_start=_parse_date(backfill_start),
+        backfill_days=backfill_days,
+        order=order,
+        modes=_resolve_modes(modes),
+        max_hours=max_hours,
+        workers=workers,
+    )
+
+    typer.echo("daily:  " + _step_line(result.daily).strip())
+    for d in result.backfill:
+        typer.echo("bkfill: " + _step_line(d).strip())
+    typer.echo(
+        f"\ncatchup: daily={result.daily.status}  "
+        f"backfilled={len(result.backfill)}  gaps_remaining={result.gaps_remaining}"
+    )
+
+    bad = [d for d in [result.daily, *result.backfill] if d.status != "ok"]
+    if bad:
+        notify(
+            f"pntmoni catchup: {len(bad)} non-ok day(s)",
+            "; ".join(f"{d.target.isoformat()}={d.status}" for d in bad),
+            priority="high" if result.daily.status == "failed" else "default",
+        )
+        # Only the daily failing is a hard error; backfill gaps retry next run.
+        raise typer.Exit(code=1 if result.daily.status == "failed" else 0)
 
 
 def backfill(

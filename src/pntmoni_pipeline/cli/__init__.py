@@ -10,7 +10,7 @@ from .analyze import app as analyze_app
 from .process import app as process_app
 from .qc import app as qc_app
 from .report import app as report_app
-from .run import backfill as backfill_cmd, daily as daily_cmd
+from .run import backfill as backfill_cmd, catchup as catchup_cmd, daily as daily_cmd
 
 app = typer.Typer(
     name="pntmoni-pipeline",
@@ -27,6 +27,7 @@ app.add_typer(report_app, name="report", help="Monthly-report rendering.")
 # Top-level orchestration commands (drive the per-DOY chain end to end).
 app.command("daily", help="Run acquire → process → QC for one day.")(daily_cmd)
 app.command("backfill", help="Run the daily chain over a date range.")(backfill_cmd)
+app.command("catchup", help="Run today's daily, then backfill N gap days.")(catchup_cmd)
 
 
 @app.callback()

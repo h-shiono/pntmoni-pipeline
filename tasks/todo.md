@@ -1474,3 +1474,41 @@ free-tier design scope.
   `_hex_grid` helper imported by both reports. Mechanisms differ (QC: C is
   per-station so mincnt=stations; CLAS: epoch-pool needs the distinct
   count pass), so a shared helper would need to cover both shapes.
+
+---
+
+## [2026-06-07] Task: Operational scheduling — nightly catchup (daily + N backfill)
+
+### Goal
+Start steady-state operation: a nightly launchd job that always runs the
+current `daily` (today − lag), then, with spare capacity, backfills up to
+N still-incomplete historical days. Keeps "today" current while catching
+up history.
+
+### Phase Guard
+[ ] Phase 0 — operational scheduling of existing daily/backfill machinery.
+
+### Design
+- New `orchestration/catchup.py`: `run_catchup(today, *, lag_days,
+  backfill_start, backfill_days, order, ...)`:
+  1. target = today − lag_days; `run_day(target)` (the daily — always).
+  2. gaps = [d in backfill_start .. target−1 if not is_day_complete(d)];
+     order newest-first (default) or oldest-first; take first N.
+  3. `run_day(d)` for each gap day; collect results.
+  Gap detection via `is_day_complete` → no cursor file, self-healing
+  (partials naturally re-targeted), idempotent.
+- Optional `--max-hours` deadline guard: always finish the daily, then
+  backfill only while under the wall-clock budget (so it never bleeds
+  into the workday on slow-FTP nights).
+- CLI `pntmoni-pipeline catchup` (top-level).
+- `scripts/run_catchup.sh` (caffeinate + .gsi/.env) and launchd plist
+  `com.pntmoni.catchup.plist` (replaces/augments the daily plist).
+- Tests: gap selection (skips complete, picks N, order), deadline stop,
+  daily-always-runs.
+
+### To confirm before coding (config)
+- Backfill scope (how far back), N per night, order.
+
+### Done Criteria
+- `catchup` runs daily + N gap days; re-runnable/idempotent; launchd
+  installed; tests green.

@@ -1,30 +1,44 @@
-# launchd scheduling — nightly `daily` run
+# launchd scheduling — nightly operational run
 
-`com.pntmoni.daily.plist` is a **template** that schedules
-`scripts/run_daily.sh` (which runs `pntmoni-pipeline daily` under
-`caffeinate`) every night at 03:00 local time.
+Two templates are provided; **install one**:
 
-## Install
+- `com.pntmoni.catchup.plist` → `scripts/run_catchup.sh` —
+  **the operational job.** Runs the current day's `daily` (today − lag)
+  then backfills up to N still-incomplete historical days
+  (defaults: backfill toward 2026-01-01, N=2, newest-first). Use this to
+  run steady-state operation that also catches up history.
+- `com.pntmoni.daily.plist` → `scripts/run_daily.sh` — daily only
+  (no backfill). Use if you don't want the catch-up behaviour.
+
+Both run every night at 03:00 local time under `caffeinate`.
+
+## Install (catchup — recommended)
 
 ```bash
 REPO=/Users/hayato/dev/pntmoni-pipeline          # absolute repo path
-PLIST=~/Library/LaunchAgents/com.pntmoni.daily.plist
+PLIST=~/Library/LaunchAgents/com.pntmoni.catchup.plist
 
 # Substitute the repo path into the template and install it.
-sed "s#__REPO__#$REPO#g" "$REPO/configs/launchd/com.pntmoni.daily.plist" > "$PLIST"
+sed "s#__REPO__#$REPO#g" "$REPO/configs/launchd/com.pntmoni.catchup.plist" > "$PLIST"
 
 mkdir -p "$REPO/data/logs"
 launchctl load "$PLIST"          # modern alternative: launchctl bootstrap gui/$(id -u) "$PLIST"
-launchctl list | grep com.pntmoni.daily
+launchctl list | grep com.pntmoni.catchup
 ```
+
+(For the daily-only variant, substitute `com.pntmoni.daily.plist` /
+`com.pntmoni.daily` above.)
 
 To trigger a run immediately (smoke test):
 
 ```bash
-launchctl start com.pntmoni.daily
+launchctl start com.pntmoni.catchup
 ```
 
-To update after editing the template, `launchctl unload "$PLIST"`, re-run
+To tune N or the backfill window, edit the flags in
+`scripts/run_catchup.sh` (e.g. `--backfill-days 3`, `--max-hours 6`).
+
+To update after editing a template, `launchctl unload "$PLIST"`, re-run
 the `sed` step, then `launchctl load "$PLIST"`.
 
 ## Credentials

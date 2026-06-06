@@ -13,13 +13,16 @@ from __future__ import annotations
 
 from ._steps import StepResult
 from .backfill import BackfillResult, run_range
+from .catchup import CatchupResult, run_catchup
 from .daily import DEFAULT_MODES, DayResult, run_day
 
 __all__ = [
     "StepResult",
     "DayResult",
     "BackfillResult",
+    "CatchupResult",
     "run_day",
     "run_range",
+    "run_catchup",
     "DEFAULT_MODES",
 ]
