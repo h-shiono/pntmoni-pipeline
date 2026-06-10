@@ -14,6 +14,17 @@ set -eu
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
+# launchd hands us a minimal PATH that omits ~/.local/bin (where uv lives).
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+# data/ is a symlink to the 4TB volume. If it is not mounted, refuse to run
+# with a clear message (to the internal launchd log) rather than failing deep
+# in acquisition/processing. EX_TEMPFAIL (75) marks it transient.
+if [ ! -d "/Volumes/pntmoni" ] || [ ! -e "$REPO_DIR/data/processed" ]; then
+    echo "ERROR: 4TB volume /Volumes/pntmoni not mounted; aborting catchup." >&2
+    exit 75
+fi
+
 # Credentials / config for unattended acquisition. GSI FTP creds live in
 # .gsi (FTP_USER/FTP_PASSWORD); .env may hold extras (e.g. PNTMONI_NTFY_URL).
 # Earthdata login (for BRDC) is in ~/.netrc.

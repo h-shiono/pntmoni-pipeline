@@ -79,7 +79,19 @@ published.
 ## Logs and notifications
 
 - Per-run structured record: `data/metadata/orchestration.jsonl`
-- Per-run human log: `data/logs/daily_<timestamp>.log`
-- launchd stdout/stderr: `data/logs/launchd.daily.{out,err}.log`
+- Per-run human log: `data/logs/{daily,catchup}_<timestamp>.log` (on the 4TB)
+- launchd stdout/stderr: `logs/launchd.{catchup,daily}.{out,err}.log`
+  — on the **internal** disk (not under `data/`, the 4TB symlink), so
+  launchd can open them even if the volume is unmounted. (A stdout path
+  under an unmounted-volume symlink makes launchd fail the job at spawn
+  with `EX_CONFIG` / exit 78 and no logs.)
 - Failure paging: set `PNTMONI_NTFY_URL` (an ntfy.sh topic URL) in `.env`
   to get a push notification when a run ends `partial`/`failed`.
+
+## Gotchas this setup guards against
+
+- **uv not on launchd's PATH**: `run_*.sh` prepend `~/.local/bin` (and
+  `~/.cargo/bin`) so `uv` resolves under launchd's minimal PATH.
+- **4TB not mounted at run time**: `run_*.sh` abort early (exit 75) with a
+  clear message rather than failing deep in processing; the launchd logs
+  live on internal disk so the message is captured.

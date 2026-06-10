@@ -41,3 +41,5 @@ configs/aux_data/
 
 # stray ssr2osr -dump outputs (should land in a workdir, not repo root)
 parse_cssr_*.csv
+# launchd stdout/stderr (internal disk, always writable)
+/logs/

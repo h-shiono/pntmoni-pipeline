@@ -35,10 +35,13 @@
     <key>RunAtLoad</key>
     <false/>
 
+    <!-- Internal disk (NOT under data/, which is a symlink to the 4TB
+         volume): launchd must be able to open these even if the volume is
+         not mounted, else the job dies at spawn with EX_CONFIG. -->
     <key>StandardOutPath</key>
-    <string>__REPO__/data/logs/launchd.catchup.out.log</string>
+    <string>__REPO__/logs/launchd.catchup.out.log</string>
     <key>StandardErrorPath</key>
-    <string>__REPO__/data/logs/launchd.catchup.err.log</string>
+    <string>__REPO__/logs/launchd.catchup.err.log</string>
 
     <key>EnvironmentVariables</key>
     <dict>

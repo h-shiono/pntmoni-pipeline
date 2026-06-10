@@ -34,10 +34,12 @@
     <key>RunAtLoad</key>
     <false/>
 
+    <!-- Internal disk (NOT under data/, a symlink to the 4TB volume) so
+         launchd can open these even when the volume is unmounted. -->
     <key>StandardOutPath</key>
-    <string>__REPO__/data/logs/launchd.daily.out.log</string>
+    <string>__REPO__/logs/launchd.daily.out.log</string>
     <key>StandardErrorPath</key>
-    <string>__REPO__/data/logs/launchd.daily.err.log</string>
+    <string>__REPO__/logs/launchd.daily.err.log</string>
 
     <!-- Keep PATH sane for uv / quarto invoked from the wrapper. -->
     <key>EnvironmentVariables</key>
