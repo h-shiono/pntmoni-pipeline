@@ -1,0 +1,12 @@
+# reports/_quarto-en.yml — English render profile (explicit selector).
+#
+# English is already the project default (reports/_quarto.yml carries the
+# English title/subtitle/caps metadata). This profile exists only so the
+# render command can pass `--profile en` symmetrically with `--profile ja`,
+# and so the template's Python side sees QUARTO_PROFILE=en. It deliberately
+# adds nothing — all English strings live in _quarto.yml.
+#
+# Render: `quarto render <template>.qmd --profile en --no-execute-daemon`.
+# `--no-execute-daemon` is REQUIRED — the jupyter daemon caches the first
+# render's env, so a cached kernel would keep a stale QUARTO_PROFILE.
+lang: en

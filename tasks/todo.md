@@ -32,6 +32,73 @@ One sentence describing what this task accomplishes.
 
 ---
 
+## [2026-06-10] Task: Bilingual (JA/EN) report templates
+
+### Goal
+Make each Quarto report template render in both Japanese and English
+from a single source, with no duplication of the Python compute/plot
+code (which is the drift-prone part). monthly_qc first as the
+reference pattern, then monthly_free.
+
+### Design (validated empirically — Quarto 1.9.37)
+Single switch: `quarto render <tmpl>.qmd --profile {ja|en}
+--no-execute-daemon`. Language fans out two ways from that one profile:
+- **Markdown side** (Quarto-resolved): prose/headings/callouts wrapped
+  in `::: {.content-visible when-profile="ja|en"}`; captions via
+  `#| fig-cap: "{{< meta caps.qc.KEY >}}"`; `title`/`subtitle` via
+  `{{< meta title_qc >}}`; `lang:` per profile auto-localizes
+  "Figure"/"図", dates.
+- **Python side**: setup cell reads
+  `LANG = os.environ["QUARTO_PROFILE"]` (reliable only with
+  `--no-execute-daemon` — the jupyter daemon caches the first render's
+  env, same gotcha the CLAS driver already documents). A `STR[LANG]`
+  catalog + `T(key)` helper feeds matplotlib titles/axis labels/
+  legends, table headers/rows, and `output: asis` prose.
+Rejected: full string-catalog (kills prose readability), include-based
+split (figures interleave prose — can't cleanly separate), separate
+per-language .qmd (code duplicated → drift). Note: content-visible does
+NOT prevent a gated code cell from executing — so code-cell text must
+switch via `T()`, never via duplicated cells.
+
+### Plan
+- [x] `reports/_quarto-ja.yml` + `_quarto-en.yml` (+ EN defaults in
+      `_quarto.yml` so a bare render = EN): `lang`,
+      `title_qc`/`subtitle_qc`, `caps:` tree (namespaced per template)
+- [x] monthly_qc.qmd setup: LANG (from QUARTO_PROFILE) + STR catalog +
+      T() helper + language-dependent PERIOD_LABEL
+- [x] monthly_qc.qmd body: FULLY converted (Methodology incl. both
+      metric-definition tables, National Overview distribution + spatial
+      figures, Receiver/Antenna, Absolute Qualification, Appendix —
+      system events + satellites). Terminology = user-ratified glossary
+      (memory/report-ja-glossary.md). Helpers (uptime_pair/_quantiles/
+      hist_panel/map_grid) and asis prints all T()-ized.
+- [x] matplotlib CJK: added Inter→Hiragino per-glyph fallback stack +
+      pdf.fonttype=42 (mirrors monthly_free) so JA figure text isn't
+      tofu. Visually confirmed two JA figures render correct Japanese.
+- [x] Render monthly_qc `--profile ja` and `--profile en` (html):
+      verified title/headings/section-numbers (no double-count)/prose/
+      captions/tables/figures/PERIOD_LABEL/anchors all switch correctly;
+      no stray English in JA; fixed a leaked `{=html}` raw-attr marker.
+- [x] Update `reports/README.md`: documented the bilingual
+      `--profile {ja|en} --no-execute-daemon` invocation + mechanism.
+- [ ] PDF verification (xelatex) for one language — optional final gate;
+      font path wired (CJKmainfont Hiragino + pdf.fonttype=42).
+- [ ] Apply the same pattern to monthly_free.qmd (separate step).
+
+### Phase Guard
+[ ] Phase 0 — "Initial Quarto template producing a usable PDF" is in
+    scope; bilingual support is a refinement of the existing templates,
+    not new Phase 1+ functionality.
+
+### Done Criteria
+- `monthly_qc.qmd` renders correct JA and EN HTML from one source via
+  `--profile`; compute code exists once; both inspected and clean.
+
+### Result
+(Fill after completion)
+
+---
+
 ## [2026-05-09] Task: Initial repository structure
 
 ### Goal

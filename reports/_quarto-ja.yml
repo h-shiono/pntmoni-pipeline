@@ -1,0 +1,41 @@
+# reports/_quarto-ja.yml — 日本語レンダープロファイル。
+#
+# `quarto render <template>.qmd --profile ja --no-execute-daemon` で起動。
+# 単一スイッチで全レイヤーの言語を切り替える:
+#   - 本文(markdown):   ::: {.content-visible when-profile="ja"}
+#   - 図表キャプション: #| fig-cap: "{{< meta caps.qc.KEY >}}"
+#   - タイトル/副題:    {{< meta title_qc >}} / {{< meta subtitle_qc >}}
+#   - Python 内テキスト: setup セルが QUARTO_PROFILE -> LANG -> STR[LANG]
+# `--no-execute-daemon` は必須: jupyter daemon は最初の render の env を
+# 固定するため、キャッシュされたカーネルが前プロファイルの
+# QUARTO_PROFILE を保持してしまう(CLAS render driver に記録済みの注意点)。
+# 用語は memory/report-ja-glossary.md(ユーザ確定)に従う。
+lang: ja
+
+# テンプレート別の文書タイトル(frontmatter が meta ショートコードで参照)。
+title_qc: "PNT Moni 月次QCレポート"
+subtitle_qc: "GEONET 観測品質 — Free Tier(無料公開版)"
+
+# 図表キャプション。テンプレート別に名前空間を分ける(qc / free)。
+caps:
+  qc:
+    network: "本レポートが対象とする GEONET 電子基準点。"
+    data_avail: "データアベイラビリティ — 1日あたり公称 2,880 エポックのうち観測が記録されたエポックの割合。"
+    visibility: "可視率 — teqc による仰角10°超の Complete obs / Possible obs。"
+    dist_sn_l1l5: "SNR 分布 — L1 C/A と L5(Shiono & Kubo 2025 のコアベースライン)。"
+    dist_sn_l2e5b: "SNR 分布 — L2(コア)と Galileo E5b(参考。絶対評価ベースラインには含まれない)。"
+    dist_mp_l1l2: "マルチパス RMS 分布 — L1/L2 ペア(MP12 = L2 をパートナーとする L1 マルチパス、MP21 = L1 をパートナーとする L2 マルチパス)。Shiono & Kubo 2025 のコアベースライン。"
+    dist_mp_l1l5: "マルチパス RMS 分布 — L1/L5 ペア(MP15 = L5 をパートナーとする L1 マルチパス、MP51 = L1 をパートナーとする L5 マルチパス)。コアベースライン。"
+    dist_mp_e5b: "参考マルチパス RMS 分布 — L1/Galileo E5b ペア(MP17/MP71)。L1/E5b 周波数ペアの係数が大きいため数値スケールも大きい。絶対評価ベースラインには含まれない(E5b は局間ばらつきが大きく、Shiono & Kubo 2025 では評価指標として採用されなかった)。"
+    dist_slips: "基準局・月間のサイクルスリップ(ION とコア MP 組合せのスリップを仰角マスク15°のビンで合算)。論文準拠の定義(Shiono & Kubo 2025 Table 1)。対数ビン。"
+    spatial_sn_l1l5: "基準局・月間の SNR — L1 C/A と L5(コアベースライン)。信号ごとに固有のカラースケール。"
+    spatial_sn_l2e5b: "基準局・月間の SNR — L2(コア)と Galileo E5b(参考。絶対評価ベースラインには含まれない)。信号ごとに固有のカラースケール。"
+    spatial_mp_l1l2: "基準局・月間のマルチパス RMS — L1/L2 標準ペア(MP12 = L2 をパートナーとする L1 マルチパス、MP21 = L1 をパートナーとする L2 マルチパス)。"
+    spatial_mp_l1l5: "基準局・月間のマルチパス RMS — L1/L5 ペア(MP15 = L5 をパートナーとする L1 マルチパス、MP51 = L1 をパートナーとする L5 マルチパス)。MP51 は MP12 より低い傾向 — 近年の L5 信号は GEONET 局でマルチパスが少ない。"
+    spatial_mp_e5b: "参考マルチパス — L1/Galileo E5b ペア(MP17/MP71)。L1/E5b 周波数ペアの係数が大きいため数値スケールも大きい。モニタリング目的で表示。絶対評価ベースラインには含まれない。"
+    spatial_slips: "基準局・日あたりのコアサイクルスリップ(ION + MP12/21/15/51 のスリップ、仰角マスク15°、月内の日次平均)。論文準拠の定義。対数カラースケール。"
+    equip_combo: "ネットワーク全体での受信機×アンテナの組合せ上位10。"
+    sys_events: "対象期間内の GNSS システム通知。"
+    gps_sats: "GPS 衛星コンステレーションの状態。"
+    qzss_sats: "QZSS 衛星コンステレーションの状態。"
+    gal_sats: "Galileo 衛星コンステレーションの状態。"

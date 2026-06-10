@@ -1,6 +1,6 @@
 ---
-title: "PNT Moni Monthly QC Report"
-subtitle: "GEONET Observation Quality — Free Tier"
+title: "{{< meta title_qc >}}"
+subtitle: "{{< meta subtitle_qc >}}"
 date: today
 author: "PNT Moni"
 format:
@@ -64,6 +64,7 @@ jupyter: python3
 #| include: false
 
 import math
+import os
 from pathlib import Path
 
 import numpy as np
@@ -75,6 +76,156 @@ from matplotlib.cm import ScalarMappable
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
 from IPython.display import Markdown
+
+# ---- Language (i18n) -------------------------------------------------
+# Single-switch bilingual rendering: the active Quarto profile drives
+# BOTH the markdown side (content-visible / {{< meta >}}, handled by
+# Quarto) and this Python side. Quarto exports the active profile name
+# as QUARTO_PROFILE; we read it here so matplotlib titles/labels, table
+# headers/rows and any `output: asis` prose match the rendered language.
+#
+# IMPORTANT: reliable ONLY with `quarto render ... --no-execute-daemon`.
+# The jupyter execute-daemon caches the first render's kernel (and its
+# env), so a second render under a different profile would otherwise
+# keep the stale QUARTO_PROFILE. See reports/_quarto-{ja,en}.yml.
+LANG = os.environ.get("QUARTO_PROFILE", "en").split(",")[0].strip().lower()
+if LANG not in ("ja", "en"):
+    LANG = "en"
+
+# String catalog for the Python-emitted text (figure titles, axis
+# labels, legends, table headers/rows, asis prose). Pure-markdown prose
+# is NOT here — it lives inline in the qmd inside `content-visible`
+# blocks. Values with `{...}` fields are `.format()`-ed at the call
+# site. Units (dB-Hz, m, %) stay language-neutral. Keep keys in sync
+# across both languages.
+STR = {
+    "en": {
+        # Version callout (labels only; values are language-neutral)
+        "lbl_methodology_version": "Methodology Version",
+        "lbl_qc_tool": "QC Tool",
+        "lbl_convbin": "convbin",
+        "lbl_stations": "Stations",
+        "lbl_days_covered": "Days covered",
+        # Network figure
+        "fig_network_title": "{n:,} GEONET stations reporting in {period}",
+        # Executive-summary table
+        "tbl_exec_col_metric": "Metric",
+        "exec_data_avail": "National data availability (epoch coverage, daily mean)",
+        "exec_visibility": "National visibility (>10° track completeness, daily mean)",
+        "exec_mp12_median": "L1 C/A multipath — station-month median",
+        "exec_sn1_median": "L1 C/A SNR — station-month median",
+        "exec_stations": "Stations reporting",
+        "exec_days": "Days covered",
+        # Metric display labels passed to the uptime helpers
+        "metric_data_avail": "Data availability",
+        "metric_visibility": "Visibility",
+        # Uptime figure (uptime_pair)
+        "uptime_legend_mean": "monthly mean = {v:.2f} %",
+        "uptime_xlabel_date": "Date",
+        "uptime_title_daily": "Daily national mean",
+        "uptime_xlabel_station": "Station-monthly {label} (%)",
+        "uptime_ylabel_cumshare": "Cumulative share of stations (%)",
+        "uptime_title_dist": "Distribution across stations",
+        "uptime_ylabel_pct": "{label} (%)",
+        # Uptime quantile table (uptime_quantiles)
+        "stat_p05": "5th percentile",
+        "stat_median": "Median",
+        "stat_p95": "95th percentile",
+        "stat_best": "Best station",
+        "stat_worst": "Worst station",
+        "quant_col_stat": "Statistic",
+        "quant_col_value": "Station-monthly {label}",
+        # Histograms (hist_panel) + slip histogram
+        "axis_stations": "Stations",
+        "hist_legend_median": "median = {v:.2f} {unit}",
+        "hist_legend_median_int": "median = {v:.0f}",
+        "slips_xlabel": "Cycle slips per station-day (core: ION + MP12/21/15/51)",
+        # Spatial slip map
+        "spatial_slips_title": "Core cycle slips per station-day (ION + MP12/21/15/51)",
+        # Equipment inventory
+        "equip_top_rec": "Top receiver types",
+        "equip_top_ant": "Top antenna types",
+        "equip_combo_title": "Receiver │ Antenna",
+        "equip_combo_caption": ("Top 10 receiver × antenna combinations cover "
+                                "{share:.1f} % of {n:,} reporting stations; "
+                                "{ncombos} distinct combinations exist in total."),
+        # System-events table + status messages
+        "evt_col_date": "Date",
+        "evt_col_satellite": "Satellite",
+        "evt_col_notice": "Notice",
+        "evt_col_event_type": "Event type",
+        "evt_col_severity": "Severity",
+        "evt_msg_some": ("**{n}** notice(s) detected for {period}, collected from "
+                         "the official NAGU (Galileo), NANU (GPS) and NAQU (QZSS) "
+                         "feeds."),
+        "evt_msg_none": "No NAGU/NANU/NAQU notices fell within {period}.",
+        "evt_msg_missing": ("**Not yet acquired** — run `pntmoni-pipeline acquire "
+                            "satellite-outages` to populate this table."),
+        # Constellation-status messages
+        "cs_msg_missing": ("Constellation-status parquet not yet acquired — run "
+                           "`pntmoni-pipeline acquire constellation`."),
+        "cs_fetched_at": "**Fetched at:** {ts}",
+    },
+    "ja": {
+        "lbl_methodology_version": "方法論バージョン",
+        "lbl_qc_tool": "QC ツール",
+        "lbl_convbin": "convbin",
+        "lbl_stations": "電子基準点数",
+        "lbl_days_covered": "対象日数",
+        "fig_network_title": "{period} に観測した GEONET 電子基準点 {n:,} 局",
+        "tbl_exec_col_metric": "指標",
+        "exec_data_avail": "全国データアベイラビリティ(エポック被覆率・日次平均)",
+        "exec_visibility": "全国可視率(仰角10°超のトラック完全性・日次平均)",
+        "exec_mp12_median": "L1 C/A マルチパス — 基準局・月間の中央値",
+        "exec_sn1_median": "L1 C/A SNR — 基準局・月間の中央値",
+        "exec_stations": "報告電子基準点数",
+        "exec_days": "対象日数",
+        "metric_data_avail": "データアベイラビリティ",
+        "metric_visibility": "可視率",
+        "uptime_legend_mean": "月平均 = {v:.2f} %",
+        "uptime_xlabel_date": "日付",
+        "uptime_title_daily": "全国日次平均",
+        "uptime_xlabel_station": "基準局・月間の{label} (%)",
+        "uptime_ylabel_cumshare": "累積局割合 (%)",
+        "uptime_title_dist": "局間分布",
+        "uptime_ylabel_pct": "{label} (%)",
+        "stat_p05": "5 パーセンタイル",
+        "stat_median": "中央値",
+        "stat_p95": "95 パーセンタイル",
+        "stat_best": "最良局",
+        "stat_worst": "最悪局",
+        "quant_col_stat": "統計量",
+        "quant_col_value": "基準局・月間の{label}",
+        "axis_stations": "局数",
+        "hist_legend_median": "中央値 = {v:.2f} {unit}",
+        "hist_legend_median_int": "中央値 = {v:.0f}",
+        "slips_xlabel": "基準局・日あたりのサイクルスリップ(コア: ION + MP12/21/15/51)",
+        "spatial_slips_title": "基準局・日あたりのコアサイクルスリップ(ION + MP12/21/15/51)",
+        "equip_top_rec": "受信機タイプ上位",
+        "equip_top_ant": "アンテナタイプ上位",
+        "equip_combo_title": "受信機 │ アンテナ",
+        "equip_combo_caption": ("受信機×アンテナの組合せ上位10で、報告のあった "
+                                "{n:,} 局のうち {share:.1f} % を占めます。"
+                                "組合せは全体で {ncombos} 種類存在します。"),
+        "evt_col_date": "日付",
+        "evt_col_satellite": "衛星",
+        "evt_col_notice": "通知",
+        "evt_col_event_type": "イベント種別",
+        "evt_col_severity": "重大度",
+        "evt_msg_some": ("{period} に **{n}** 件の通知を検出しました(公式の "
+                         "NAGU(Galileo)・NANU(GPS)・NAQU(QZSS)フィードより収集)。"),
+        "evt_msg_none": "{period} に該当する NAGU/NANU/NAQU 通知はありませんでした。",
+        "evt_msg_missing": ("**未取得** — このテーブルを生成するには "
+                            "`pntmoni-pipeline acquire satellite-outages` を実行してください。"),
+        "cs_msg_missing": ("コンステレーション状態の parquet が未取得です — "
+                           "`pntmoni-pipeline acquire constellation` を実行してください。"),
+        "cs_fetched_at": "**取得時刻:** {ts}",
+    },
+}
+
+def T(key: str) -> str:
+    """Look up a catalog string for the active language."""
+    return STR[LANG][key]
 
 def md_table(df: pd.DataFrame) -> Markdown:
     """Render ``df`` as a markdown table (clean in both HTML and PDF).
@@ -102,12 +253,32 @@ mpl.rcParams['axes.spines.right'] = False
 mpl.rcParams['axes.grid'] = True
 mpl.rcParams['grid.alpha'] = 0.3
 mpl.rcParams['figure.dpi'] = 100
-mpl.rcParams['font.family'] = "Inter"
+# Font stack with per-glyph fallback (matplotlib ≥3.6): Inter is the brand
+# Latin face; CJK glyphs that Inter lacks fall through to Hiragino (macOS)
+# / Yu Gothic / Noto CJK. This makes the ONE figure-building code path
+# serve both languages — EN renders entirely in Inter, JA picks up Hiragino
+# only for the Japanese axis labels/titles emitted via T(). Without the CJK
+# fallback the Japanese figure text renders as tofu boxes. (Mirror of the
+# monthly_free CJK setup.)
+mpl.rcParams['font.sans-serif'] = [
+    'Inter', 'Hiragino Sans', 'Hiragino Maru Gothic Pro',
+    'Yu Gothic', 'Noto Sans CJK JP', 'DejaVu Sans',
+]
+mpl.rcParams['font.family'] = 'sans-serif'
+mpl.rcParams['axes.unicode_minus'] = False
+# Embed fonts as TrueType (type 42), NOT Type 3: the default Type-3 PDF
+# path ASCII-encodes per-glyph names and raises UnicodeEncodeError on the
+# non-ASCII Hiragino CJK glyph names. Type 42 subsets and addresses by id.
+mpl.rcParams['pdf.fonttype'] = 42
 
 # ---- Reporting period -----------------------------------------------
 YEAR = 2026
 MONTH = 4
-PERIOD_LABEL = pd.Timestamp(YEAR, MONTH, 1).strftime("%B %Y")
+# Period label is language-dependent: "April 2026" vs "2026年4月".
+PERIOD_LABEL = (
+    f"{YEAR}年{MONTH}月" if LANG == "ja"
+    else pd.Timestamp(YEAR, MONTH, 1).strftime("%B %Y")
+)
 METHODOLOGY_VERSION = "1.0.0"
 QC_TOOL = "teqc"
 QC_VERSION = "2019Feb25"
@@ -389,13 +560,14 @@ station_monthly["_y_aea"] = _hxy[:, 1]
 ```
 
 ::: {.callout-note collapse="true"}
-**Methodology Version:** `{python} METHODOLOGY_VERSION` &nbsp;·&nbsp;
-**QC Tool:** `{python} f"{QC_TOOL} {QC_VERSION}"` &nbsp;·&nbsp;
-**convbin:** `{python} CONVBIN_VERSION` &nbsp;·&nbsp;
-**Stations:** `{python} f"{N_STATIONS_REPORTED:,}"` &nbsp;·&nbsp;
-**Days covered:** `{python} N_DAILY_FILES`
+**`{python} T('lbl_methodology_version')`:** `{python} METHODOLOGY_VERSION` &nbsp;·&nbsp;
+**`{python} T('lbl_qc_tool')`:** `{python} f"{QC_TOOL} {QC_VERSION}"` &nbsp;·&nbsp;
+**`{python} T('lbl_convbin')`:** `{python} CONVBIN_VERSION` &nbsp;·&nbsp;
+**`{python} T('lbl_stations')`:** `{python} f"{N_STATIONS_REPORTED:,}"` &nbsp;·&nbsp;
+**`{python} T('lbl_days_covered')`:** `{python} N_DAILY_FILES`
 :::
 
+::: {.content-visible when-profile="en"}
 # Revision History
 
 | Version | Date | Notes |
@@ -423,8 +595,38 @@ The report is intentionally limited in scope. It does **not** include:
 The data and methods used to produce this report are openly
 documented (see [§Methodology](#methodology)) and reproducible from
 publicly available GEONET inputs.
+:::
 
-# Methodology
+::: {.content-visible when-profile="ja"}
+# 改訂履歴
+
+| バージョン | 日付 | 内容 |
+|---|---|---|
+| 1.0 | `{python} pd.Timestamp.today().strftime('%Y-%m-%d')` | 初版。 |
+
+# はじめに
+
+本レポートは、国土地理院(GSI)が運用する GEONET(GNSS 連続観測網)
+電子基準点網の **観測品質** の状態を、`{python} PERIOD_LABEL` について
+まとめたものです。PNT Moni モニタリングサービスの **Free tier 提供物**
+であり、GNSS 補強サービスの事業者・研究者・利用者が、基盤となる観測
+インフラの稼働状況を把握できるよう、全国の集約的な視点を提供します。
+
+本レポートは対象範囲を意図的に限定しています。以下は **含みません**:
+
+- 電子基準点単位の詳細分析や電子基準点名リスト(Pro tier)。
+- 測位領域の精度や TTFF 結果 — これらは完全版の月次レポートに掲載
+  されます。
+- インテグリティ指標、電離層・対流圏補正の診断、エンジン間比較
+  (Phase 1 以降)。
+
+本レポートの生成に用いたデータと手法は公開文書化されており
+([§評価手法](#methodology) を参照)、公開されている GEONET 入力から
+再現可能です。
+:::
+
+::: {.content-visible when-profile="en"}
+# Methodology {#methodology}
 
 ## Data sources
 
@@ -455,7 +657,7 @@ teqc so that L1C/A-broadcasting QZS satellites are correctly QC'd.
 QZS-1R (currently broadcasting L1C/B) remains correctly excluded
 from L1C/A-based QC.
 
-## Metric definitions
+## Metric definitions {#metric-definitions}
 
 The QC framework follows the absolute-evaluation methodology
 established in **Shiono & Kubo (2025)** "Comprehensive Performance
@@ -511,25 +713,121 @@ obs-count weighted across the kept bins; slip totals are summed.
 This matches both the methodology of Shiono & Kubo (2025) and the
 elmask used by the positioning engines (CLASLIB, RTKLIB), so the
 QC figures correspond to the bins the engines actually use.
+:::
 
+::: {.content-visible when-profile="ja"}
+# 評価手法 {#methodology}
+
+## データソース
+
+- **GEONET RINEX 3.02** の観測ファイルおよび放送暦ファイル。GSI の
+  アーカイブから [Public Data License 1.0](https://www.gsi.go.jp/kibanjouhou/kibanjouhou60017.html)
+  のもとで取得。`{python} PERIOD_LABEL` に稼働していた連続観測中の
+  GEONET 電子基準点 `{python} f"{N_STATIONS_REPORTED:,}"` 局すべてを
+  対象とします。
+- 30 秒サンプリング、24 時間の日次ファイル。
+
+## QC パイプライン
+
+```
+RINEX 3 (GEONET)
+  ↓ convbin (RTKLIB 2.4.2)            v3 → v2.11 conversion
+  ↓ teqc 2019Feb25                    +qc -R +L2C_L2 +L5
+  → .{yy}S summary per station/day
+  ↓ pntmoni-pipeline qc summarize     parse + wide Parquet
+  → data/processed/qc_summary/...     1 row × 639 cols per station-day
+```
+
+QZSS の LNAV 放送は、[IS-QZSS-PNT-006 §4.1.2.3(4)](https://qzss.go.jp/en/technical/download/pdf/ps-is-qzss/is-qzss-pnt-006.pdf)
+で定義された 2024 年以降のヘルスフラグ符号化を使用します:L1C/A を
+放送する全衛星で L1C/B ヘルスビット(LSB)が立ちます。本パイプラインは
+QNAV を teqc に渡す前にこのビットをマスクし、L1C/A 放送中の QZS 衛星を
+正しく QC します。QZS-1R(現在 L1C/B を放送)は L1C/A ベースの QC から
+正しく除外されます。
+
+## 指標定義 {#metric-definitions}
+
+QC のフレームワークは、**Shiono & Kubo (2025)** "Comprehensive
+Performance Evaluation of QZSS CLAS Over Four Years (2021–2024)"
+(ION GNSS+ 2025)で確立し、**Shiono & Kubo (2026)** "Navigating the
+Storm: A Five-Year Diagnostic of QZSS CLAS Through Solar Cycle 25"
+(NAVIGATION, [doi:10.33012/navi.762](https://doi.org/10.33012/navi.762))
+で拡張した絶対評価手法に従います。これらの論文では 4 つの主要指標
+— **可視率・SNR・マルチパス・サイクルスリップ** — を、仰角15°超で
+観測された衛星について 5°仰角ビンで評価します。
+
+### コア指標(絶対評価ベースライン)
+
+論文の Table 1 の局選定に用いられた 4 ファミリであり、計画中の
+**絶対局クオリフィケーション** の **基礎** です
+(see [§5.6](#absolute-station-qualification-coming-soon))。
+
+| 指標 | 記号 | 説明 |
+|---|---|---|
+| データアベイラビリティ | `data_availability` | `epochs_w_obs / expected_epochs` — 1日の公称 2,880 個の 30 秒エポックのうち、局が少なくとも 1 つの観測を記録したエポックの割合。局が稼働・記録していたかを測ります。 |
+| 可視率 | `visibility` | `Complete obs >10° / Possible obs >10°` — teqc の仰角10°マスク超で本来得られるべき衛星エポックトラックのうち、実際に取得された割合。局が稼働していたときのトラック完全性を測ります。値が低い場合、毎エポック記録している局でもアンテナ遮蔽・RF 干渉・受信機の問題を示唆します。 |
+| L1 C/A SNR | `SN1` | L1 C/A の平均 SNR(dB-Hz)。 |
+| L2 SNR | `SN2` | L2(P コードまたは L2C)の平均 SNR(dB-Hz)。 |
+| L5 SNR | `SN5` | L5 の平均 SNR(dB-Hz)。 |
+| マルチパス(L1、L2 パートナー) | `MP12` | L2 をパートナーとする L1 マルチパス組合せの RMS(m)。 |
+| マルチパス(L2、L1 パートナー) | `MP21` | L1 をパートナーとする L2 マルチパス組合せの RMS(m)。 |
+| マルチパス(L1、L5 パートナー) | `MP15` | L5 をパートナーとする L1 マルチパス組合せの RMS(m)。 |
+| マルチパス(L5、L1 パートナー) | `MP51` | L1 をパートナーとする L5 マルチパス組合せの RMS(m)。 |
+| サイクルスリップ(コア) | `cycle_slips_core` | teqc が報告する ION スリップと 4 つのコア MP 組合せスリップ(`MP12 + MP21 + MP15 + MP51`)の合計。論文準拠の定義。 |
+
+### 参考・補助モニタリング(Galileo E5b)
+
+これらは **参考情報** として報告します。L1/E5b 周波数ペアは
+L1/L2/L5 ペアよりも局間ばらつきが大きく、Shiono & Kubo (2025) では
+評価指標として採用されなかったため、絶対評価ベースラインには
+**含みません**。
+
+| 指標 | 記号 | 説明 |
+|---|---|---|
+| Galileo E5b SNR | `SN7` | E5b(1207.140 MHz)の平均 SNR(dB-Hz)。 |
+| マルチパス(L1、E5b パートナー) | `MP17` | E5b をパートナーとする L1 マルチパス組合せの RMS(m)。マルチパスの式における `2/(α-1)` 係数が L1/E5b 周波数ペアで大きいため、数値も大きくなります。 |
+| マルチパス(E5b、L1 パートナー) | `MP71` | L1 をパートナーとする E5b マルチパス組合せの RMS(m)。 |
+| サイクルスリップ(拡張) | `cycle_slips_extended` | `cycle_slips_core` に `MP17` と `MP71` のスリップを加えたもの。Galileo E5b を追尾する受信機の評価に有用ですが、クオリフィケーションには使用しません。 |
+
+### 集計
+
+マルチパス・SNR・スリップの値はすべて teqc の **5°仰角ビン** から、
+**仰角マスク `{python} ELMASK_DEG`°** を適用して算出します — 下限が
+`{python} ELMASK_DEG`° 以上のビンのみを含めます(19 ビン中 15 ビン)。
+マルチパス・SNR の集計値は採用ビン間で観測数重み付け平均、スリップは
+合算です。これは Shiono & Kubo (2025) の手法と、測位エンジン
+(CLASLIB、RTKLIB)が用いる仰角マスクの双方に一致するため、QC の数値は
+エンジンが実際に使用するビンに対応します。
+:::
+
+::: {.content-visible when-profile="en"}
 ## Evaluation Network
+:::
+::: {.content-visible when-profile="ja"}
+## 評価ネットワーク
+:::
 
 ```{python}
 #| label: fig-network
-#| fig-cap: "GEONET reference stations covered in this report."
+#| fig-cap: "{{< meta caps.qc.network >}}"
 fig = plt.figure(figsize=(8, 7))
 ax = fig.add_subplot(1, 1, 1, projection=JAPAN_PROJECTION)
 japan_axes(ax)
 ax.scatter(station_monthly["lon"], station_monthly["lat"],
            s=5, c=COLOR_PRIMARY, alpha=0.7, edgecolors="none",
            transform=ccrs.PlateCarree(), zorder=3)
-ax.set_title(f"{N_STATIONS_REPORTED:,} GEONET stations reporting in {PERIOD_LABEL}",
+ax.set_title(T("fig_network_title").format(n=N_STATIONS_REPORTED, period=PERIOD_LABEL),
              loc="left", fontweight=600, fontsize=11)
 plt.tight_layout()
 plt.show()
 ```
 
+::: {.content-visible when-profile="en"}
 # Executive Summary
+:::
+::: {.content-visible when-profile="ja"}
+# エグゼクティブサマリ
+:::
 
 ```{python}
 #| label: tbl-executive
@@ -540,27 +838,45 @@ def fmt_m(x):   return f"{x:.3f} m"
 def fmt_dbhz(x):return f"{x:.1f} dB-Hz"
 
 summary = pd.DataFrame([
-    ["National data availability (epoch coverage, daily mean)",   fmt_pct(NATIONAL_DATA_AVAIL)],
-    ["National visibility (>10° track completeness, daily mean)", fmt_pct(NATIONAL_VISIBILITY)],
-    ["L1 C/A multipath — station-month median",                   fmt_m(MP12_MEDIAN)],
-    ["L1 C/A SNR — station-month median",                         fmt_dbhz(SN1_MEDIAN)],
-    ["Stations reporting",                                        f"{N_STATIONS_REPORTED:,}"],
-    ["Days covered",                                              f"{N_DAILY_FILES}"],
-], columns=["Metric", PERIOD_LABEL])
+    [T("exec_data_avail"),  fmt_pct(NATIONAL_DATA_AVAIL)],
+    [T("exec_visibility"),  fmt_pct(NATIONAL_VISIBILITY)],
+    [T("exec_mp12_median"), fmt_m(MP12_MEDIAN)],
+    [T("exec_sn1_median"),  fmt_dbhz(SN1_MEDIAN)],
+    [T("exec_stations"),    f"{N_STATIONS_REPORTED:,}"],
+    [T("exec_days"),        f"{N_DAILY_FILES}"],
+], columns=[T("tbl_exec_col_metric"), PERIOD_LABEL])
 md_table(summary)
 ```
 
 ::: {.callout-tip}
+::: {.content-visible when-profile="en"}
 **Bottom line.** The GEONET network operated at high observation
 fidelity throughout `{python} PERIOD_LABEL`, with the headline
 metrics tracking expectations for a healthy reference network. See
 [§National Overview](#national-overview-observation-quality) for the
 distributions and trends behind these summary numbers.
 :::
+::: {.content-visible when-profile="ja"}
+**要点。** GEONET 網は `{python} PERIOD_LABEL` を通じて高い観測忠実度で
+稼働し、主要指標は健全な基準局網に期待される水準で推移しました。これら
+サマリ数値の背後にある分布と傾向は [§全国概況](#national-overview-observation-quality)
+を参照してください。
+:::
+:::
 
+::: {.content-visible when-profile="en"}
 # National Overview — Observation Quality {#national-overview-observation-quality}
+:::
+::: {.content-visible when-profile="ja"}
+# 全国概況 — 観測品質 {#national-overview-observation-quality}
+:::
 
+::: {.content-visible when-profile="en"}
 ## Data Availability & Visibility
+:::
+::: {.content-visible when-profile="ja"}
+## データアベイラビリティと可視率
+:::
 
 ```{python}
 #| label: helpers-uptime
@@ -574,21 +890,21 @@ def uptime_pair(col_daily: str, col_station: str, label: str, ylim_low: int):
            color=COLOR_PRIMARY, width=0.8, edgecolor="white", linewidth=0.4)
     mean_pct = daily_national[col_daily].mean() * 100
     ax.axhline(mean_pct, color=COLOR_DANGER, linestyle="--", linewidth=1,
-               label=f"monthly mean = {mean_pct:.2f} %")
-    ax.set_ylabel(f"{label} (%)")
-    ax.set_xlabel("Date")
+               label=T("uptime_legend_mean").format(v=mean_pct))
+    ax.set_ylabel(T("uptime_ylabel_pct").format(label=label))
+    ax.set_xlabel(T("uptime_xlabel_date"))
     ax.set_ylim(ylim_low, 100)
     ax.legend(loc="lower right", framealpha=0.9, fontsize=9)
-    ax.set_title("Daily national mean", loc="left", fontweight=600)
+    ax.set_title(T("uptime_title_daily"), loc="left", fontweight=600)
     fig.autofmt_xdate()
     # right: ECDF of station-monthly values
     ax = axes[1]
     v = np.sort(station_monthly[col_station].dropna() * 100)
     y = np.arange(1, len(v) + 1) / len(v) * 100
     ax.plot(v, y, color=COLOR_PRIMARY, linewidth=2)
-    ax.set_xlabel(f"Station-monthly {label.lower()} (%)")
-    ax.set_ylabel("Cumulative share of stations (%)")
-    ax.set_title("Distribution across stations", loc="left", fontweight=600)
+    ax.set_xlabel(T("uptime_xlabel_station").format(label=label.lower()))
+    ax.set_ylabel(T("uptime_ylabel_cumshare"))
+    ax.set_title(T("uptime_title_dist"), loc="left", fontweight=600)
     ax.set_xlim(ylim_low, 101)
     plt.tight_layout()
     plt.show()
@@ -598,47 +914,68 @@ def uptime_quantiles(col_station: str, label: str):
     s = station_monthly[col_station].dropna()
     q = s.quantile([0.05, 0.50, 0.95]).to_dict()
     df = pd.DataFrame([
-        ["5th percentile",  fmt_pct(q[0.05])],
-        ["Median",          fmt_pct(q[0.50])],
-        ["95th percentile", fmt_pct(q[0.95])],
-        ["Best station",    fmt_pct(s.max())],
-        ["Worst station",   fmt_pct(s.min())],
-    ], columns=["Statistic", f"Station-monthly {label.lower()}"])
+        [T("stat_p05"),    fmt_pct(q[0.05])],
+        [T("stat_median"), fmt_pct(q[0.50])],
+        [T("stat_p95"),    fmt_pct(q[0.95])],
+        [T("stat_best"),   fmt_pct(s.max())],
+        [T("stat_worst"),  fmt_pct(s.min())],
+    ], columns=[T("quant_col_stat"),
+                T("quant_col_value").format(label=label.lower())])
     return md_table(df)
 ```
 
+::: {.content-visible when-profile="en"}
 ### Data Availability
 
 Epoch-level coverage: did the station log data every 30 seconds?
+:::
+::: {.content-visible when-profile="ja"}
+### データアベイラビリティ
+
+エポックレベルの被覆率: 各局は 30 秒ごとにデータを記録していたか?
+:::
 
 ```{python}
 #| label: fig-data-availability
-#| fig-cap: "Data availability — fraction of the 2,880 nominal daily epochs with logged observations."
-uptime_pair("data_availability_mean", "data_availability", "Data availability", 80)
+#| fig-cap: "{{< meta caps.qc.data_avail >}}"
+uptime_pair("data_availability_mean", "data_availability", T("metric_data_avail"), 80)
 ```
 
 ```{python}
 #| label: tbl-data-availability-quantiles
-uptime_quantiles("data_availability", "data availability")
+uptime_quantiles("data_availability", T("metric_data_avail"))
 ```
 
+::: {.content-visible when-profile="en"}
 ### Visibility (可視率)
 
 Sat-track completeness above 10° elevation: when the station was up,
 did it actually track the satellites it should have seen?
+:::
+::: {.content-visible when-profile="ja"}
+### 可視率
+
+仰角10°超の衛星トラック完全性: 局が稼働していたとき、本来見えるはず
+の衛星を実際に追尾できていたか?
+:::
 
 ```{python}
 #| label: fig-visibility
-#| fig-cap: "Visibility — Complete obs / Possible obs above 10° elevation, per teqc."
-uptime_pair("visibility_mean", "visibility", "Visibility", 50)
+#| fig-cap: "{{< meta caps.qc.visibility >}}"
+uptime_pair("visibility_mean", "visibility", T("metric_visibility"), 50)
 ```
 
 ```{python}
 #| label: tbl-visibility-quantiles
-uptime_quantiles("visibility", "visibility")
+uptime_quantiles("visibility", T("metric_visibility"))
 ```
 
+::: {.content-visible when-profile="en"}
 ## Distribution of Metrics
+:::
+::: {.content-visible when-profile="ja"}
+## 指標の分布
+:::
 
 ```{python}
 #| label: helpers-distribution
@@ -651,17 +988,23 @@ def hist_panel(ax, col, color):
     ax.hist(s, bins=40, color=color, alpha=0.75,
             edgecolor="white", linewidth=0.4)
     ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
-               linewidth=1, label=f"median = {s.median():.2f} {unit}")
+               linewidth=1,
+               label=T("hist_legend_median").format(v=s.median(), unit=unit))
     ax.set_xlabel(f"{METRIC_LABELS[col]} ({unit})")
-    ax.set_ylabel("Stations")
+    ax.set_ylabel(T("axis_stations"))
     ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
 ```
 
+::: {.content-visible when-profile="en"}
 ### Signal-to-noise ratio
+:::
+::: {.content-visible when-profile="ja"}
+### 信号対雑音比(SNR)
+:::
 
 ```{python}
 #| label: fig-distributions-sn-l1l5
-#| fig-cap: "SNR distributions — L1 C/A and L5 (Shiono & Kubo 2025 core baseline)."
+#| fig-cap: "{{< meta caps.qc.dist_sn_l1l5 >}}"
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, m in zip(axes, ["SN1", "SN5"]):
     hist_panel(ax, m, COLOR_SECONDARY)
@@ -671,7 +1014,7 @@ plt.show()
 
 ```{python}
 #| label: fig-distributions-sn-l2e5b
-#| fig-cap: "SNR distributions — L2 (core) and Galileo E5b (reference; not part of the absolute-qualification baseline)."
+#| fig-cap: "{{< meta caps.qc.dist_sn_l2e5b >}}"
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, m, color in zip(axes, ["SN2", "SN7"], [COLOR_SECONDARY, COLOR_NEUTRAL]):
     hist_panel(ax, m, color)
@@ -679,11 +1022,16 @@ plt.tight_layout()
 plt.show()
 ```
 
+::: {.content-visible when-profile="en"}
 ### Multipath
+:::
+::: {.content-visible when-profile="ja"}
+### マルチパス
+:::
 
 ```{python}
 #| label: fig-distributions-mp-l1l2
-#| fig-cap: "Multipath RMS distributions — L1/L2 pair (MP12 = L1 multipath using L2 partner; MP21 = L2 multipath using L1 partner). Shiono & Kubo 2025 core baseline."
+#| fig-cap: "{{< meta caps.qc.dist_mp_l1l2 >}}"
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, m in zip(axes, ["MP12", "MP21"]):
     hist_panel(ax, m, COLOR_PRIMARY)
@@ -693,7 +1041,7 @@ plt.show()
 
 ```{python}
 #| label: fig-distributions-mp-l1l5
-#| fig-cap: "Multipath RMS distributions — L1/L5 pair (MP15 = L1 multipath using L5 partner; MP51 = L5 multipath using L1 partner). Core baseline."
+#| fig-cap: "{{< meta caps.qc.dist_mp_l1l5 >}}"
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, m in zip(axes, ["MP15", "MP51"]):
     hist_panel(ax, m, COLOR_PRIMARY)
@@ -703,7 +1051,7 @@ plt.show()
 
 ```{python}
 #| label: fig-distributions-mp-e5b
-#| fig-cap: "Reference multipath RMS distributions — L1/Galileo E5b pair (MP17/MP71). Larger numerical scale due to the L1/E5b frequency-pair coefficient. Not part of the absolute-qualification baseline (E5b exhibited too much site-to-site variance to function as a qualification metric in Shiono & Kubo 2025)."
+#| fig-cap: "{{< meta caps.qc.dist_mp_e5b >}}"
 fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 for ax, m in zip(axes, ["MP17", "MP71"]):
     hist_panel(ax, m, COLOR_NEUTRAL)
@@ -711,11 +1059,16 @@ plt.tight_layout()
 plt.show()
 ```
 
+::: {.content-visible when-profile="en"}
 ### Cycle slips
+:::
+::: {.content-visible when-profile="ja"}
+### サイクルスリップ
+:::
 
 ```{python}
 #| label: fig-distributions-slips
-#| fig-cap: "Station-monthly cycle slips (ION + core MP-combination slips, summed across the elmask-15 elevation bins). Paper-aligned definition (Shiono & Kubo 2025 Table 1). Logarithmic binning."
+#| fig-cap: "{{< meta caps.qc.dist_slips >}}"
 fig, ax = plt.subplots(figsize=(8, 4))
 s = station_monthly["cycle_slips_core"].dropna()
 s_pos = s[s > 0]
@@ -723,15 +1076,16 @@ bins = np.logspace(np.log10(max(s_pos.min(), 1)), np.log10(s_pos.max()), 40)
 ax.hist(s_pos, bins=bins, color=COLOR_DANGER, alpha=0.75,
         edgecolor="white", linewidth=0.4)
 ax.set_xscale("log")
-ax.set_xlabel("Cycle slips per station-day (core: ION + MP12/21/15/51)")
-ax.set_ylabel("Stations")
+ax.set_xlabel(T("slips_xlabel"))
+ax.set_ylabel(T("axis_stations"))
 ax.axvline(s.median(), color=COLOR_SECONDARY, linestyle="--",
-           linewidth=1, label=f"median = {s.median():.0f}")
+           linewidth=1, label=T("hist_legend_median_int").format(v=s.median()))
 ax.legend(loc="upper right", framealpha=0.9, fontsize=9)
 plt.tight_layout()
 plt.show()
 ```
 
+::: {.content-visible when-profile="en"}
 ## Spatial Distribution
 
 The maps below aggregate the `{python} f"{N_STATIONS_REPORTED:,}"`
@@ -744,6 +1098,18 @@ between months. Cells backed by fewer than `{python} MIN_STATIONS_PER_CELL`
 reporting stations are left blank — both because a single-station cell
 is not anonymous (GEONET coordinates are public) and because its median
 would be statistically thin.
+:::
+::: {.content-visible when-profile="ja"}
+## 空間分布
+
+以下の地図は、`{python} f"{N_STATIONS_REPORTED:,}"` 局の基準局・月間値を
+全国の六角形グリッドに集約したものです。各六角形は **対辺間 約60 km** で、
+セル内に含まれる局の基準局・月間値の **中央値** で着色しています。グリッドは
+Albers 正積図法上に描画され、全セルが同一の地表面積を覆うため、全国間・月間で
+色を直接比較できます。報告局数が `{python} MIN_STATIONS_PER_CELL` 局未満の
+セルは空白とします — 単独局セルは匿名性を欠く(GEONET 座標は公開情報)うえ、
+中央値が統計的に薄くなるためです。
+:::
 
 ```{python}
 #| label: helpers-spatial
@@ -795,7 +1161,12 @@ def map_grid(metrics, n_rows, n_cols, fig_size, cmap, norm_factory, *, title_fn=
     plt.close(fig)
 ```
 
+::: {.content-visible when-profile="en"}
 ### Signal-to-noise ratio
+:::
+::: {.content-visible when-profile="ja"}
+### 信号対雑音比(SNR)
+:::
 
 ```{python}
 #| label: sn-core-setup
@@ -808,21 +1179,26 @@ def sn_norm(m):
 
 ```{python}
 #| label: fig-spatial-sn-l1l5
-#| fig-cap: "Station-monthly SNR — L1 C/A and L5 (core baseline). Signal-specific colour scales."
+#| fig-cap: "{{< meta caps.qc.spatial_sn_l1l5 >}}"
 map_grid(["SN1", "SN5"], 1, 2, (13, 6), sn_cmap, sn_norm)
 ```
 
 ```{python}
 #| label: fig-spatial-sn-l2e5b
-#| fig-cap: "Station-monthly SNR — L2 (core) and Galileo E5b (reference; not part of the absolute-qualification baseline). Signal-specific colour scales."
+#| fig-cap: "{{< meta caps.qc.spatial_sn_l2e5b >}}"
 map_grid(["SN2", "SN7"], 1, 2, (13, 6), sn_cmap, sn_norm)
 ```
 
+::: {.content-visible when-profile="en"}
 ### Multipath
+:::
+::: {.content-visible when-profile="ja"}
+### マルチパス
+:::
 
 ```{python}
 #| label: fig-spatial-mp-l1l2
-#| fig-cap: "Station-monthly multipath RMS — L1/L2 standard pair (MP12 = L1 multipath using L2 partner; MP21 = L2 multipath using L1 partner)."
+#| fig-cap: "{{< meta caps.qc.spatial_mp_l1l2 >}}"
 def mp_norm(m):
     vmin, vmax = METRIC_RANGES[m]
     return Normalize(vmin=vmin, vmax=vmax)
@@ -831,21 +1207,26 @@ map_grid(["MP12", "MP21"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
 
 ```{python}
 #| label: fig-spatial-mp-l1l5
-#| fig-cap: "Station-monthly multipath RMS — L1/L5 pair (MP15 = L1 multipath using L5 partner; MP51 = L5 multipath using L1 partner). MP51 typically lower than MP12 — modern L5 signals see less multipath at GEONET sites."
+#| fig-cap: "{{< meta caps.qc.spatial_mp_l1l5 >}}"
 map_grid(["MP15", "MP51"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
 ```
 
 ```{python}
 #| label: fig-spatial-mp-e5b
-#| fig-cap: "Reference multipath — L1/Galileo E5b pair (MP17/MP71). Larger numerical scale due to the L1/E5b frequency-pair coefficient. Shown for monitoring; not part of the absolute-qualification baseline."
+#| fig-cap: "{{< meta caps.qc.spatial_mp_e5b >}}"
 map_grid(["MP17", "MP71"], 1, 2, (13, 6), CMAP_PERFORMANCE, mp_norm)
 ```
 
+::: {.content-visible when-profile="en"}
 ### Cycle slips
+:::
+::: {.content-visible when-profile="ja"}
+### サイクルスリップ
+:::
 
 ```{python}
 #| label: fig-spatial-slips
-#| fig-cap: "Core cycle slips per station-day (ION + MP12/21/15/51 slips, elmask-15, daily mean over month). Paper-aligned definition. Logarithmic colour scale."
+#| fig-cap: "{{< meta caps.qc.spatial_slips >}}"
 fig = plt.figure(figsize=(8, 7))
 ax = fig.add_subplot(1, 1, 1, projection=JAPAN_HEX_PROJECTION)
 japan_axes(ax)
@@ -860,7 +1241,7 @@ ax.hexbin(_cs["_x_aea"].to_numpy(), _cs["_y_aea"].to_numpy(),
           reduce_C_function=np.median, gridsize=50,
           cmap=CMAP_PERFORMANCE, norm=norm, mincnt=MIN_STATIONS_PER_CELL,
           edgecolors="white", linewidths=0.3, alpha=0.5, zorder=3)
-ax.set_title("Core cycle slips per station-day (ION + MP12/21/15/51)",
+ax.set_title(T("spatial_slips_title"),
              loc="left", fontweight=600, fontsize=11)
 cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=CMAP_PERFORMANCE),
                     ax=ax, fraction=0.04, pad=0.04, shrink=0.85)
@@ -870,32 +1251,43 @@ plt.show()
 ```
 
 ::: {.callout-note}
+::: {.content-visible when-profile="en"}
 Per free-tier scope, only the hex-aggregated (per-cell median) values
 are shown — individual station identifiers and per-station values are
 reserved for the Pro-tier report. Color scales are fixed per signal
 (see [§Methodology](#metric-definitions)) so successive months can be
 compared at a glance.
 :::
+::: {.content-visible when-profile="ja"}
+Free tier の範囲として、六角形集約(セル中央値)の値のみを表示します —
+個々の局識別子や局単位の値は Pro tier レポートで提供します。カラースケールは
+信号ごとに固定(see [§評価手法](#metric-definitions))のため、月をまたいで
+一目で比較できます。
+:::
+:::
 
+::: {.content-visible when-profile="en"}
 ## Receiver / Antenna Inventory
+:::
+::: {.content-visible when-profile="ja"}
+## 受信機・アンテナ構成
+:::
 
 ```{python}
 #| label: fig-equipment
 top_rec = (station_monthly["rec_type"].value_counts().head(8)
-                                       .rename_axis("Receiver type")
-                                       .reset_index(name="Stations"))
+                                       .rename_axis("rec").reset_index(name="n"))
 top_ant = (station_monthly["ant_type"].value_counts().head(8)
-                                       .rename_axis("Antenna type")
-                                       .reset_index(name="Stations"))
+                                       .rename_axis("ant").reset_index(name="n"))
 
 fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
 for ax, (df, title, color) in zip(
     axes,
-    [(top_rec, "Top receiver types",   COLOR_PRIMARY),
-     (top_ant, "Top antenna types",    COLOR_SECONDARY)],
+    [(top_rec, T("equip_top_rec"), COLOR_PRIMARY),
+     (top_ant, T("equip_top_ant"), COLOR_SECONDARY)],
 ):
     ax.barh(df.iloc[::-1, 0], df.iloc[::-1, 1], color=color)
-    ax.set_xlabel("Stations")
+    ax.set_xlabel(T("axis_stations"))
     ax.set_title(title, loc="left", fontweight=600)
     ax.grid(True, alpha=0.3, axis="x")
 plt.tight_layout()
@@ -904,7 +1296,7 @@ plt.show()
 
 ```{python}
 #| label: fig-equipment-combo
-#| fig-cap: "Top 10 receiver × antenna combinations across the network."
+#| fig-cap: "{{< meta caps.qc.equip_combo >}}"
 combo = (station_monthly.assign(
             combination=lambda d: d["rec_type"].str.strip()
                 + " │ " + d["ant_type"].str.strip())
@@ -915,26 +1307,39 @@ combo_share = combo.sum() / N_STATIONS_REPORTED * 100
 
 fig, ax = plt.subplots(figsize=(11, 5.5))
 ax.barh(combo.index[::-1], combo.values[::-1], color=COLOR_NEUTRAL)
-ax.set_xlabel("Stations")
-ax.set_title("Receiver │ Antenna", loc="left", fontweight=600)
+ax.set_xlabel(T("axis_stations"))
+ax.set_title(T("equip_combo_title"), loc="left", fontweight=600)
 ax.grid(True, alpha=0.3, axis="x")
 plt.tight_layout()
 plt.show()
 ```
 
-`{python} f"Top 10 receiver × antenna combinations cover {combo_share:.1f} % of {N_STATIONS_REPORTED:,} reporting stations; {n_combos} distinct combinations exist in total."`{=html}
+`{python} T("equip_combo_caption").format(share=combo_share, n=N_STATIONS_REPORTED, ncombos=n_combos)`
 
 ::: {.callout-note}
+::: {.content-visible when-profile="en"}
 **Equipment changes vs. previous month** are tracked via aggregated
 counts only (e.g. *"N stations changed receiver, M stations changed
 antenna"*); individual station identities are reserved for the
 Pro-tier report. Month-over-month deltas will appear once a baseline
 month is established.
 :::
+::: {.content-visible when-profile="ja"}
+**前月比の機材変更** は集約カウントのみで把握します(例: *「N 局が受信機を
+変更、M 局がアンテナを変更」*)。個々の局の同定は Pro tier レポートで提供
+します。前月差はベースライン月が確立し次第表示します。
+:::
+:::
 
+::: {.content-visible when-profile="en"}
 ## Absolute Station Qualification {#absolute-station-qualification-coming-soon}
+:::
+::: {.content-visible when-profile="ja"}
+## 絶対局クオリフィケーション {#absolute-station-qualification-coming-soon}
+:::
 
 ::: {.callout-note}
+::: {.content-visible when-profile="en"}
 **Coming Soon.** Absolute station qualification — i.e. classifying
 each GEONET station as passing or failing the four core QC criteria
 defined in Shiono & Kubo (2025) — will appear here once the
@@ -969,7 +1374,36 @@ The output of this section will be a national pass-rate (e.g.
 **aggregate counts only** — individual station names are reserved
 for the Pro-tier report.
 :::
+::: {.content-visible when-profile="ja"}
+**Coming Soon。** 絶対局クオリフィケーション — すなわち各 GEONET 局を
+Shiono & Kubo (2025) で定義された 4 つのコア QC 基準に対して合否判定
+する処理 — は、移動窓インフラ(**日次粒度の 3 ヶ月ローリング窓**、
+クオリフィケーション周期あたり局ごとに n ≈ 91 の日次値)が整い次第ここに
+掲載します。クオリフィケーション基準は、3 ヶ月ローリング窓における日次
+指標の **99.73 パーセンタイル**(3σ)で、対象は以下の各項目です:
 
+1. **可視率** — `Complete obs / Possible obs > 10°`
+2. **SNR** — L1・L2・L5 の平均 SNR(`SN1`、`SN2`、`SN5`)
+3. **マルチパス** — `MP12`、`MP21`、`MP15`、`MP51` の RMS
+4. **サイクルスリップ** — `cycle_slips_core`(ION + MP12/21/15/51 スリップ)
+
+日次×3 ヶ月ローリング窓は、公開済みの Shiono & Kubo (2025) の週次×
+ローリング年手法からの意図的な運用上の逸脱であり、運用上の即時性
+(直近3ヶ月の報告周期との整合)、環境適応、統計的頑健性の向上
+(n ≈ 91 対 53)のために採用しています。
+
+原著に従い、**Galileo E5b ファミリ(`SN7`、`MP17`、`MP71`)は意図的に
+除外** します:4 年ベースライン(2021–2024)の時点で L1/E5b 値は
+L1/L2/L5 ペアよりも局間ばらつきが大きく、合否しきい値として信頼できない
+ためです。これらは **参考・補助モニタリング** としてレポートに残します。
+
+本節の出力は全国の合格率(例: *「1,298 局中 1,055 局が 4 つのコア基準を
+すべて満たした」*)で、**集約カウントのみ** です — 個々の局名は Pro tier
+レポートで提供します。
+:::
+:::
+
+::: {.content-visible when-profile="en"}
 # Appendix
 
 ## GNSS System Events: NAGU / NANU / NAQU
@@ -979,10 +1413,21 @@ Notices issued against GNSS constellation operations during
 observation anomalies and signal availability. Sourced from the
 official **NAGU** (Galileo, EUSPA/GSC), **NANU** (GPS, USCG-NAVCEN)
 and **NAQU** (QZSS, QSS) notice feeds.
+:::
+::: {.content-visible when-profile="ja"}
+# 付録
+
+## GNSS システムイベント: NAGU / NANU / NAQU
+
+`{python} PERIOD_LABEL` 中に GNSS コンステレーション運用に対して発出された
+通知。観測異常や信号可用性との相互参照のために記録します。公式の
+**NAGU**(Galileo、EUSPA/GSC)・**NANU**(GPS、USCG-NAVCEN)・
+**NAQU**(QZSS、QSS)の通知フィードより取得。
+:::
 
 ```{python}
 #| label: tbl-system-events
-#| tbl-cap: "GNSS system notices within the reporting period."
+#| tbl-cap: "{{< meta caps.qc.sys_events >}}"
 
 # Load the NAGU/NANU/NAQU event history (produced by `acquire
 # satellite-outages`) and slice to the reporting month. The parquet
@@ -990,7 +1435,8 @@ and **NAQU** (QZSS, QSS) notice feeds.
 _so_path = Path("../../data/processed/satellite_outages/events.parquet")
 _events_present = _so_path.is_file()
 N_SYSTEM_EVENTS = 0
-_EVENT_COLS = ["Date", "Satellite", "Notice", "Event type", "Severity"]
+_EVENT_COLS = [T("evt_col_date"), T("evt_col_satellite"), T("evt_col_notice"),
+               T("evt_col_event_type"), T("evt_col_severity")]
 if _events_present:
     _all = pd.read_parquet(_so_path)
     _all["start_at"] = pd.to_datetime(_all["start_at"], utc=True, errors="coerce")
@@ -1000,18 +1446,18 @@ if _events_present:
     N_SYSTEM_EVENTS = len(_evt)
     if N_SYSTEM_EVENTS:
         _evt = _evt.sort_values("start_at")
-        _evt["Date"] = _evt["start_at"].dt.strftime("%Y-%m-%d %H:%M UTC")
-        _evt["Notice"] = _evt["source_notice_ids"].apply(
+        _evt[T("evt_col_date")] = _evt["start_at"].dt.strftime("%Y-%m-%d %H:%M UTC")
+        _evt[T("evt_col_notice")] = _evt["source_notice_ids"].apply(
             lambda xs: ", ".join(xs)
             if hasattr(xs, "__iter__") and not isinstance(xs, str) else (xs or "")
         )
-        _evt["Satellite"] = _evt.apply(
+        _evt[T("evt_col_satellite")] = _evt.apply(
             lambda r: f'{str(r["constellation"]).upper()} PRN{int(r["prn"])}'
             if pd.notna(r["prn"]) else str(r["constellation"]).upper(),
             axis=1,
         )
-        _evt["Event type"] = _evt["event_type"].fillna("—")
-        _evt["Severity"] = _evt["severity"].fillna("—")
+        _evt[T("evt_col_event_type")] = _evt["event_type"].fillna("—")
+        _evt[T("evt_col_severity")] = _evt["severity"].fillna("—")
         events = _evt[_EVENT_COLS].reset_index(drop=True)
     else:
         events = pd.DataFrame({c: ["—"] for c in _EVENT_COLS})
@@ -1024,16 +1470,14 @@ md_table(events)
 #| echo: false
 #| output: asis
 if _events_present and N_SYSTEM_EVENTS > 0:
-    print(f"**{N_SYSTEM_EVENTS}** notice(s) detected for {PERIOD_LABEL}, "
-          "collected from the official NAGU (Galileo), NANU (GPS) and "
-          "NAQU (QZSS) feeds.")
+    print(T("evt_msg_some").format(n=N_SYSTEM_EVENTS, period=PERIOD_LABEL))
 elif _events_present:
-    print(f"No NAGU/NANU/NAQU notices fell within {PERIOD_LABEL}.")
+    print(T("evt_msg_none").format(period=PERIOD_LABEL))
 else:
-    print("**Not yet acquired** — run `pntmoni-pipeline acquire "
-          "satellite-outages` to populate this table.")
+    print(T("evt_msg_missing"))
 ```
 
+::: {.content-visible when-profile="en"}
 ## List of Earthquakes
 
 ::: {.callout-note}
@@ -1051,6 +1495,25 @@ live snapshots). Sources: GPS = USCG NAVCEN, QZSS = QSS, Galileo =
 GSC Europa. GLONASS is excluded from this report's QC pipeline (per
 methodology); PNT Moni does, however, evaluate the Galileo signals
 received at GEONET stations.
+:::
+::: {.content-visible when-profile="ja"}
+## 地震一覧
+
+::: {.callout-note}
+**Coming Soon。** GEONET 観測異常の解釈に関連しうる、対象期間中に
+発生した地震をここに掲載します(気象庁(JMA)より取得)。ソースフィード
+連携の実装待ちです。
+:::
+
+## 衛星一覧
+
+取得時点でのコンステレーション運用者の **公式ステータスページの
+スナップショット**(期間サマリではなく、運用者ページ自体がライブ
+スナップショット)。出典:GPS = USCG NAVCEN、QZSS = QSS、Galileo =
+GSC Europa。GLONASS は本レポートの QC パイプラインから除外しています
+(方法論による)。ただし PNT Moni は GEONET 局で受信される Galileo 信号は
+評価します。
+:::
 
 ```{python}
 #| label: constellation-status-setup
@@ -1094,19 +1557,17 @@ def _format_satellite_table(df, *, columns):
 #| echo: false
 #| output: asis
 if not _cs_present:
-    print(":::: {.callout-warning}\n"
-          "Constellation-status parquet not yet acquired — run "
-          "`pntmoni-pipeline acquire constellation`.\n"
-          "::::\n")
+    print(":::: {.callout-warning}\n" + T("cs_msg_missing") + "\n::::\n")
 elif CONSTELLATION_FETCHED_AT is not None:
-    print(f"**Fetched at:** {CONSTELLATION_FETCHED_AT.strftime('%Y-%m-%d %H:%M UTC')}\n")
+    _ts = CONSTELLATION_FETCHED_AT.strftime('%Y-%m-%d %H:%M UTC')
+    print(T("cs_fetched_at").format(ts=_ts) + "\n")
 ```
 
 ### GPS
 
 ```{python}
 #| label: tbl-gps-satellites
-#| tbl-cap: "GPS satellite constellation status."
+#| tbl-cap: "{{< meta caps.qc.gps_sats >}}"
 
 if _cs_present:
     _gps = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "gps"].copy()
@@ -1127,7 +1588,7 @@ out
 
 ```{python}
 #| label: tbl-qzss-satellites
-#| tbl-cap: "QZSS satellite constellation status."
+#| tbl-cap: "{{< meta caps.qc.qzss_sats >}}"
 
 if _cs_present:
     _qzs = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "qzs"].copy()
@@ -1149,7 +1610,7 @@ out
 
 ```{python}
 #| label: tbl-galileo-satellites
-#| tbl-cap: "Galileo satellite constellation status."
+#| tbl-cap: "{{< meta caps.qc.gal_sats >}}"
 
 if _cs_present:
     _gal = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "gal"].copy()
@@ -1167,8 +1628,16 @@ out
 ---
 
 ::: {.callout-tip}
+::: {.content-visible when-profile="en"}
 **Reproducibility.** This report is generated by the open-source
 [`pntmoni-pipeline`](https://github.com/h-shiono/pntmoni-pipeline)
 toolchain from the publicly available GEONET archive. Methodology
 and configuration are versioned alongside the report.
+:::
+::: {.content-visible when-profile="ja"}
+**再現性。** 本レポートはオープンソースの
+[`pntmoni-pipeline`](https://github.com/h-shiono/pntmoni-pipeline)
+ツールチェーンにより、公開されている GEONET アーカイブから生成して
+います。方法論と構成はレポートと併せてバージョン管理されています。
+:::
 :::

@@ -3,6 +3,45 @@ project:
   type: default
   output-dir: output
 
+# Default metadata = English. The bilingual templates pull title/subtitle
+# and every figure/table caption through `{{< meta ... >}}` shortcodes, so
+# rendering with no `--profile` (or `--profile en`) yields English from the
+# values below. `--profile ja` (reports/_quarto-ja.yml) overrides them; the
+# minimal reports/_quarto-en.yml just re-selects this English baseline.
+# Render contract: `quarto render <tmpl>.qmd --profile {ja|en}
+# --no-execute-daemon` (single switch drives BOTH the Quarto markdown side
+# and the template's Python STR[LANG] catalog via QUARTO_PROFILE).
+lang: en
+
+# Per-template document titles (frontmatter pulls these via meta shortcodes
+# so one template renders under either language).
+title_qc: "PNT Moni Monthly QC Report"
+subtitle_qc: "GEONET Observation Quality — Free Tier"
+
+# Figure / table captions, namespaced per template (qc / free).
+caps:
+  qc:
+    network: "GEONET reference stations covered in this report."
+    data_avail: "Data availability — fraction of the 2,880 nominal daily epochs with logged observations."
+    visibility: "Visibility — Complete obs / Possible obs above 10° elevation, per teqc."
+    dist_sn_l1l5: "SNR distributions — L1 C/A and L5 (Shiono & Kubo 2025 core baseline)."
+    dist_sn_l2e5b: "SNR distributions — L2 (core) and Galileo E5b (reference; not part of the absolute-qualification baseline)."
+    dist_mp_l1l2: "Multipath RMS distributions — L1/L2 pair (MP12 = L1 multipath using L2 partner; MP21 = L2 multipath using L1 partner). Shiono & Kubo 2025 core baseline."
+    dist_mp_l1l5: "Multipath RMS distributions — L1/L5 pair (MP15 = L1 multipath using L5 partner; MP51 = L5 multipath using L1 partner). Core baseline."
+    dist_mp_e5b: "Reference multipath RMS distributions — L1/Galileo E5b pair (MP17/MP71). Larger numerical scale due to the L1/E5b frequency-pair coefficient. Not part of the absolute-qualification baseline (E5b exhibited too much site-to-site variance to function as a qualification metric in Shiono & Kubo 2025)."
+    dist_slips: "Station-monthly cycle slips (ION + core MP-combination slips, summed across the elmask-15 elevation bins). Paper-aligned definition (Shiono & Kubo 2025 Table 1). Logarithmic binning."
+    spatial_sn_l1l5: "Station-monthly SNR — L1 C/A and L5 (core baseline). Signal-specific colour scales."
+    spatial_sn_l2e5b: "Station-monthly SNR — L2 (core) and Galileo E5b (reference; not part of the absolute-qualification baseline). Signal-specific colour scales."
+    spatial_mp_l1l2: "Station-monthly multipath RMS — L1/L2 standard pair (MP12 = L1 multipath using L2 partner; MP21 = L2 multipath using L1 partner)."
+    spatial_mp_l1l5: "Station-monthly multipath RMS — L1/L5 pair (MP15 = L1 multipath using L5 partner; MP51 = L5 multipath using L1 partner). MP51 typically lower than MP12 — modern L5 signals see less multipath at GEONET sites."
+    spatial_mp_e5b: "Reference multipath — L1/Galileo E5b pair (MP17/MP71). Larger numerical scale due to the L1/E5b frequency-pair coefficient. Shown for monitoring; not part of the absolute-qualification baseline."
+    spatial_slips: "Core cycle slips per station-day (ION + MP12/21/15/51 slips, elmask-15, daily mean over month). Paper-aligned definition. Logarithmic colour scale."
+    equip_combo: "Top 10 receiver × antenna combinations across the network."
+    sys_events: "GNSS system notices within the reporting period."
+    gps_sats: "GPS satellite constellation status."
+    qzss_sats: "QZSS satellite constellation status."
+    gal_sats: "Galileo satellite constellation status."
+
 format:
   html:
     theme: [cosmo, styles/pntmoni.scss]
