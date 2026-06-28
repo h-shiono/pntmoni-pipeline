@@ -6,9 +6,10 @@
 # machine does not idle-sleep mid-run (see configs/launchd/README.md for the
 # pmset wake companion and the data-volume mount requirement).
 #
-# Operational defaults (per 2026-06-07 decision): backfill toward 2026-01-01,
-# 2 gap days per night, newest-first. Override by passing flags through, e.g.
-#   scripts/run_catchup.sh --backfill-days 3
+# Operational defaults: daily target = today-4 (lag covers CDDIS next-day BRDC
+# publication latency), backfill toward 2026-01-01, 2 gap days per night,
+# newest-first. The lag comes from catchup's DEFAULT_LAG_DAYS; override flags
+# pass through, e.g. scripts/run_catchup.sh --backfill-days 3 --lag-days 5
 set -eu
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"

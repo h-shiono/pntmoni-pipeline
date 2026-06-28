@@ -57,6 +57,35 @@ def test_fetch_reconnects_on_connection_death(monkeypatch, tmp_path):
     assert calls["n"] == 3            # file1 (fail, retry), file2
 
 
+def test_is_daily_session():
+    assert geonet_rinex.is_daily_session("00011730.26o.gz")       # daily
+    assert geonet_rinex.is_daily_session("00011730.26N.tar.gz")   # daily nav
+    assert not geonet_rinex.is_daily_session("0001173a.26o.gz")   # hourly a
+    assert not geonet_rinex.is_daily_session("0001173x.26N.tar.gz")  # hourly x
+
+
+def test_fetch_downloads_daily_only_drops_hourly(monkeypatch, tmp_path):
+    # Recent-day dir: 1 daily + 2 hourly per station (obs only, for brevity).
+    entries = [
+        "00011730.26o.gz", "0001173a.26o.gz", "0001173b.26o.gz",
+        "00021730.26o.gz", "0002173a.26o.gz", "0002173b.26o.gz",
+    ]
+    _patch_common(monkeypatch, entries)
+
+    got = []
+
+    def download(ftp, remote_path, dest, **kw):
+        got.append(Path(remote_path).name)
+        return _result(Path(remote_path).name)
+
+    monkeypatch.setattr(geonet_rinex, "download_file", download)
+
+    results = geonet_rinex.fetch(date(2026, 6, 22), tmp_path)
+    # Only the two daily (session '0') files are downloaded; hourly dropped.
+    assert sorted(got) == ["00011730.26o.gz", "00021730.26o.gz"]
+    assert len(results) == 2
+
+
 def test_fetch_skips_file_after_persistent_failure(monkeypatch, tmp_path):
     entries = ["00011210.26o.gz", "00021210.26o.gz"]
     rec = _patch_common(monkeypatch, entries)

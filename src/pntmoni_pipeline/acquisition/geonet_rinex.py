@@ -34,6 +34,18 @@ SOURCE = "geonet_rinex"
 FILE_RECONNECT_ATTEMPTS = 3
 
 
+def is_daily_session(name: str) -> bool:
+    """True for a daily RINEX file (session char ``0``), not an hourly (a–x).
+
+    Filenames are ``SSSSDDDH.YYt…`` (4-char station, 3-digit DOY, 1-char
+    session). GSI keeps the ~24 hourly files per station (``…DDDa`` … ``…DDDx``)
+    for recent days until they are pruned to daily-only (``…DDD0``). We process
+    daily files only, so dropping the hourly ones avoids a ~25× over-download on
+    recent-day directories.
+    """
+    return len(name) >= 8 and name[7] == "0"
+
+
 def remote_dir(year: int, doy: int) -> str:
     return f"{ARCHIVE_ROOT}/{year}/{doy:03d}"
 
@@ -69,6 +81,16 @@ def fetch(
         # nlst() may return either bare filenames or full paths depending
         # on server; normalize to basenames for filtering, keep full path for RETR.
         selected_full = filter_by_prefix(entries, stations)
+        # Keep daily-session files only; recent-day dirs also carry ~24 hourly
+        # files per station that we never use (see is_daily_session).
+        n_before = len(selected_full)
+        selected_full = [e for e in selected_full if is_daily_session(Path(e).name)]
+        n_hourly = n_before - len(selected_full)
+        if n_hourly:
+            logger.info(
+                "%s: dropped %d hourly file(s); keeping %d daily file(s)",
+                rdir, n_hourly, len(selected_full),
+            )
         if not selected_full:
             logger.warning(
                 "no matching entries for stations=%s in %s",

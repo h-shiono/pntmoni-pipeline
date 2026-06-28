@@ -24,7 +24,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_BACKFILL_START = date(2026, 1, 1)
 DEFAULT_BACKFILL_DAYS = 2
-DEFAULT_LAG_DAYS = 2
+# today-4: CLASLIB needs the target day's BRDC *and* the next day's. CDDIS
+# publishes BRDC with latency, so a 2-day lag often 404s on the next-day BRDC
+# (today-1) at 03:00 and the daily partials. 4 days keeps the needed BRDC
+# (today-3) reliably published.
+DEFAULT_LAG_DAYS = 4
 
 
 @dataclass
