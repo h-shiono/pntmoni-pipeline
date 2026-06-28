@@ -237,15 +237,25 @@ def render(
     output_dir: Path,
     *,
     formats: tuple[str, ...] = ("html",),
+    langs: tuple[str, ...] = ("ja", "en"),
 ) -> dict[str, Path]:
-    """Render the Quarto template with ``params``; return output paths.
+    """Render the Quarto template per language; return output paths.
 
     Requires ``quarto`` on PATH. Params are passed to the qmd via the
     ``PNTMONI_REPORT_PARAMS`` env var pointing at a JSON file; the qmd's
-    parameters cell reads it (see ``reports/templates/monthly.qmd``).
+    parameters cell reads it (see ``reports/templates/monthly_free.qmd``).
     Quarto's own ``--execute-params`` / ``-P`` mechanism is intentionally
     not used here — it does not reliably inject overrides into the
     Jupyter-tagged cell in current Quarto builds.
+
+    The templates are bilingual: language is selected with ``--profile
+    {ja|en}`` (reports/_quarto-{ja,en}.yml), which drives BOTH the Quarto
+    markdown side and the template's Python ``STR[LANG]`` catalog (it
+    reads ``QUARTO_PROFILE``). Each language renders into its own
+    ``<output_dir>/<lang>/`` subdir so the two don't overwrite each
+    other. ``--no-execute-daemon`` is mandatory — the jupyter daemon
+    caches the first render's kernel/env, so a cached kernel would keep a
+    stale profile. Returns a dict keyed ``"<lang>:<fmt>"``.
     """
     if not shutil.which("quarto"):
         raise RuntimeError(
@@ -259,26 +269,37 @@ def render(
     )
     env = {**os.environ, "PNTMONI_REPORT_PARAMS": str(params_path.resolve())}
     out: dict[str, Path] = {}
-    for fmt in formats:
-        cmd = [
-            "quarto", "render", str(template),
-            "--to", fmt,
-            "--output-dir", str(output_dir.resolve()),
-            # The Jupyter execute-daemon caches a kernel across renders;
-            # its env is the env of the first render, so subsequent
-            # PNTMONI_REPORT_PARAMS values are ignored. Disable it.
-            "--no-execute-daemon",
-        ]
-        logger.info("quarto render --to %s (PNTMONI_REPORT_PARAMS=%s)", fmt, params_path)
-        subprocess.run(cmd, check=True, env=env)
-        ext = "html" if fmt == "html" else "pdf"
-        # Quarto may place the output under a subdir matching the qmd's
-        # parent (e.g. <out>/templates/monthly.html) when --output-dir
-        # is set; find the actual file rather than assume the flat path.
-        produced = list(output_dir.rglob(f"{template.stem}.{ext}"))
-        if not produced:
-            raise RuntimeError(f"Quarto produced no {ext} under {output_dir}")
-        out[fmt] = produced[0]
+    for lang in langs:
+        lang_dir = output_dir / lang
+        lang_dir.mkdir(parents=True, exist_ok=True)
+        for fmt in formats:
+            cmd = [
+                "quarto", "render", str(template),
+                "--to", fmt,
+                "--profile", lang,
+                "--output-dir", str(lang_dir.resolve()),
+                # The Jupyter execute-daemon caches a kernel across
+                # renders; its env (PNTMONI_REPORT_PARAMS and the active
+                # QUARTO_PROFILE) is frozen at the first render, so a
+                # cached kernel would render the wrong language. Disable it.
+                "--no-execute-daemon",
+            ]
+            logger.info(
+                "quarto render --profile %s --to %s (PNTMONI_REPORT_PARAMS=%s)",
+                lang, fmt, params_path,
+            )
+            subprocess.run(cmd, check=True, env=env)
+            ext = "html" if fmt == "html" else "pdf"
+            # Quarto may place the output under a subdir matching the
+            # qmd's parent (e.g. <out>/templates/monthly_free.html) when
+            # --output-dir is set; find the actual file rather than assume
+            # the flat path.
+            produced = list(lang_dir.rglob(f"{template.stem}.{ext}"))
+            if not produced:
+                raise RuntimeError(
+                    f"Quarto produced no {ext} under {lang_dir} (profile {lang})"
+                )
+            out[f"{lang}:{fmt}"] = produced[0]
 
     # Sweep Quarto's Jupyter intermediates left in the template's dir
     # (``<template>.quarto_ipynb`` + numbered ``_1`` / ``_2`` ...
@@ -344,6 +365,7 @@ def run_monthly(
     config_dir: Path = DEFAULT_CONFIG_DIR,
     do_render: bool = False,
     formats: tuple[str, ...] = ("html",),
+    langs: tuple[str, ...] = ("ja", "en"),
 ) -> RunResult:
     """Gather inputs, compute config_hash, assemble params, optionally render."""
     inputs = gather_inputs(period, mode, processed_root=processed_root)
@@ -362,7 +384,7 @@ def run_monthly(
     outputs: dict[str, Path] = {}
     rendered = False
     if do_render:
-        outputs = render(template, params, out_dir, formats=formats)
+        outputs = render(template, params, out_dir, formats=formats, langs=langs)
         rendered = True
     else:
         logger.info("render skipped (--render not set); params written to %s", params_path)

@@ -5,10 +5,19 @@ gitignored; run a render to produce them locally.
 
 ## Templates
 
+All templates are **bilingual (JA/EN) from a single source** — see
+[Bilingual rendering](#bilingual-rendering-ja--en).
+
 - [`templates/monthly_qc.qmd`](templates/monthly_qc.qmd) — free-tier
-  monthly QC report (GEONET observation quality only; no positioning)
-- `templates/monthly.qmd` — full canonical monthly (synthetic data
-  scaffolding; positioning + QC, Phase 0 launch target)
+  monthly QC report (GEONET observation quality only; no positioning).
+  Rendered manually with `quarto render ... --profile {ja|en}`.
+- [`templates/monthly_free.qmd`](templates/monthly_free.qmd) — free-tier
+  monthly CLAS performance report (positioning accuracy, TTFF, spatial
+  hex maps). Driven by the pipeline: `pntmoni-pipeline report monthly
+  --render` renders both languages (`--langs ja,en` by default) into
+  `<out>/<stream>/<period>/<lang>/`.
+- [`templates/monthly_pro.qmd`](templates/monthly_pro.qmd) — Pro-tier
+  report (not yet bilingual).
 
 ## Bilingual rendering (JA / EN)
 

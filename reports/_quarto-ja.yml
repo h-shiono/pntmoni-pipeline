@@ -15,9 +15,26 @@ lang: ja
 # テンプレート別の文書タイトル(frontmatter が meta ショートコードで参照)。
 title_qc: "PNT Moni 月次QCレポート"
 subtitle_qc: "GEONET 観測品質 — Free Tier(無料公開版)"
+title_free: "PNT Moni 月次レポート"
+subtitle_free: "QZSS CLAS 性能評価 — Free Tier(無料公開版)"
 
 # 図表キャプション。テンプレート別に名前空間を分ける(qc / free)。
 caps:
+  free:
+    network_map: "CLAS 12 ネットワークのグリッド点と当月評価 GEONET 観測局の分布。"
+    exec_summary: "主要性能指標。"
+    horiz_cdf: "水平誤差の累積分布(qualified 局のエポックをプール)。"
+    vert_cdf: "垂直誤差の累積分布(qualified 局のエポックをプール)。"
+    ttff_headline: "TTFF パーセンタイル(15 分リセット、qualified 局、全日)。"
+    ttff_cdf: "TTFF 累積分布(15 分リセット、全国・全期間のリセットウィンドウをプール)。"
+    hex_horizontal: "水平誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)。"
+    hex_vertical: "垂直誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)。"
+    hex_coverage: "Hex セル統計。"
+    availability: "観測局別データ可用性分布。"
+    sys_events: "対象期間中の GNSS システム通知。"
+    gps_sats: "GPS 衛星コンステレーション状況。"
+    qzss_sats: "QZSS 衛星コンステレーション状況。"
+    gal_sats: "Galileo 衛星コンステレーション状況。"
   qc:
     network: "本レポートが対象とする GEONET 電子基準点。"
     data_avail: "データアベイラビリティ — 1日あたり公称 2,880 エポックのうち観測が記録されたエポックの割合。"

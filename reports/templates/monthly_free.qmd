@@ -1,6 +1,6 @@
 ---
-title: "PNT Moni 月次レポート"
-subtitle: "QZSS CLAS 性能評価 — Free Tier(無料公開版)"
+title: "{{< meta title_free >}}"
+subtitle: "{{< meta subtitle_free >}}"
 date: today
 author: "PNT Moni"
 format:
@@ -471,7 +471,7 @@ mpl.rcParams['figure.dpi'] = 100
 # has no JP glyphs; titles/axis labels render as tofu boxes. Prefer the
 # macOS-bundled Hiragino family, then Yu Gothic, then Noto CJK on Linux.
 mpl.rcParams['font.sans-serif'] = [
-    'Hiragino Sans', 'Hiragino Maru Gothic Pro',
+    'Inter', 'Hiragino Sans', 'Hiragino Maru Gothic Pro',
     'Yu Gothic', 'Noto Sans CJK JP', 'DejaVu Sans',
 ]
 mpl.rcParams['font.family'] = 'sans-serif'
@@ -485,11 +485,259 @@ mpl.rcParams['axes.unicode_minus'] = False
 mpl.rcParams['pdf.fonttype'] = 42
 mpl.rcParams['ps.fonttype'] = 42
 
+# ---- Language (i18n) -------------------------------------------------
+# Single-switch bilingual rendering: the active Quarto profile drives
+# BOTH the markdown side ({{< meta >}} / content-visible, handled by
+# Quarto) and this Python side. Quarto exports the active profile name
+# as QUARTO_PROFILE; we read it so matplotlib titles/labels, table
+# headers/rows and `output: asis` prose match the rendered language.
+# Reliable ONLY with `--no-execute-daemon` (the jupyter daemon caches
+# the first render's env). The render driver passes both --profile and
+# --no-execute-daemon. See reports/_quarto-{ja,en}.yml.
+import os as _os_lang
+LANG = _os_lang.environ.get("QUARTO_PROFILE", "en").split(",")[0].strip().lower()
+if LANG not in ("ja", "en"):
+    LANG = "en"
+
+# String catalog for Python-emitted text (figure titles, axis labels,
+# legends, table headers/rows, asis prose). Pure-markdown prose lives
+# inline in the qmd inside `content-visible` blocks, NOT here. Values
+# with `{...}` fields are `.format()`-ed at the call site. Keep keys in
+# sync across both languages. (Grows section by section.)
+STR = {
+    "en": {
+        # Network map
+        "net_legend_src_current": "evaluated this month ({period})",
+        "net_legend_src_all": "all GEONET stations (reference)",
+        "net_legend_label": "GEONET stations {src} ({n:,})",
+        "net_names": ["Ishigaki", "Okinawa", "Kyushu", "Shikoku", "Chugoku",
+                      "Kansai", "Kanto", "South Tohoku", "North Tohoku",
+                      "West Hokkaido", "East Hokkaido", "Ogasawara"],
+        # CDF figures
+        "cdf_xlabel_horiz": "Horizontal error [cm]",
+        "cdf_xlabel_vert": "Vertical error [cm]",
+        "cdf_ylabel": "Cumulative probability",
+        # TTFF figure
+        "ttff_xlabel": "TTFF [s]",
+        "ttff_preview_title": "(preview: synthetic data)",
+        # Hex maps
+        "hex_title_horiz": "Horizontal error 95th percentile",
+        "hex_title_vert": "Vertical error 95th percentile",
+        # Availability figure
+        "avail_xlabel": "Availability [%]",
+        "avail_ylabel": "Stations",
+        # Executive-summary table
+        "exec_col_metric": "Metric",
+        "exec_col_value": "Value",
+        "exec_row_nstations": "Stations evaluated",
+        "exec_row_h50": "Horizontal error 50% [cm]",
+        "exec_row_h95": "Horizontal error 95% [cm]",
+        "exec_row_h99": "Horizontal error 99% [cm]",
+        "exec_row_v95": "Vertical error 95% [cm]",
+        "exec_row_ttff50": "TTFF 50% [s, 15-min reset]",
+        "exec_row_ttff95": "TTFF 95% [s, 15-min reset]",
+        "exec_row_fixrate": "National fix rate (Q=4)",
+        # TTFF headline table
+        "ttff_col_pct": "Percentile",
+        "ttff_col_sec": "TTFF [s]",
+        # Hex coverage table
+        "hexcov_col_metric": "Metric",
+        "hexcov_col_value": "Value",
+        "hexcov_row_stations": "Stations",
+        "hexcov_row_epochs": "Sampled epochs (whole period)",
+        "hexcov_row_spacing": "Cell spacing (approx., flat-to-flat)",
+        "hexcov_row_rule": "Cell aggregation rule",
+        "hexcov_val_rule": "Pool epochs in cell → 95th percentile",
+        # System-events table
+        "evt_col_date": "Date",
+        "evt_col_satellite": "Satellite",
+        "evt_col_notice": "Notice",
+        "evt_col_type": "Type",
+        "evt_col_severity": "Severity",
+        # Satellite-status tables
+        "sat_status": {"operational": "Operational", "outage": "Outage",
+                       "unusable": "Unusable", "decommissioned": "Decommissioned",
+                       "commissioning": "Commissioning"},
+        "sat_col_block": "Block", "sat_col_slot": "Slot", "sat_col_clock": "Clock",
+        "sat_col_status": "Status", "sat_col_notice": "Notice",
+        "sat_col_satellite": "Satellite", "sat_col_signals": "Signals",
+        # asis prose
+        "rapid_banner": (
+            ":::: {.callout-warning appearance='default'}\n"
+            "**Rapid edition**: this report uses the **GSI Rapid series** "
+            "(R5.1 from 2026-04 onward, R5 before that) as the reference "
+            "coordinates. The Rapid series is a quick-look solution published "
+            "2–3 days after observation; once the Final series (F5/F5.1, "
+            "published ~3 weeks after observation) is complete a **separate "
+            "finalised edition will be issued**.\n\n"
+            "Rapid-vs-Final differences are usually at the mm level, but can "
+            "widen briefly right after events such as earthquakes or equipment "
+            "changes (methodology §3.2 / §8.5).\n"
+            "::::\n"
+        ),
+        "ttff_success": (
+            "**{period}**: TTFF success rate **{rate:.2f} %** "
+            "({fixed:,}/{windows:,} reset windows obtained a valid fix). At "
+            "30-second sampling many fixes occur at the epoch right after "
+            "reset, so P50/P95 are often 0 s and P99 reflects the convergence "
+            "tail."
+        ),
+        "hex_preview": (
+            "> **Preview (synthetic data)**: this figure is a synthetic sample "
+            "because INPUTS was not injected. Real data is produced via the "
+            "driver (`pntmoni-pipeline report monthly --render`).\n"
+        ),
+        "hex_missing": (
+            "**{period}**: the spatial-distribution maps are generated once "
+            "the epoch_errors / reference_coords parquets are available."
+        ),
+        "l6_not_run": (
+            "**{period}**: the L6 alert aggregation has not been run for this "
+            "period — run `pntmoni-pipeline analyze l6-alerts --period {code}` "
+            "to compute it (methodology §6)."
+        ),
+        "l6_zero": (
+            "**{period}**: **0 alerts** across all L6 broadcasts (no message "
+            "had the Alert flag set)."
+        ),
+        "l6_some": (
+            "**{period}**: **{n} alerts detected** across all L6 broadcasts "
+            "({per_prn})."
+        ),
+        "l6_prn_sep": ", ",
+        "sysevt_some": (
+            "`{period}`: **{n} notice(s)** detected. Collected from the "
+            "official NAGU (Galileo), NANU (GPS) and NAQU (QZSS) notices."
+        ),
+        "sysevt_none": "`{period}`: no NAGU/NANU/NAQU notices apply to this period.",
+        "sysevt_missing": (
+            "**Not injected**: run `pntmoni-pipeline acquire satellite-outages` "
+            "to populate this table."
+        ),
+        "cs_missing": (
+            "Constellation-status parquet not yet acquired. Run "
+            "`pntmoni-pipeline acquire constellation`."
+        ),
+        "cs_fetched": "**Fetched at:** {ts}",
+    },
+    "ja": {
+        "net_legend_src_current": "当月評価対象({period})",
+        "net_legend_src_all": "GEONET 全局(参考)",
+        "net_legend_label": "GEONET 観測局 {src}({n:,})",
+        "net_names": ["石垣", "沖縄", "九州", "四国", "中国", "関西",
+                      "関東", "南東北", "北東北", "西北海道", "東北海道", "小笠原"],
+        "cdf_xlabel_horiz": "水平誤差 [cm]",
+        "cdf_xlabel_vert": "垂直誤差 [cm]",
+        "cdf_ylabel": "累積確率",
+        "ttff_xlabel": "TTFF [秒]",
+        "ttff_preview_title": "(プレビュー:合成データ)",
+        "hex_title_horiz": "水平誤差 95 パーセンタイル",
+        "hex_title_vert": "垂直誤差 95 パーセンタイル",
+        "avail_xlabel": "可用性 [%]",
+        "avail_ylabel": "観測局数",
+        "exec_col_metric": "指標",
+        "exec_col_value": "値",
+        "exec_row_nstations": "評価対象局数",
+        "exec_row_h50": "水平誤差 50% [cm]",
+        "exec_row_h95": "水平誤差 95% [cm]",
+        "exec_row_h99": "水平誤差 99% [cm]",
+        "exec_row_v95": "垂直誤差 95% [cm]",
+        "exec_row_ttff50": "TTFF 50% [秒、15 分リセット]",
+        "exec_row_ttff95": "TTFF 95% [秒、15 分リセット]",
+        "exec_row_fixrate": "全国 Fix 率(Q=4)",
+        "ttff_col_pct": "パーセンタイル",
+        "ttff_col_sec": "TTFF [秒]",
+        "hexcov_col_metric": "指標",
+        "hexcov_col_value": "値",
+        "hexcov_row_stations": "観測局数",
+        "hexcov_row_epochs": "サンプリングエポック数(全期間)",
+        "hexcov_row_spacing": "セル間隔(目安、flat-to-flat)",
+        "hexcov_row_rule": "セル集計規則",
+        "hexcov_val_rule": "セル内エポック・プール → 95 パーセンタイル",
+        "evt_col_date": "日付",
+        "evt_col_satellite": "衛星",
+        "evt_col_notice": "通知",
+        "evt_col_type": "種別",
+        "evt_col_severity": "重要度",
+        "sat_status": {"operational": "運用中", "outage": "停止中",
+                       "unusable": "使用不可", "decommissioned": "退役",
+                       "commissioning": "試験運用"},
+        "sat_col_block": "ブロック", "sat_col_slot": "スロット",
+        "sat_col_clock": "原子時計", "sat_col_status": "状態",
+        "sat_col_notice": "通知", "sat_col_satellite": "衛星",
+        "sat_col_signals": "送信信号",
+        "rapid_banner": (
+            ":::: {.callout-warning appearance='default'}\n"
+            "**速報版(Rapid)**:本レポートは **GSI Rapid 系列** "
+            "(2026 年 4 月以降は R5.1、それ以前は R5)を参照座標として "
+            "使用しています。Rapid 系列は観測の 2〜3 日後に公開される "
+            "速報値で、Final 系列(F5/F5.1、観測約 3 週間後に公開)が "
+            "揃った時点で**確定版を別途発行**します。\n\n"
+            "Rapid と Final の数値差は通常 mm 単位ですが、地震・"
+            "機器交換等のイベント直後はやや拡大することがあります "
+            "(方法論 §3.2 / §8.5)。\n"
+            "::::\n"
+        ),
+        "ttff_success": (
+            "**{period}**:TTFF 成功率 **{rate:.2f} %** "
+            "({fixed:,}/{windows:,} の リセットウィンドウで有効 Fix を獲得)。"
+            "観測間隔 30 秒では多くの Fix が**リセット直後のエポック**で "
+            "得られるため、P50/P95 が 0 秒となるケースも多く、P99 が収束 "
+            "テールを反映します。"
+        ),
+        "hex_preview": (
+            "> **プレビュー(合成データ)**:本図は INPUTS 未注入のための "
+            "合成サンプルです。実データは driver 経由"
+            "(`pntmoni-pipeline report monthly --render`)で生成されます。\n"
+        ),
+        "hex_missing": (
+            "**{period}**:空間分布図は epoch_errors / reference_coords "
+            "parquet が揃った時点で生成されます。"
+        ),
+        "l6_not_run": (
+            "**{period}**:本期間の L6 アラート集計は未実行です — "
+            "`pntmoni-pipeline analyze l6-alerts --period {code}` "
+            "を実行して集計してください(方法論 §6)。"
+        ),
+        "l6_zero": (
+            "**{period}**:L6 ブロードキャスト全体で "
+            "**アラート 0 件**(Alert flag が立ったメッセージなし)。"
+        ),
+        "l6_some": (
+            "**{period}**:L6 ブロードキャスト全体で "
+            "**{n} 件のアラートを検出**({per_prn})。"
+        ),
+        "l6_prn_sep": "、",
+        "sysevt_some": (
+            "`{period}`:**{n} 件**の通知を検出。"
+            "NAGU(Galileo)、NANU(GPS)、NAQU(QZSS)の公式通知から収集。"
+        ),
+        "sysevt_none": "`{period}`:本期間に該当する NAGU/NANU/NAQU 通知はありません。",
+        "sysevt_missing": (
+            "**未注入**:`pntmoni-pipeline acquire satellite-outages` "
+            "を実行すると本表に反映されます。"
+        ),
+        "cs_missing": (
+            "コンステレーション状態の parquet が未取得です。"
+            "`pntmoni-pipeline acquire constellation` を実行してください。"
+        ),
+        "cs_fetched": "**取得時刻**:{ts}",
+    },
+}
+
+def T(key: str):
+    """Look up a catalog string (or table) for the active language."""
+    return STR[LANG][key]
+
 # ---- Derived from the parameters cell ----
 # YEAR / MONTH / PERIOD / STREAM / MODE / version strings / CONFIG_HASH /
 # DATA_MODE / INPUTS / INPUTS_STATUS are all defined in the papermill
 # ``parameters`` cell above (and overridden at production render time).
-PERIOD_LABEL = pd.Timestamp(int(YEAR), int(MONTH), 1).strftime("%B %Y")
+# Period label is language-dependent: "April 2026" vs "2026年4月".
+PERIOD_LABEL = (
+    f"{int(YEAR)}年{int(MONTH)}月" if LANG == "ja"
+    else pd.Timestamp(int(YEAR), int(MONTH), 1).strftime("%B %Y")
+)
 
 # ---- Synthetic data generation ----
 rng = np.random.default_rng(seed=42)
@@ -549,34 +797,108 @@ marked "Coming Soon" appear in Phase 1+ per the rollout plan in
 `30-evaluation-methodology/03-monthly-report-structure.md`.
 :::
 
+::: {.content-visible when-profile="en"}
+# Revision History
+
+| Version | Date | Notes |
+|---|---|---|
+| 1.0 | (pending publication) | Initial edition |
+:::
+::: {.content-visible when-profile="ja"}
 # 改訂履歴
 
 | バージョン | 日付       | 内容       |
 |------------|------------|------------|
 | 1.0        | (発行待ち) | 初版       |
+:::
 
 ```{python}
 #| echo: false
 #| output: asis
 
-# 速報版バナー — stream='rapid' の時のみ表示。GSI Rapid 系列
-# (R5/R5.1) を参照座標として使うため、確定 (Final, F5/F5.1) 版が
-# 公開され次第、別途確定版を発行する旨を明示。
+# Rapid-edition banner — shown only when stream='rapid'. Flags that the
+# GSI Rapid series (R5/R5.1) is the reference coordinate and a finalised
+# (Final, F5/F5.1) edition will follow. Text from the STR catalog.
 if STREAM == "rapid":
-    print(
-        ":::: {.callout-warning appearance='default'}\n"
-        "**速報版(Rapid)**:本レポートは **GSI Rapid 系列** "
-        "(2026 年 4 月以降は R5.1、それ以前は R5)を参照座標として "
-        "使用しています。Rapid 系列は観測の 2〜3 日後に公開される "
-        "速報値で、Final 系列(F5/F5.1、観測約 3 週間後に公開)が "
-        "揃った時点で**確定版を別途発行**します。\n\n"
-        "Rapid と Final の数値差は通常 mm 単位ですが、地震・"
-        "機器交換等のイベント直後はやや拡大することがあります "
-        "(方法論 §3.2 / §8.5)。\n"
-        "::::\n"
-    )
+    print(T("rapid_banner"))
 ```
 
+::: {.content-visible when-profile="en"}
+# Introduction
+
+This report summarises PNT Moni's evaluation of QZSS CLAS
+(Centimeter Level Augmentation Service) performance for
+**`{python} PERIOD_LABEL`**, using publicly available data and
+open-source tooling.
+
+As an independent evaluation service for GNSS augmentation, PNT Moni
+continuously monitors CLAS performance at higher spatial and temporal
+resolution than the official Service Performance Report published by
+the Cabinet Office / Quasi-Zenith Satellite System Services Inc. (QSS).
+This monthly report complements the official semi-annual report,
+offering monthly cadence, an independent third-party assessment, and
+practically useful analytical depth. This Free-tier monthly report
+covers **national statistics only**; per-station analysis is provided
+in the **Pro tier**.
+
+The "Methodology Version Tag" at the end of this report uniquely
+identifies the processing configuration that produced it. For the full
+methodology document see
+[https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
+
+# Methodology
+
+This section summarises the methodology; see the link above for the
+full document.
+
+**Data sources**: 30-second RINEX observations from ~1,300 GEONET
+stations distributed by the Geospatial Information Authority of Japan
+(GSI) under PDL 1.0 (source: GSI GEONET data service), the CLAS L6
+augmentation archive published on the web by QSS, and IGS broadcast
+ephemerides / Earth-rotation parameters from CDDIS.
+
+**Processing engine**: `{python} f"{ENGINE} {ENGINE_VERSION}"`,
+PPP-RTK mode (`kinematic`, `l1+l2+l5`).
+
+**Reference coordinates**: GSI daily coordinate solutions (the series
+matching the period — F5 era = ITRF2014, F5.1 era = ITRF2020; R5 / R5.1
+when the Rapid series is used) are relativised to station 92110
+(Tsukuba 1) and smoothed with a **±7-day (15 calendar-day) median
+filter** centred on the target day $d$ (common-mode removal, Method B).
+Method version: `{python} REFERENCE_COORD_VERSION`.
+
+**Quality control (QC)**: `{python} f"{QC_TOOL} {QC_VERSION}"` for
+2026–2027, with migration to MRTKLIB's `mrtk qc` planned around 2027/Q4.
+
+**Statistical aggregation**: 95% / 99% percentile errors are computed
+by **pooling the epoch errors of all stations and all days** in each
+aggregation cell (methodology §5.1, same rule as NAVIGATION 2026). TTFF
+uses a **15-minute reset** (continuity with NAVIGATION 2026, methodology
+§5.2); a 60-minute reset will be added in Phase 1.
+
+**Known structural differences from official QSS figures**: PNT Moni's
+methodology differs structurally from the official QSS Service
+Performance Report in four respects — sampling rate (30 s vs 1 s), a
+parameter set retuned for 30 s, CLASLIB version differences, and the
+resulting Kalman-filter behaviour. See
+[Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762). These
+are treated as **structural characteristics**, not bugs; comparing
+absolute values or equating the numbers is not meaningful
+(methodology §8.3).
+
+## Evaluation Network
+
+CLAS divides the country into 12 networks; each station's network is
+determined by the Compact Network ID assigned by CLASLIB. Stations are
+further classified as **Inside Network** or **Outside Network** by a
+point-in-polygon test against the per-network polygons defined in the
+ION GNSS+ 2025 / NAVIGATION 2026 papers (Shiono & Kubo) — i.e. regions
+where augmentation is interpolated vs extrapolated. The network polygons
+below are updated only when the CLAS service area changes (rarely); the
+polygon version is recorded in the Methodology Version Tag at the end of
+this report.
+:::
+::: {.content-visible when-profile="ja"}
 # はじめに
 
 本レポートは、**`{python} PERIOD_LABEL`** における QZSS CLAS(センチメータ級測位補強サービス)の性能を、PNT Moni が公開データとオープンソースのツール群を用いて評価した結果をまとめたものです。
@@ -604,10 +926,11 @@ PNT Moni は GNSS 補強サービスの独立評価サービスとして、内�
 ## 評価ネットワーク
 
 CLAS は全国を 12 のネットワーク(網)に分割し、各観測局は CLASLIB が決定する Compact Network ID により所属網が定まります。さらに ION GNSS+ 2025 / NAVIGATION 2026 論文(Shiono & Kubo)で定義した各網のポリゴンに対する点内包判定により、観測局を **網内(Inside Network)**・**網外(Outside Network)** に分類します(補強情報が内挿で生成される領域 vs 外挿領域)。下記の網ポリゴンは CLAS の運用範囲が変更されたとき(稀)にのみ更新され、ポリゴンの版は本レポート末尾の方法論バージョンタグに記録されます。
+:::
 
 ```{python}
 #| label: fig-network-map
-#| fig-cap: "CLAS 12 ネットワークのグリッド点と当月評価 GEONET 観測局の分布"
+#| fig-cap: "{{< meta caps.free.network_map >}}"
 
 import cartopy.crs as _ccrs_nm
 import cartopy.feature as _cfeature_nm
@@ -650,7 +973,7 @@ for _cand in (
                 _cand, period=PERIOD,
                 frame_subdir=_s2fs(STREAM, PERIOD),
             )
-            _station_source = f"当月評価対象({PERIOD_LABEL})"
+            _station_source = T("net_legend_src_current").format(period=PERIOD_LABEL)
             break
         except Exception:
             pass
@@ -661,13 +984,10 @@ if _stations_for_fig is None:
         "lat": _slist["Lat. (deg.)"],
         "lon": _slist["Lon. (deg.)"],
     })
-    _station_source = "GEONET 全局(参考)"
+    _station_source = T("net_legend_src_all")
 
 # Network names — shown in the legend (network id colour ↔ name).
-_NETWORK_NAMES = [
-    "石垣", "沖縄", "九州", "四国", "中国", "関西",
-    "関東", "南東北", "北東北", "西北海道", "東北海道", "小笠原",
-]
+_NETWORK_NAMES = T("net_names")
 
 fig = plt.figure(figsize=(8, 7))
 ax = fig.add_subplot(1, 1, 1, projection=_proj_aea)
@@ -687,7 +1007,7 @@ ax.scatter(
     _stations_for_fig["lon"], _stations_for_fig["lat"],
     s=3, color="white", edgecolors="#9aa1ad", linewidths=0.25,
     marker=".", transform=_ccrs_nm.PlateCarree(), zorder=5,
-    label=f"GEONET 観測局 {_station_source}({len(_stations_for_fig):,})",
+    label=T("net_legend_label").format(src=_station_source, n=len(_stations_for_fig)),
 )
 
 # CLAS grid points — colour-coded by Compact Network ID so the 12
@@ -718,25 +1038,36 @@ for _spine in ax.spines.values():
 plt.tight_layout()
 ```
 
+::: {.content-visible when-profile="en"}
+The CLAS network polygons define the regions where the augmentation is
+intended to meet spec. Outside-Network stations receive corrections
+derived by extrapolation and may therefore have different error
+characteristics (Inside/Outside aggregate analysis is provided in the
+**Pro tier**).
+
+# Executive Summary
+:::
+::: {.content-visible when-profile="ja"}
 CLAS の網ポリゴンは、補強情報が仕様通りの性能を提供することを意図された領域を定義します。網外の観測局は外挿によって導出された補正情報を受け取るため、誤差特性が異なり得ます(網内/網外の集計分析は **Pro tier** で提供)。
 
 # エグゼクティブサマリ
+:::
 
 ```{python}
 #| label: tbl-executive-summary
-#| tbl-cap: "主要性能指標"
+#| tbl-cap: "{{< meta caps.free.exec_summary >}}"
 exec_summary = pd.DataFrame({
-    "指標": [
-        "評価対象局数",
-        "水平誤差 50% [cm]",
-        "水平誤差 95% [cm]",
-        "水平誤差 99% [cm]",
-        "垂直誤差 95% [cm]",
-        "TTFF 50% [秒、15 分リセット]",
-        "TTFF 95% [秒、15 分リセット]",
-        "全国 Fix 率(Q=4)",
+    T("exec_col_metric"): [
+        T("exec_row_nstations"),
+        T("exec_row_h50"),
+        T("exec_row_h95"),
+        T("exec_row_h99"),
+        T("exec_row_v95"),
+        T("exec_row_ttff50"),
+        T("exec_row_ttff95"),
+        T("exec_row_fixrate"),
     ],
-    "値": [
+    T("exec_col_value"): [
         f"{N_STATIONS:,}",
         f"{H50*100:.2f}",
         f"{H95*100:.2f}",
@@ -750,6 +1081,20 @@ exec_summary = pd.DataFrame({
 exec_summary
 ```
 
+::: {.content-visible when-profile="en"}
+**Highlights for `{python} PERIOD_LABEL`**:
+
+- National horizontal error, 95th percentile: **`{python} f"{H95*100:.2f} cm"`**
+- National vertical error, 95th percentile: **`{python} f"{V95*100:.2f} cm"`**
+- TTFF (15-min reset, 95th percentile): **`{python} f"{TTFF95:.1f} s"`**
+- National fix rate (Q=4): **`{python} f"{AVAIL*100:.2f}%"`**
+- L6 broadcast alerts: **`{python} N_L6_ALERTS if L6_ALERTS_PRESENT else "n/a (not yet aggregated)"`**
+
+# Performance
+
+## National Overview
+:::
+::: {.content-visible when-profile="ja"}
 **`{python} PERIOD_LABEL` のハイライト**:
 
 - 全国 水平誤差 95 パーセンタイル:**`{python} f"{H95*100:.2f} cm"`**
@@ -761,12 +1106,18 @@ exec_summary
 # 性能
 
 ## 全国概況
+:::
 
+::: {.content-visible when-profile="en"}
+### Error Distribution
+:::
+::: {.content-visible when-profile="ja"}
 ### 誤差の分布
+:::
 
 ```{python}
 #| label: fig-horiz-cdf
-#| fig-cap: "水平誤差の累積分布(qualified 局のエポックをプール)"
+#| fig-cap: "{{< meta caps.free.horiz_cdf >}}"
 
 def _plot_cdf(values_m, p_marks, *, xlabel, fig=None, ax=None):
     fig, ax = (fig, ax) if ax is not None else plt.subplots(figsize=(8, 4))
@@ -781,7 +1132,7 @@ def _plot_cdf(values_m, p_marks, *, xlabel, fig=None, ax=None):
         ax.annotate(f"{int(q*100)}% = {v_cm:.2f} cm",
                     xy=(v_cm, q), xytext=(v_cm + 1, q - 0.05),
                     fontsize=8, alpha=0.7)
-    ax.set_xlabel(xlabel); ax.set_ylabel("累積確率")
+    ax.set_xlabel(xlabel); ax.set_ylabel(T("cdf_ylabel"))
     # Clip x-axis at a generous 99.9th percentile for readability.
     p999 = np.quantile(values_m, 0.999) * 100
     ax.set_xlim(0, max(p999 * 1.05, 1.0))
@@ -794,12 +1145,12 @@ if EPOCH_ERRORS_PRESENT:
 else:
     _vals_h = all_horiz
     _marks = {q: float(np.quantile(all_horiz, q)) for q in (0.50, 0.95, 0.99)}
-_plot_cdf(_vals_h, _marks, xlabel="水平誤差 [cm]")
+_plot_cdf(_vals_h, _marks, xlabel=T("cdf_xlabel_horiz"))
 ```
 
 ```{python}
 #| label: fig-vert-cdf
-#| fig-cap: "垂直誤差の累積分布(qualified 局のエポックをプール)"
+#| fig-cap: "{{< meta caps.free.vert_cdf >}}"
 
 if EPOCH_ERRORS_PRESENT:
     _vals_v = EPOCH_ERRORS_DF["vertical_m"].to_numpy()
@@ -807,17 +1158,17 @@ if EPOCH_ERRORS_PRESENT:
 else:
     _vals_v = all_vert
     _marks_v = {q: float(np.quantile(all_vert, q)) for q in (0.50, 0.95, 0.99)}
-_plot_cdf(_vals_v, _marks_v, xlabel="垂直誤差 [cm]")
+_plot_cdf(_vals_v, _marks_v, xlabel=T("cdf_xlabel_vert"))
 ```
 
 ```{python}
 #| label: tbl-ttff-headline
-#| tbl-cap: "TTFF パーセンタイル(15 分リセット、qualified 局、全日)"
+#| tbl-cap: "{{< meta caps.free.ttff_headline >}}"
 
 if TTFF_PRESENT:
     ttff_table = pd.DataFrame({
-        "パーセンタイル": ["50%", "90%", "95%", "99%"],
-        "TTFF [秒]": [
+        T("ttff_col_pct"): ["50%", "90%", "95%", "99%"],
+        T("ttff_col_sec"): [
             f"{TTFF_P50_SEC:.1f}",
             f"{TTFF_P90_SEC:.1f}",
             f"{TTFF_P95_SEC:.1f}",
@@ -826,8 +1177,8 @@ if TTFF_PRESENT:
     })
 else:
     ttff_table = pd.DataFrame({
-        "パーセンタイル": ["50%", "95%"],
-        "TTFF [秒]": [
+        T("ttff_col_pct"): ["50%", "95%"],
+        T("ttff_col_sec"): [
             f"{np.quantile(ttff_15min, 0.50):.1f} (synthetic)",
             f"{np.quantile(ttff_15min, 0.95):.1f} (synthetic)",
         ],
@@ -840,19 +1191,15 @@ ttff_table
 #| output: asis
 
 if TTFF_PRESENT:
-    print(
-        f"**{PERIOD_LABEL}**:TTFF 成功率 "
-        f"**{TTFF_FIX_RATE*100:.2f} %** "
-        f"({N_TTFF_FIXED:,}/{N_TTFF_WINDOWS:,} の "
-        f"リセットウィンドウで有効 Fix を獲得)。観測間隔 30 秒では "
-        f"多くの Fix が**リセット直後のエポック**で得られるため、"
-        f"P50/P95 が 0 秒となるケースも多く、P99 が収束テールを反映します。"
-    )
+    print(T("ttff_success").format(
+        period=PERIOD_LABEL, rate=TTFF_FIX_RATE * 100,
+        fixed=N_TTFF_FIXED, windows=N_TTFF_WINDOWS,
+    ))
 ```
 
 ```{python}
 #| label: fig-ttff-15min
-#| fig-cap: "TTFF 累積分布(15 分リセット、全国・全期間のリセットウィンドウをプール)"
+#| fig-cap: "{{< meta caps.free.ttff_cdf >}}"
 
 # Prefer the real per-window TTFF distribution (TTFF_WINDOW_SEC)
 # derived in the data-load cell from the ttff-mode epoch_errors.
@@ -884,18 +1231,38 @@ for q, qcolor in [(0.50, COLOR_SECONDARY), (0.95, COLOR_WARNING)]:
 _xmax = float(np.quantile(_ttff_vals, 0.995)) * 1.05
 ax.set_xlim(0, _xmax)
 ax.set_ylim(0, 1.02)
-ax.set_xlabel("TTFF [秒]")
-ax.set_ylabel("累積確率")
+ax.set_xlabel(T("ttff_xlabel"))
+ax.set_ylabel(T("cdf_ylabel"))
 if not _ttff_real:
-    ax.set_title("(プレビュー:合成データ)", fontsize=9, color=COLOR_SECONDARY)
+    ax.set_title(T("ttff_preview_title"), fontsize=9, color=COLOR_SECONDARY)
 plt.tight_layout()
 ```
 
+::: {.content-visible when-profile="en"}
+### Spatial Distribution
+
+Performance is visualised on hexagonal cells sized to the CLAS
+augmentation grid spacing (~60 km). Each cell's value is the **95th
+percentile computed over all stations and all epochs pooled within that
+cell** (same rule as methodology §5.1). Cells with no stations, and
+**cells backed by fewer than 3 distinct stations, are left blank**
+(a single-station cell is reverse-engineerable from public coordinates,
+losing anonymity, and its percentile is unstable). Southern-island
+stations outside the CLAS service area (`out_of_service`) are excluded
+from cell evaluation.
+
+The colour scale is an absolute threshold against the CLAS augmentation
+spec (horizontal 95% ≤ 12 cm, vertical 95% ≤ 24 cm): **green = meets
+spec**, **amber = up to 2× spec** (degraded, watch), **red = beyond 2×
+spec** (clearly degraded).
+:::
+::: {.content-visible when-profile="ja"}
 ### 空間分布
 
 CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセル、および**異なる観測局が 3 局未満のセルは空白**で表示します(単独局セルは公開座標から逆引き可能で匿名性を欠き、かつパーセンタイルが不安定なため)。CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
 
 色階は CLAS 補強仕様(水平 95% ≤ 12 cm、垂直 95% ≤ 24 cm)を基準とした絶対閾値です:**緑 = 仕様達成**、**黄 = 仕様の 2 倍以下まで**(劣化、要観察)、**赤 = 仕様の 2 倍超**(明確な劣化)。
+:::
 
 ```{python}
 #| label: hex-spatial-setup
@@ -1031,55 +1398,83 @@ def _render_hex_panel(col, title, thresholds_cm):
 #| output: asis
 
 if HEX_PRESENT and not HEX_REAL_DATA:
-    print("> **プレビュー(合成データ)**:本図は INPUTS 未注入のための合成サンプルです。実データは driver 経由(`pntmoni-pipeline report monthly --render`)で生成されます。\n")
+    print(T("hex_preview"))
 ```
 
 ```{python}
 #| label: fig-hex-horizontal
-#| fig-cap: "水平誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
+#| fig-cap: "{{< meta caps.free.hex_horizontal >}}"
 
 if HEX_PRESENT:
-    _render_hex_panel("horizontal_m", "水平誤差 95 パーセンタイル", H_THRESHOLDS_CM)
+    _render_hex_panel("horizontal_m", T("hex_title_horiz"), H_THRESHOLDS_CM)
 else:
-    print(
-        "**`{python} PERIOD_LABEL`**:空間分布図は epoch_errors / "
-        "reference_coords parquet が揃った時点で生成されます。"
-    )
+    print(T("hex_missing").format(period=PERIOD_LABEL))
 ```
 
 ```{python}
 #| label: fig-hex-vertical
-#| fig-cap: "垂直誤差 95 パーセンタイルの空間分布(60 km hex セル、エポック・プール)"
+#| fig-cap: "{{< meta caps.free.hex_vertical >}}"
 
 if HEX_PRESENT:
-    _render_hex_panel("vertical_m", "垂直誤差 95 パーセンタイル", V_THRESHOLDS_CM)
+    _render_hex_panel("vertical_m", T("hex_title_vert"), V_THRESHOLDS_CM)
 ```
 
 ```{python}
 #| label: tbl-hex-coverage
-#| tbl-cap: "Hex セル統計"
+#| tbl-cap: "{{< meta caps.free.hex_coverage >}}"
 #| echo: false
 
 if HEX_PRESENT:
     _n_stations = HEX_EPOCHS_DF[["lon", "lat"]].drop_duplicates().shape[0]
     _n_rows = len(HEX_EPOCHS_DF)
     _stats = pd.DataFrame({
-        "指標": [
-            "観測局数",
-            "サンプリングエポック数(全期間)",
-            "セル間隔(目安、flat-to-flat)",
-            "セル集計規則",
+        T("hexcov_col_metric"): [
+            T("hexcov_row_stations"),
+            T("hexcov_row_epochs"),
+            T("hexcov_row_spacing"),
+            T("hexcov_row_rule"),
         ],
-        "値": [
+        T("hexcov_col_value"): [
             f"{_n_stations:,}",
             f"{_n_rows:,}",
             "~ 60 km",
-            "セル内エポック・プール → 95 パーセンタイル",
+            T("hexcov_val_rule"),
         ],
     })
     _stats   # Quarto / IPython renders the DataFrame inline.
 ```
 
+::: {.content-visible when-profile="en"}
+### Recent-Month Trend
+
+**Coming Soon.** This section will show the past 13 months of national
+95th-percentile horizontal/vertical error, with the current month
+highlighted and a comparison marker for the same month last year. The
+trend view becomes meaningful once the Phase 0 / Phase 1 backfill has
+filled in everything from April 2025 onward; until then the table above
+shows the current month's values only.
+
+## Cross-Validation
+
+::: {.callout-note appearance="default"}
+**Coming Soon (Phase 1+)**
+
+Cross-validation will report agreement statistics between the primary
+CLASLIB-based processing and the parallel evaluation engine MRTKLIB on a
+sample of ~100 stations. It demonstrates that PNT Moni's evaluation
+agrees across independent OSS implementations, in preparation for making
+MRTKLIB primary in 2027/Q4.
+
+Phase 1 goal: publish cross-validation on the parallel sample stations.
+Phase 2 goal (2027/Q4): role reversal — MRTKLIB primary, CLASLIB as
+historical reference.
+:::
+
+# Data Availability
+
+## Overview
+:::
+::: {.content-visible when-profile="ja"}
 ### 近月のトレンド
 
 **Coming Soon。** 本節では、過去 13 ヶ月の全国 95 パーセンタイル水平・垂直誤差の推移を、当月をハイライト・前年同月を比較マーカー付きで掲載する予定です。トレンド表示は、Phase 0 / Phase 1 の遡及処理で 2025 年 4 月以降が揃った時点で意味を持ちます。それまでは上のテーブルに当月の値のみを掲載します。
@@ -1098,21 +1493,39 @@ Phase 2 目標(2027/Q4):主従反転 — MRTKLIB を主、CLASLIB は履歴参�
 # データ可用性
 
 ## 概要
+:::
 
 ```{python}
 #| label: fig-availability
-#| fig-cap: "観測局別データ可用性分布"
+#| fig-cap: "{{< meta caps.free.availability >}}"
 
-# 暫定:観測局別データ可用性のヒストグラム(synthetic)
+# Provisional: per-station data-availability histogram (synthetic).
 station_avail = rng.beta(50, 1, size=N_STATIONS)
 fig, ax = plt.subplots(figsize=(8, 4))
 ax.hist(station_avail * 100, bins=40, color=COLOR_PRIMARY, alpha=0.85, edgecolor="white")
-ax.set_xlabel("可用性 [%]")
-ax.set_ylabel("観測局数")
+ax.set_xlabel(T("avail_xlabel"))
+ax.set_ylabel(T("avail_ylabel"))
 ax.set_xlim(85, 100)
 plt.tight_layout()
 ```
 
+::: {.content-visible when-profile="en"}
+National-statistics availability for `{python} PERIOD_LABEL`: **`{python} f"{AVAIL*100:.1f}%"`**.
+
+**GEONET maintenance events affecting availability**: no major maintenance events are recorded for `{python} PERIOD_LABEL`.
+
+For the latest GEONET maintenance notices see GSI's official notices page ([https://terras.gsi.go.jp/](https://terras.gsi.go.jp/)).
+
+# Anomaly Detection
+
+## L6 Broadcast Alerts
+
+The L6 broadcast Alert flag, carried in the CLAS augmentation stream
+(CSSR data part), signals a known issue detected on the generation
+side. This section aggregates it monthly to surface the broadcaster's
+self-reported health.
+:::
+::: {.content-visible when-profile="ja"}
 `{python} PERIOD_LABEL` の全国統計値 可用性:**`{python} f"{AVAIL*100:.1f}%"`**。
 
 **可用性に影響した GEONET 保守イベント**:`{python} PERIOD_LABEL` には大規模な保守イベントは記録されていません。
@@ -1124,44 +1537,50 @@ GEONET の最新の保守告知は、国土地理院の公式お知らせペー�
 ## L6 ブロードキャストアラート
 
 L6 ブロードキャストアラート(Alert flag)は、CLAS の補強情報ストリーム(CSSR データ部)に含まれる、生成側で検知された既知の問題を示すフラグです。本節では、放送側が自己申告する健全性の可視化のため、月次でこれを集計して報告します。
+:::
 
 ```{python}
 #| echo: false
 #| output: asis
 
 if not L6_ALERTS_PRESENT:
-    print(
-        f"**{PERIOD_LABEL}**:本期間の L6 アラート集計は未実行です — "
-        f"`pntmoni-pipeline analyze l6-alerts --period {PERIOD}` "
-        f"を実行して集計してください(方法論 §6)。"
-    )
+    print(T("l6_not_run").format(period=PERIOD_LABEL, code=PERIOD))
 elif N_L6_ALERTS == 0:
-    print(
-        f"**{PERIOD_LABEL}**:L6 ブロードキャスト全体で "
-        f"**アラート 0 件**(Alert flag が立ったメッセージなし)。"
-    )
+    print(T("l6_zero").format(period=PERIOD_LABEL))
 else:
-    _per_prn = "、".join(f"PRN {p}: {c}" for p, c in sorted(L6_ALERTS_PER_PRN.items()))
-    print(
-        f"**{PERIOD_LABEL}**:L6 ブロードキャスト全体で "
-        f"**{N_L6_ALERTS} 件のアラートを検出**({_per_prn})。"
+    _per_prn = T("l6_prn_sep").join(
+        f"PRN {p}: {c}" for p, c in sorted(L6_ALERTS_PER_PRN.items())
     )
+    print(T("l6_some").format(period=PERIOD_LABEL, n=N_L6_ALERTS, per_prn=_per_prn))
 ```
 
+::: {.content-visible when-profile="en"}
+# Appendix
+
+## GNSS System Notices: NAGU / NANU / NAQU
+
+Notices issued against GNSS constellation operations during
+`{python} PERIOD_LABEL`, recorded for cross-referencing against anomaly
+events and signal availability.
+:::
+::: {.content-visible when-profile="ja"}
 # 付録
 
 ## GNSS システム通知:NAGU / NANU / NAQU
 
 `{python} PERIOD_LABEL` 期間中に GNSS コンステレーション運用に対して発出された通知の一覧です。異常イベントや信号可用性との相互参照のため記録します。
+:::
 
 ```{python}
 #| label: tbl-system-events
-#| tbl-cap: "対象期間中の GNSS システム通知"
+#| tbl-cap: "{{< meta caps.free.sys_events >}}"
 
 # Load NAGU/NANU/NAQU events from driver-injected parquet path; filter
 # to the reporting period. The parquet is produced by `acquire
 # satellite-outages` and contains the full history; the qmd just
 # slices the current month.
+_EVENT_COLS = [T("evt_col_date"), T("evt_col_satellite"), T("evt_col_notice"),
+               T("evt_col_type"), T("evt_col_severity")]
 _so_p = INPUTS.get("satellite_outages") if isinstance(INPUTS, dict) else None
 _events_present = bool(_so_p and _Path(_so_p).is_file())
 if _events_present:
@@ -1171,28 +1590,22 @@ if _events_present:
     _end = _start + pd.DateOffset(months=1)
     _evt = _all[(_all["start_at"] >= _start) & (_all["start_at"] < _end)].copy()
     if len(_evt) > 0:
-        _evt["日付"] = _evt["start_at"].dt.strftime("%Y-%m-%d %H:%M UTC")
-        _evt["通知"] = _evt["source_notice_ids"].apply(
+        _evt[T("evt_col_date")] = _evt["start_at"].dt.strftime("%Y-%m-%d %H:%M UTC")
+        _evt[T("evt_col_notice")] = _evt["source_notice_ids"].apply(
             lambda xs: ", ".join(xs) if hasattr(xs, "__iter__") and not isinstance(xs, str) else (xs or "")
         )
-        _evt["衛星"] = _evt.apply(
+        _evt[T("evt_col_satellite")] = _evt.apply(
             lambda r: f'{str(r["constellation"]).upper()} PRN{int(r["prn"])}'
             if pd.notna(r["prn"]) else str(r["constellation"]).upper(),
             axis=1,
         )
-        _evt["種別"] = _evt["event_type"].fillna("—")
-        _evt["重要度"] = _evt["severity"].fillna("—")
-        events = _evt[["日付", "衛星", "通知", "種別", "重要度"]].reset_index(drop=True)
+        _evt[T("evt_col_type")] = _evt["event_type"].fillna("—")
+        _evt[T("evt_col_severity")] = _evt["severity"].fillna("—")
+        events = _evt[_EVENT_COLS].reset_index(drop=True)
     else:
-        events = pd.DataFrame({
-            "日付": ["—"], "衛星": ["—"], "通知": ["—"],
-            "種別": ["—"], "重要度": ["—"],
-        })
+        events = pd.DataFrame({c: ["—"] for c in _EVENT_COLS})
 else:
-    events = pd.DataFrame({
-        "日付": ["—"], "衛星": ["—"], "通知": ["—"],
-        "種別": ["—"], "重要度": ["—"],
-    })
+    events = pd.DataFrame({c: ["—"] for c in _EVENT_COLS})
 events
 ```
 
@@ -1200,17 +1613,25 @@ events
 #| echo: false
 #| output: asis
 if _events_present and "_evt" in dir() and len(_evt) > 0:
-    print(f"`{PERIOD_LABEL}`:**{len(_evt)} 件**の通知を検出。"
-          "NAGU(Galileo)、NANU(GPS)、NAQU(QZSS)の公式通知から収集。")
+    print(T("sysevt_some").format(period=PERIOD_LABEL, n=len(_evt)))
 elif _events_present:
-    print(f"`{PERIOD_LABEL}`:本期間に該当する NAGU/NANU/NAQU 通知はありません。")
+    print(T("sysevt_none").format(period=PERIOD_LABEL))
 else:
-    print("**未注入**:`pntmoni-pipeline acquire satellite-outages` を実行すると本表に反映されます。")
+    print(T("sysevt_missing"))
 ```
 
+::: {.content-visible when-profile="en"}
+## List of Satellites
+
+A **snapshot of the constellation operators' official pages** (state at
+fetch time). Sources: GPS = USCG NAVCEN, QZSS = QSS DoD, Galileo = GSC
+Europa.
+:::
+::: {.content-visible when-profile="ja"}
 ## 衛星一覧
 
 本節は **コンステレーション運用者の公式ページのスナップショット**(取得時点の状態)です。出典:GPS = USCG NAVCEN、QZSS = QSS DoD、Galileo = GSC Europa。
+:::
 
 ```{python}
 #| label: constellation-status-setup
@@ -1231,19 +1652,13 @@ else:
     CONSTELLATION_DF = None
     CONSTELLATION_FETCHED_AT = None
 
-_STATUS_JP = {
-    "operational":    "運用中",
-    "outage":         "停止中",
-    "unusable":       "使用不可",
-    "decommissioned": "退役",
-    "commissioning":  "試験運用",
-}
+_STATUS_MAP = T("sat_status")
 
 def _format_satellite_table(df, *, columns):
-    """Subset+rename the given columns into a JP-labelled display frame."""
+    """Subset+rename the given columns into a localised display frame."""
     out = df.copy()
-    out["状態"] = out["status"].map(lambda s: _STATUS_JP.get(s, s))
-    out["通知"] = out.apply(
+    out[T("sat_col_status")] = out["status"].map(lambda s: _STATUS_MAP.get(s, s))
+    out[T("sat_col_notice")] = out.apply(
         lambda r: f"{r['notice_type']} {r['notice_id']}".strip()
         if r.get("notice_type") or r.get("notice_id") else "",
         axis=1,
@@ -1255,19 +1670,17 @@ def _format_satellite_table(df, *, columns):
 #| echo: false
 #| output: asis
 if not _cs_present:
-    print(":::: {.callout-warning}\n"
-          "コンステレーション状態の parquet が未取得です。"
-          "`pntmoni-pipeline acquire constellation` を実行してください。\n"
-          "::::\n")
+    print(":::: {.callout-warning}\n" + T("cs_missing") + "\n::::\n")
 elif CONSTELLATION_FETCHED_AT is not None:
-    print(f"**取得時刻**:{CONSTELLATION_FETCHED_AT.strftime('%Y-%m-%d %H:%M UTC')}\n")
+    _ts = CONSTELLATION_FETCHED_AT.strftime('%Y-%m-%d %H:%M UTC')
+    print(T("cs_fetched").format(ts=_ts) + "\n")
 ```
 
 ### GPS
 
 ```{python}
 #| label: tbl-gps-satellites
-#| tbl-cap: "GPS 衛星コンステレーション状況"
+#| tbl-cap: "{{< meta caps.free.gps_sats >}}"
 
 if _cs_present:
     _gps = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "gps"].copy()
@@ -1275,24 +1688,29 @@ if _cs_present:
         lambda x: f"G{int(x):02d}" if pd.notna(x) else "—"
     )
     _gps = _gps.rename(columns={
-        "svn": "SVN", "block": "ブロック", "slot": "スロット",
-        "clock": "原子時計",
+        "svn": "SVN", "block": T("sat_col_block"), "slot": T("sat_col_slot"),
+        "clock": T("sat_col_clock"),
     })
     gps_table = _format_satellite_table(
         _gps,
-        columns=["PRN", "SVN", "ブロック", "スロット", "原子時計",
-                 "状態", "通知"],
+        columns=["PRN", "SVN", T("sat_col_block"), T("sat_col_slot"),
+                 T("sat_col_clock"), T("sat_col_status"), T("sat_col_notice")],
     )
 else:
     gps_table = pd.DataFrame({"—": ["—"]})
 gps_table
 ```
 
+::: {.content-visible when-profile="en"}
+### QZSS (Michibiki)
+:::
+::: {.content-visible when-profile="ja"}
 ### QZSS(みちびき)
+:::
 
 ```{python}
 #| label: tbl-qzss-satellites
-#| tbl-cap: "QZSS 衛星コンステレーション状況"
+#| tbl-cap: "{{< meta caps.free.qzss_sats >}}"
 
 if _cs_present:
     _qzs = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "qzs"].copy()
@@ -1300,12 +1718,13 @@ if _cs_present:
         lambda x: f"J{int(x)}" if pd.notna(x) else "—"
     )
     _qzs = _qzs.rename(columns={
-        "satellite_id": "衛星", "svn": "SVN", "block": "ブロック",
-        "signals": "送信信号",
+        "satellite_id": T("sat_col_satellite"), "svn": "SVN",
+        "block": T("sat_col_block"), "signals": T("sat_col_signals"),
     })
     qzss_table = _format_satellite_table(
         _qzs,
-        columns=["PRN", "SVN", "ブロック", "送信信号", "状態", "通知"],
+        columns=["PRN", "SVN", T("sat_col_block"), T("sat_col_signals"),
+                 T("sat_col_status"), T("sat_col_notice")],
     )
 else:
     qzss_table = pd.DataFrame({"—": ["—"]})
@@ -1316,23 +1735,56 @@ qzss_table
 
 ```{python}
 #| label: tbl-galileo-satellites
-#| tbl-cap: "Galileo 衛星コンステレーション状況"
+#| tbl-cap: "{{< meta caps.free.gal_sats >}}"
 
 if _cs_present:
     _gal = CONSTELLATION_DF[CONSTELLATION_DF["constellation"] == "gal"].copy()
     _gal["E#"] = _gal["satellite_id"]
     _gal = _gal.rename(columns={
-        "svn": "GSAT", "clock": "原子時計",
+        "svn": "GSAT", "clock": T("sat_col_clock"),
     })
     galileo_table = _format_satellite_table(
         _gal,
-        columns=["E#", "GSAT", "原子時計", "状態", "通知"],
+        columns=["E#", "GSAT", T("sat_col_clock"), T("sat_col_status"),
+                 T("sat_col_notice")],
     )
 else:
     galileo_table = pd.DataFrame({"—": ["—"]})
 galileo_table
 ```
 
+::: {.content-visible when-profile="en"}
+PNT Moni's evaluation also covers the Galileo signals received at GEONET
+stations.
+
+---
+
+## Methodology Version Tag
+
+| Item | Value |
+|---|---|
+| Methodology version | `{python} METHODOLOGY_VERSION` |
+| Pipeline config hash | `{python} CONFIG_HASH` |
+| Engine | `{python} f"{ENGINE} {ENGINE_VERSION}"` |
+| QC tool | `{python} f"{QC_TOOL} {QC_VERSION}"` |
+| Reference-coordinate method version | `{python} REFERENCE_COORD_VERSION` |
+| Evaluation stream | `{python} STREAM` |
+| Reporting period | `{python} PERIOD_LABEL` |
+| Data mode | `{python} DATA_MODE` |
+
+For the full methodology document see [https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
+
+---
+
+::: {.callout-note appearance="minimal"}
+**Sources & terms of use**: GEONET data is distributed by GSI under PDL 1.0 (source: GSI GEONET data service). The official QSS Service Performance Report is governed by the [Government Standard Terms of Use v2.0](https://qzss.go.jp/policy/rule.html).
+
+**About PNT Moni**: PNT Moni is an independent service providing continuous evaluation of GNSS augmentation, starting from QZSS CLAS. The monthly report complements the official semi-annual report in cadence, independence and analytical depth; a semi-annual Comparison Archive synced to the official cycle is provided separately.
+
+**Contact**: hello@pntmoni.com · [https://pntmoni.com](https://pntmoni.com)
+:::
+:::
+::: {.content-visible when-profile="ja"}
 PNT Moni の評価は GEONET 観測局で受信される Galileo 信号も対象としています。
 
 ---
@@ -1360,4 +1812,5 @@ PNT Moni の評価は GEONET 観測局で受信される Galileo 信号も対象
 **PNT Moni について**:PNT Moni は GNSS 補強サービスの継続評価を提供する独立サービスで、QZSS CLAS を出発点としています。月次レポートは公式半期毎レポートを月次解像度・独立性・解析の深さで補完し、公式サイクルに同期した半期毎の比較レポート(Comparison Archive)も別途提供します。
 
 **お問い合わせ**:hello@pntmoni.com · [https://pntmoni.com](https://pntmoni.com)
+:::
 :::

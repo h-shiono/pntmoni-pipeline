@@ -17,9 +17,26 @@ lang: en
 # so one template renders under either language).
 title_qc: "PNT Moni Monthly QC Report"
 subtitle_qc: "GEONET Observation Quality — Free Tier"
+title_free: "PNT Moni Monthly Report"
+subtitle_free: "QZSS CLAS Performance Evaluation — Free Tier"
 
 # Figure / table captions, namespaced per template (qc / free).
 caps:
+  free:
+    network_map: "CLAS 12-network grid points and the GEONET stations evaluated this month."
+    exec_summary: "Headline performance metrics."
+    horiz_cdf: "Cumulative distribution of horizontal error (epochs pooled over qualified stations)."
+    vert_cdf: "Cumulative distribution of vertical error (epochs pooled over qualified stations)."
+    ttff_headline: "TTFF percentiles (15-min reset, qualified stations, all days)."
+    ttff_cdf: "Cumulative distribution of TTFF (15-min reset, reset windows pooled nationwide over the period)."
+    hex_horizontal: "Spatial distribution of the horizontal-error 95th percentile (60 km hex cells, epochs pooled)."
+    hex_vertical: "Spatial distribution of the vertical-error 95th percentile (60 km hex cells, epochs pooled)."
+    hex_coverage: "Hex-cell statistics."
+    availability: "Distribution of data availability across stations."
+    sys_events: "GNSS system notices within the reporting period."
+    gps_sats: "GPS satellite constellation status."
+    qzss_sats: "QZSS satellite constellation status."
+    gal_sats: "Galileo satellite constellation status."
   qc:
     network: "GEONET reference stations covered in this report."
     data_avail: "Data availability — fraction of the 2,880 nominal daily epochs with logged observations."

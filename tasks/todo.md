@@ -83,7 +83,18 @@ switch via `T()`, never via duplicated cells.
       `--profile {ja|en} --no-execute-daemon` invocation + mechanism.
 - [ ] PDF verification (xelatex) for one language — optional final gate;
       font path wired (CJKmainfont Hiragino + pdf.fonttype=42).
-- [ ] Apply the same pattern to monthly_free.qmd (separate step).
+- [x] Apply the same pattern to monthly_free.qmd (CLAS report, was
+      JA-only → now JA/EN). title_free/subtitle_free + caps.free.* in
+      profiles; LANG+STR+T() in setup; Inter prepended to CJK font
+      stack; all prose in content-visible; captions to {{< meta >}};
+      figure labels/legends (incl. 12 network names romanized), exec/
+      TTFF/hex-coverage/system-event/satellite tables, and all asis
+      blocks (Rapid banner, L6, sysevents, constellation) T()-ized.
+      Driver `render()`/`run_monthly()` + CLI gained `--langs`
+      (default ja,en) → `--profile <lang>` into `<out>/<lang>/`.
+      Verified both HTML renders: headings/section-numbers/captions/
+      tables/7 figures (JA legend+axes render Japanese, EN English —
+      no tofu); no stray-language leakage; 194 tests pass.
 
 ### Phase Guard
 [ ] Phase 0 — "Initial Quarto template producing a usable PDF" is in

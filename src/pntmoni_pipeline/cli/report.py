@@ -58,6 +58,15 @@ def cmd_monthly(
                  " staged.",
         ),
     ] = "html",
+    langs: Annotated[
+        str,
+        typer.Option(
+            "--langs",
+            help="Comma-separated languages to render: ja, en. Default both."
+                 " Each renders via `--profile <lang>` into its own"
+                 " <out>/<lang>/ subdir (single-source bilingual template).",
+        ),
+    ] = "ja,en",
 ) -> None:
     """Drive the monthly report: gather → config_hash → params → (render)."""
     _formats = tuple(
@@ -66,12 +75,18 @@ def cmd_monthly(
     bad = [f for f in _formats if f not in ("html", "pdf")]
     if bad:
         raise typer.BadParameter(f"unknown format(s): {bad} (allowed: html, pdf)")
+    _langs = tuple(
+        l.strip().lower() for l in langs.split(",") if l.strip()
+    )
+    bad_l = [l for l in _langs if l not in ("ja", "en")]
+    if bad_l:
+        raise typer.BadParameter(f"unknown lang(s): {bad_l} (allowed: ja, en)")
     result = reports.run_monthly(
         period=period, mode=mode, stream=stream,
         engine_version=engine_version, data_mode=data_mode,
         template=template, output_root=output_root,
         processing_log=processing_log, do_render=render,
-        formats=_formats,
+        formats=_formats, langs=_langs,
     )
     typer.echo(
         f"report monthly {result.period} stream={result.stream} mode={result.mode}\n"
