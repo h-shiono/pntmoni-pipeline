@@ -1590,3 +1590,41 @@ up history.
 ### Done Criteria
 - `catchup` runs daily + N gap days; re-runnable/idempotent; launchd
   installed; tests green.
+
+## [2026-07-03] Design: monochrome-ledger visual system (monthly_free)
+
+Source: temp/design_handoff_pntmoni_report (README + pntmoni-v2.scss).
+Direction "3a モノクローム台帳" — near-monochrome, hairline rules,
+green (#059669) as a single small square marker only, zero radius.
+
+### Phase Guard
+[ ] Phase 0 — Quarto report styling; no new scope.
+
+### Plan
+[x] Rewrite reports/styles/pntmoni.scss to the v2 token+rule system
+    - ink-* scale primary; $slate-* kept as aliases (dashboard-safe)
+    - h1 serif cover title; h2 = mono small-caps ledger label + 1px rule
+    - tables Tufte hairline (no header shading, no hover)
+    - green = marker-only; radius 0 everywhere
+    - figures hairline border (no shadow)
+    - port tier-gate / data-provenance / independence / document-control
+[x] ADAPT callouts to Quarto native DOM (do NOT copy v2 ::before
+    content — Quarto auto-renders callout titles; would duplicate).
+    Needed `!important` + `.callout.callout-style-*` specificity to
+    beat Quarto's own callout CSS (loads after the theme) — otherwise
+    the blue/orange left bars + box borders survived.
+[x] Renamed the accent marker class `.mark` -> `.accent-mark` (Bootstrap
+    owns `.mark` and paints a highlight bg that fought the green square).
+[x] Add Source Serif 4 + Noto Serif JP to reports/_brand.yml (cover h1);
+    bumped JetBrains Mono to include weight 600 (h2 label weight).
+[x] Rendered monthly_free (en, synthetic) + a component design-check
+    page; screenshotted via headless Chrome and verified visually.
+
+### Notes / follow-ups
+- monthly_free.qmd needed NO structural edits — it uses only native
+  Quarto constructs (##/callouts/tables), so the shared SCSS drives it.
+- pntmoni.scss is shared, so monthly_qc inherits the same monochrome
+  system automatically (intended direction; verify its figures later).
+- Green-square accent marker is available as `[value]{.accent-mark}`
+  but not yet placed in any template — wire into the headline Fix-rate
+  cell when desired.
