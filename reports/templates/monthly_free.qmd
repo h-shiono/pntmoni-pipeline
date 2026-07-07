@@ -68,6 +68,8 @@ params:
   data_mode: "synthetic"
   inputs: {}
   inputs_status: {}
+  revisions: []
+  initial_pub_date: ""
 jupyter: python3
 ---
 
@@ -100,6 +102,15 @@ REFERENCE_COORD_VERSION = "gsi-daily-median15d-1.0"
 DATA_MODE = "synthetic"
 INPUTS: dict[str, str] = {}        # parquet paths per input name
 INPUTS_STATUS: dict[str, str] = {} # "present"|"missing" per input name
+# Post-publication corrections (Revision History rows after v1.0), per
+# 30-evaluation-methodology/03-monthly-report-structure.md §1. Each
+# entry: {"version": "1.1", "date": "YYYY-MM-DD",
+#         "note_ja": "...", "note_en": "..."}.
+REVISIONS: list[dict] = []
+# v1.0 publication date for re-renders. On a correction re-render,
+# today() is no longer the initial publication date, so the driver
+# passes the original date explicitly. Empty = stamp today() (live).
+INITIAL_PUB_DATE = ""
 
 # Production override: the pipeline driver
 # (src/pntmoni_pipeline/reports/driver.py) sets
@@ -130,6 +141,8 @@ if _pp:
     DATA_MODE = _params.get("data_mode", DATA_MODE)
     INPUTS = _params.get("inputs", INPUTS)
     INPUTS_STATUS = _params.get("inputs_status", INPUTS_STATUS)
+    REVISIONS = _params.get("revisions", REVISIONS)
+    INITIAL_PUB_DATE = _params.get("initial_pub_date", INITIAL_PUB_DATE)
 ```
 
 ```{python}
@@ -578,6 +591,7 @@ STR = {
             "| Version | Date | Notes |\n"
             "|---|---|---|\n"
             "| 1.0 | {date} | Initial edition |\n"
+            "{extra_rows}"
         ),
         "revision_pending": "(pending publication)",
         "rapid_banner": (
@@ -698,6 +712,7 @@ STR = {
             "| バージョン | 日付 | 内容 |\n"
             "|------------|------------|------------|\n"
             "| 1.0 | {date} | 初版 |\n"
+            "{extra_rows}"
         ),
         "revision_pending": "(発行待ち)",
         "rapid_banner": (
@@ -834,14 +849,21 @@ if DATA_MODE == "synthetic":
 
 # Revision History: the v1.0 date is stamped at render time for live
 # renders (initial publication date); synthetic previews show a
-# placeholder. Post-publication corrections are added as new rows per
+# placeholder. On a correction re-render the driver passes the original
+# publication date via ``initial_pub_date`` (today() would be wrong) and
+# the correction rows via ``revisions``, per
 # 30-evaluation-methodology/03-monthly-report-structure.md §1.
 import datetime as _dt_rev
-_pub_date = (
+_pub_date = INITIAL_PUB_DATE or (
     _dt_rev.date.today().isoformat()
     if DATA_MODE == "live" else T("revision_pending")
 )
-print(T("revision_history").format(date=_pub_date))
+_extra_rows = "".join(
+    f"| {_rev.get('version', '?')} | {_rev.get('date', '?')} | "
+    f"{_rev.get('note_' + LANG) or _rev.get('note', '')} |\n"
+    for _rev in REVISIONS
+)
+print(T("revision_history").format(date=_pub_date, extra_rows=_extra_rows))
 ```
 
 ```{python}
@@ -916,7 +938,13 @@ resulting Kalman-filter behaviour. See
 [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762). These
 are treated as **structural characteristics**, not bugs; comparing
 absolute values or equating the numbers is not meaningful
-(methodology §8.3).
+(methodology §8.3). In direction, the lower epoch density at 30 s
+gives filter convergence and re-convergence intervals a relatively
+larger weight in the pooled statistics, pushing the tail percentiles
+(95% / 99%) **above** the official evaluation. PS-QZSS standard
+values are accordingly used in this report as reference values only,
+never for compliance judgement (see the note in the Executive
+Summary).
 
 ## Evaluation Network
 
@@ -953,7 +981,7 @@ PNT Moni は GNSS 補強サービスの独立評価サービスとして、内�
 
 **統計集計**:95% / 99% パーセンタイル誤差は、各集計セルに属する**全観測局・全日のエポック誤差をプール**して算出します(方法論 §5.1、NAVIGATION 2026 と同一規則)。TTFF は **15 分リセット**(NAVIGATION 2026 との連続性、方法論 §5.2)。60 分リセットは Phase 1 で追加予定。
 
-**公式 QSS 数値との既知の構造的差**:PNT Moni の方法論は公式 QSS Service Performance Report と以下 4 点で構造的に異なります — サンプリングレート(30 秒 vs 1 秒)、30 秒向けに再調整したパラメータ設定、CLASLIB 版差、これらに起因する Kalman Filter 挙動。詳細は [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762) を参照。これはバグではなく**構造的特性**として扱います。絶対値の比較や数値の同一視は意味を持ちません(方法論 §8.3)。
+**公式 QSS 数値との既知の構造的差**:PNT Moni の方法論は公式 QSS Service Performance Report と以下 4 点で構造的に異なります — サンプリングレート(30 秒 vs 1 秒)、30 秒向けに再調整したパラメータ設定、CLASLIB 版差、これらに起因する Kalman Filter 挙動。詳細は [Shiono & Kubo (2025, 2026)](https://doi.org/10.33012/navi.762) を参照。これはバグではなく**構造的特性**として扱います。絶対値の比較や数値の同一視は意味を持ちません(方法論 §8.3)。差の方向としては、30 秒サンプリングではエポック密度が低く、フィルタ収束・再収束区間が統計プールに占める重みが相対的に大きくなるため、尾部パーセンタイル(95% / 99%)は公式評価より**高く**出ます。したがって本レポートでは PS-QZSS の性能標準値を参照値としてのみ用い、適合性判定には用いません(エグゼクティブサマリの注記参照)。
 
 ## 評価ネットワーク
 
@@ -1122,6 +1150,25 @@ exec_summary
 - National fix rate (Q=4): **`{python} f"{AVAIL*100:.2f}%"`**
 - L6 broadcast alerts: **`{python} N_L6_ALERTS if L6_ALERTS_PRESENT else "n/a (not yet aggregated)"`**
 
+::: {.callout-note}
+## Reading these values against the Performance Standard (PS-QZSS)
+
+The QZSS Performance Standard (PS-QZSS) sets the CLAS kinematic
+positioning-accuracy standard at horizontal 95% 12 cm / vertical 95%
+24 cm. Compliance with the standard is verified by QSS's official
+Service Performance Reports, whose evaluation is run under conditions
+that differ from this report's (1-s sampling, a fixed evaluation
+station set). PNT Moni's 30-s, ~1,100-station methodology (see
+Methodology) is known to produce structurally higher tail percentiles
+than the official evaluation
+([Shiono & Kubo 2026, §4.1.2](https://doi.org/10.33012/navi.762)).
+Whether a value in this report sits above or below a PS-QZSS standard
+value is therefore **not a compliance judgement**; the standard values
+appear in this report only as a reference scale (e.g. in the spatial
+distribution maps). Quantitative reconciliation against official
+figures is performed in the half-yearly Comparison Archive.
+:::
+
 # Performance
 
 ## National Overview
@@ -1134,6 +1181,12 @@ exec_summary
 - TTFF(15 分リセット、95 パーセンタイル):**`{python} f"{TTFF95:.1f} 秒"`**
 - 全国 Fix 率(Q=4):**`{python} f"{AVAIL*100:.2f}%"`**
 - L6 ブロードキャストアラート件数:**`{python} N_L6_ALERTS if L6_ALERTS_PRESENT else "n/a(未集計)"`**
+
+::: {.callout-note}
+## 性能標準(PS-QZSS)との比較について
+
+QZSS の性能標準(PS-QZSS)は、CLAS の kinematic 測位精度の標準値を水平 95% 12 cm / 垂直 95% 24 cm と定めています。標準への適合性の検証は QSS の公式 Service Performance Report が担っており、その評価は本レポートとは異なる条件(1 秒サンプリング、固定された評価局セット)で行われています。PNT Moni の 30 秒・全国約 1,100 局手法(§評価手法)は、公式評価より構造的に高い尾部パーセンタイル値を与えることが確認されています([Shiono & Kubo 2026, §4.1.2](https://doi.org/10.33012/navi.762))。したがって、本レポートの値が PS-QZSS 標準値を上回るか下回るかは**適合/不適合の判定を意味しません**。標準値は本レポートでは空間分布図などの**参照スケール**としてのみ用います。公式値との定量的な対応検証は、半期毎の Comparison Archive で行います。
+:::
 
 # 性能
 
@@ -1283,17 +1336,22 @@ losing anonymity, and its percentile is unstable). Southern-island
 stations outside the CLAS service area (`out_of_service`) are excluded
 from cell evaluation.
 
-The colour scale is an absolute threshold against the CLAS augmentation
-spec (horizontal 95% ≤ 12 cm, vertical 95% ≤ 24 cm): **green = meets
-spec**, **amber = up to 2× spec** (degraded, watch), **red = beyond 2×
-spec** (clearly degraded).
+The colour scale uses the PS-QZSS standard values (kinematic,
+horizontal 95% 12 cm / vertical 95% 24 cm) as an absolute **reference
+scale**: **green = at or below the standard value**, **amber = up to
+2× the standard value** (watch), **red = beyond 2× the standard
+value** (clearly degraded). Because this evaluation is run under
+conditions that differ from the official compliance verification (see
+Methodology and the Executive Summary note), the colouring supports
+spatial comparison within a consistent methodology — it is **not** a
+PS-QZSS compliance judgement per cell.
 :::
 ::: {.content-visible when-profile="ja"}
 ### 空間分布
 
 CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセル、および**異なる観測局が 3 局未満のセルは空白**で表示します(単独局セルは公開座標から逆引き可能で匿名性を欠き、かつパーセンタイルが不安定なため)。CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
 
-色階は CLAS 補強仕様(水平 95% ≤ 12 cm、垂直 95% ≤ 24 cm)を基準とした絶対閾値です:**緑 = 仕様達成**、**黄 = 仕様の 2 倍以下まで**(劣化、要観察)、**赤 = 仕様の 2 倍超**(明確な劣化)。
+色階は PS-QZSS の性能標準値(kinematic、水平 95% 12 cm / 垂直 95% 24 cm)を**参照スケール**として用いた絶対閾値です:**緑 = 標準値以下**、**黄 = 標準値の 2 倍以下**(要観察)、**赤 = 標準値の 2 倍超**(明確な劣化)。本評価は公式の適合性検証とは異なる条件で行われているため(§評価手法およびエグゼクティブサマリの注記参照)、この色分けは同一手法内での空間比較のためのものであり、セル単位の PS-QZSS **適合性判定ではありません**。
 :::
 
 ```{python}
@@ -1305,10 +1363,12 @@ import cartopy.feature as cfeature
 from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.lines import Line2D
 
-# Absolute thresholds expressed against the CLAS spec:
-#   緑 = 仕様達成(水平 ≤12 cm / 垂直 ≤24 cm)
-#   黄 = 仕様の2倍まで(劣化、要観察)
-#   赤 = 仕様の2倍超(明確な劣化)
+# Absolute thresholds using the PS-QZSS standard values as a reference
+# scale — NOT a compliance judgement (PS-QZSS reference-value
+# convention, 30-evaluation-methodology/03-monthly-report-structure.md):
+#   緑 = 標準値以下(水平 ≤12 cm / 垂直 ≤24 cm)
+#   黄 = 標準値の2倍まで(要観察)
+#   赤 = 標準値の2倍超(明確な劣化)
 H_THRESHOLDS_CM = (12.0, 24.0)
 V_THRESHOLDS_CM = (24.0, 48.0)
 

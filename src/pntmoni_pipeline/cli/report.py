@@ -67,6 +67,25 @@ def cmd_monthly(
                  " <out>/<lang>/ subdir (single-source bilingual template).",
         ),
     ] = "ja,en",
+    revisions: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--revision",
+            help="Post-publication correction row (repeatable), format"
+                 " 'VERSION|DATE|NOTE_JA|NOTE_EN', e.g."
+                 " '1.1|2026-07-08|文言修正|Wording fix'. Requires"
+                 " --initial-pub-date so the v1.0 row keeps its original"
+                 " date on the re-render.",
+        ),
+    ] = None,
+    initial_pub_date: Annotated[
+        str,
+        typer.Option(
+            "--initial-pub-date",
+            help="Original v1.0 publication date (YYYY-MM-DD) for"
+                 " correction re-renders; default stamps today.",
+        ),
+    ] = "",
 ) -> None:
     """Drive the monthly report: gather → config_hash → params → (render)."""
     _formats = tuple(
@@ -81,12 +100,30 @@ def cmd_monthly(
     bad_l = [l for l in _langs if l not in ("ja", "en")]
     if bad_l:
         raise typer.BadParameter(f"unknown lang(s): {bad_l} (allowed: ja, en)")
+    _revisions: list[dict[str, str]] = []
+    for spec in revisions or []:
+        parts = [p.strip() for p in spec.split("|")]
+        if len(parts) != 4 or not all(parts[:2]):
+            raise typer.BadParameter(
+                f"bad --revision {spec!r}"
+                " (expected 'VERSION|DATE|NOTE_JA|NOTE_EN')"
+            )
+        _revisions.append({
+            "version": parts[0], "date": parts[1],
+            "note_ja": parts[2], "note_en": parts[3],
+        })
+    if _revisions and not initial_pub_date:
+        raise typer.BadParameter(
+            "--revision requires --initial-pub-date (the v1.0 row must"
+            " keep its original publication date on a re-render)"
+        )
     result = reports.run_monthly(
         period=period, mode=mode, stream=stream,
         engine_version=engine_version, data_mode=data_mode,
         template=template, output_root=output_root,
         processing_log=processing_log, do_render=render,
         formats=_formats, langs=_langs,
+        revisions=_revisions, initial_pub_date=initial_pub_date,
     )
     typer.echo(
         f"report monthly {result.period} stream={result.stream} mode={result.mode}\n"

@@ -205,6 +205,8 @@ def assemble_params(
     config_hash_full: str,
     engine_version: str = DEFAULT_ENGINE_VERSION,
     data_mode: str = "live",
+    revisions: list[dict[str, str]] | None = None,
+    initial_pub_date: str = "",
 ) -> dict[str, Any]:
     """Build the Quarto params dict for the monthly template (§7.4 tag)."""
     year = int(period[:4])
@@ -228,6 +230,11 @@ def assemble_params(
         # regardless of Quarto's render cwd (which is the qmd's dir).
         "inputs": {k: str(p.resolve()) for k, p in inputs.paths.items()},
         "inputs_status": inputs.status(),
+        # Post-publication corrections (Revision History rows after v1.0)
+        # and the original v1.0 publication date for re-renders, per
+        # 30-evaluation-methodology/03-monthly-report-structure.md §1.
+        "revisions": revisions or [],
+        "initial_pub_date": initial_pub_date,
     }
 
 
@@ -366,6 +373,8 @@ def run_monthly(
     do_render: bool = False,
     formats: tuple[str, ...] = ("html",),
     langs: tuple[str, ...] = ("ja", "en"),
+    revisions: list[dict[str, str]] | None = None,
+    initial_pub_date: str = "",
 ) -> RunResult:
     """Gather inputs, compute config_hash, assemble params, optionally render."""
     inputs = gather_inputs(period, mode, processed_root=processed_root)
@@ -375,6 +384,7 @@ def run_monthly(
     params = assemble_params(
         period=period, mode=mode, stream=stream, inputs=inputs,
         config_hash_full=ch.full, engine_version=engine_version, data_mode=data_mode,
+        revisions=revisions, initial_pub_date=initial_pub_date,
     )
     out_dir = output_root / stream / period
     out_dir.mkdir(parents=True, exist_ok=True)

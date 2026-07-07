@@ -74,6 +74,21 @@ def test_assemble_params_contains_required_fields(tmp_path: Path):
     assert p["config_hash"] == "0" * ch.DISPLAY_LEN
     assert p["reference_coord_version"] == "gsi-daily-median15d-1.0"
     assert "l6_alerts" in p["inputs"] and "l6_alerts" in p["inputs_status"]
+    assert p["revisions"] == [] and p["initial_pub_date"] == ""
+
+
+def test_assemble_params_passes_revisions_through(tmp_path: Path):
+    b = D.InputsBundle(period="2026-06", mode="kinematic_p30_verify",
+                       paths={})
+    rev = [{"version": "1.1", "date": "2026-07-08",
+            "note_ja": "文言修正", "note_en": "Wording fix"}]
+    p = D.assemble_params(
+        period="2026-06", mode="kinematic_p30_verify", stream="rapid",
+        inputs=b, config_hash_full="0" * 64,
+        revisions=rev, initial_pub_date="2026-07-07",
+    )
+    assert p["revisions"] == rev
+    assert p["initial_pub_date"] == "2026-07-07"
 
 
 def test_run_monthly_no_render_writes_params_and_provenance(tmp_path: Path):
