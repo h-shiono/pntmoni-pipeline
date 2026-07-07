@@ -274,6 +274,17 @@ mpl.rcParams['pdf.fonttype'] = 42
 # ---- Reporting period -----------------------------------------------
 YEAR = 2026
 MONTH = 4
+# Driver override: `report monthly` writes a params JSON and points
+# PNTMONI_REPORT_PARAMS at it (same mechanism as monthly_free). Reading
+# it here lets `report monthly --template monthly_qc.qmd --period YYYY-MM`
+# target any month; a bare `quarto render` keeps the defaults above.
+import json as _json
+_pp = os.environ.get("PNTMONI_REPORT_PARAMS")
+if _pp:
+    with open(_pp) as _fp:
+        _qc_params = _json.load(_fp)
+    YEAR = int(_qc_params.get("year", YEAR))
+    MONTH = int(_qc_params.get("month", MONTH))
 # Period label is language-dependent: "April 2026" vs "2026年4月".
 PERIOD_LABEL = (
     f"{YEAR}年{MONTH}月" if LANG == "ja"
@@ -883,22 +894,14 @@ distributions and trends behind these summary numbers.
 #| include: false
 
 def uptime_pair(col_daily: str, col_station: str, label: str, ylim_low: int):
-    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
-    # left: daily national bar
-    ax = axes[0]
-    ax.bar(daily_national["date"], daily_national[col_daily] * 100,
-           color=COLOR_PRIMARY, width=0.8, edgecolor="white", linewidth=0.4)
-    mean_pct = daily_national[col_daily].mean() * 100
-    ax.axhline(mean_pct, color=COLOR_DANGER, linestyle="--", linewidth=1,
-               label=T("uptime_legend_mean").format(v=mean_pct))
-    ax.set_ylabel(T("uptime_ylabel_pct").format(label=label))
-    ax.set_xlabel(T("uptime_xlabel_date"))
-    ax.set_ylim(ylim_low, 100)
-    ax.legend(loc="lower right", framealpha=0.9, fontsize=9)
-    ax.set_title(T("uptime_title_daily"), loc="left", fontweight=600)
-    fig.autofmt_xdate()
-    # right: ECDF of station-monthly values
-    ax = axes[1]
+    # Free tier intentionally omits the national daily-mean time series
+    # (a day-by-day breakdown is more granularity than the free view
+    # warrants). The executive-summary national scalar plus this
+    # per-station monthly distribution convey the network-level picture.
+    # ``col_daily`` is retained in the signature (and still feeds the
+    # exec-summary scalar upstream) but is not plotted here.
+    fig, ax = plt.subplots(figsize=(6, 4))
+    # ECDF of station-monthly values
     v = np.sort(station_monthly[col_station].dropna() * 100)
     y = np.arange(1, len(v) + 1) / len(v) * 100
     ax.plot(v, y, color=COLOR_PRIMARY, linewidth=2)

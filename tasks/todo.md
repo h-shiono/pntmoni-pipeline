@@ -1628,3 +1628,79 @@ green (#059669) as a single small square marker only, zero radius.
 - Green-square accent marker is available as `[value]{.accent-mark}`
   but not yet placed in any template — wire into the headline Fix-rate
   cell when desired.
+
+---
+
+## [2026-07-06] Task: June (2026-06) free-tier 速報 aggregation via R5.1
+
+### Goal
+Produce the June free-tier (CLAS performance) monthly aggregation +
+bilingual report using GSI R5.1 (rapid, ITRF2020) reference coordinates
+as the provisional truth, since F5 final only reaches 2026-03-31.
+
+### Blocker identified
+Free-tier metrics are error-vs-truth. Local coord archives reached only
+R5.1→2026-05-15, so all of June was uncomputable. Positioning (.pos, all
+1298 stns, DOY152-183), L6/BRDC/RINEX, and QC summary for June are ready.
+reference-coords needs ±7d window (15-day) → June needs R5.1 through ~Jul 7.
+
+### Plan
+- [ ] Re-acquire R5.1 for 2026 (`acquire r5 --variant r5_1 --overwrite`);
+      confirm new END epoch (how far into June/July GSI has published)
+- [ ] analyze reference-coords for each computable June day (variant r5_1)
+- [ ] analyze epoch-errors for June (both modes: kinematic_p30_verify,
+      kinematic_p30_ttff_verify)
+- [ ] analyze accuracy + accuracy_network (June)
+- [ ] analyze ttff + ttff_network (June)
+- [x] analyze monthly rollup for 2026-06 (both modes, --qualification)
+- [x] report monthly --stream rapid --period 2026-06 --langs ja,en (HTML)
+- [x] Verify: sample metrics sane vs April; render inspects OK
+
+### Phase Guard
+[x] Phase 0 = single-station/day tests; this is a production monthly run
+    (same pattern already used for April). Treating as in-scope operations.
+
+### Result (2026-07-06)
+- R5.1 re-acquired → coverage END=2026-06-29 (was 2026-05-15).
+- qualification 2026-06-30 90d: 1118/1302 qualified.
+- reference-coords (r5_1): 6/1–23 full 15-day window; 6/24–30 partial
+  (13→7 fixed-days) via --allow-partial-window (fail-open; provenance
+  records fixed_days_used).
+- epoch-errors 30/30 both modes (~3.7M epochs/day, 1298 stns).
+- monthly rollup: 8 parquets; l6-alerts 6月 = 0 alerts / 2.59M msgs.
+- Report: data/reports/rapid/2026-06/{ja,en}/templates/monthly_free.html
+  (0 Quarto cell-errors; headline hor accuracy ~17.9 cm; Rapid/R5.1
+  banner present; JA glossary + EN verified). User reviewed JA/EN
+  switching + privacy policy: OK.
+
+### Open Issues
+- 6/24–30 use partial R5.1 windows (7–13 days). Re-run reference-coords
+  (+ epoch-errors + monthly) for those days once R5.1 publishes through
+  ~2026-07-07 to upgrade to full-window quality.
+- 続報/Final: re-run against F5.1 when the Final snapshot lands (months
+  out) to supersede the R5.1 速報.
+- PDF not rendered (HTML only); add --formats pdf when the CJK PDF stack
+  is staged.
+
+### Follow-up (2026-07-06): CDF x-axis blowup → truncated 6/23 BRDC
+- Symptom: horizontal/vertical CDF x-axes ran to 10 km / 6000 km; the
+  in-template p99.9 clip was defeated because the pooled sample's own
+  p99.9 sat in the garbage.
+- Root cause: BRDC for 2026-06-23 (DOY 174) was a partial download
+  (59 KB, 674 nav records, NO GPS/QZSS) → network-wide num_sat collapse
+  (median 2, many 0) → Earth-radius (6368 km) placeholder solutions.
+  Only 6/23 was affected (all other June BRDC ~1.3 MB).
+- Fix: re-acquired BRDC 6/23 (1.3 MB, 27025 records, GPS32/QZSS5),
+  reprocessed both modes (1299/1299 ok; fix rate 0.93, num_sat 14),
+  recomputed 6/23 epoch-errors, re-ran monthly rollup (30 days), re-rendered.
+- Reprocess gotcha (fixed): `process claslib` CLI defaults
+  `--data-dir vendor/pntmoni-claslib/data` which LACKS igs20_L5copy.atx
+  → rnx2rtkp exit 255. Must pass `--data-dir configs/aux_data` (what
+  daily/catchup uses). Also `rm -rf data/work/<mode>/2026/174` first —
+  gunzip_to won't overwrite the stale decompressed BRDC.
+- Result: monthly tails now physical (hor p99 390cm→20cm, p999 35km→38cm,
+  ver rms 305km→14cm); CDF axes H 0–54 cm, V 0–82 cm. All epochs
+  (Single included) retained per legacy methodology; existing p99.9
+  display clip now works. Residual 49 divergent Q=1 epochs on 6/24 are
+  legitimate solver divergences (plenty of sats) — inherent, kept in the
+  distribution, off-screen via the clip.
