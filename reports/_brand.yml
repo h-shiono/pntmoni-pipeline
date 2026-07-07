@@ -21,32 +21,15 @@ color:
   background: "#ffffff"
   foreground: "#1f2937"
   
-typography:
-  fonts:
-    - family: Inter
-      source: google
-      weight: [400, 500, 600, 700]
-      style: [normal, italic]
-    - family: Noto Sans JP
-      source: google
-      weight: [400, 500, 700]
-    - family: JetBrains Mono
-      source: google
-      weight: [400, 500, 600]
-    # Serif is used only for the report cover title (h1) in the
-    # "モノクローム台帳" design — Source Serif 4 for Latin, Noto Serif JP
-    # for Japanese. Without these the cover h1 silently falls back to
-    # Georgia. See reports/styles/pntmoni.scss ($font-family-serif).
-    - family: Source Serif 4
-      source: google
-      weight: [400, 600]
-    - family: Noto Serif JP
-      source: google
-      weight: [400, 600]
-  base:
-    family: Inter
-  headings:
-    family: Inter
-    weight: 600
-  monospace:
-    family: JetBrains Mono
+# Typography is owned entirely by reports/styles/pntmoni.scss, which
+# defines full font stacks with system fallbacks (Inter → system sans,
+# JetBrains Mono → system mono, Source Serif 4 / Noto Serif JP → Georgia
+# / Hiragino Mincho). Do NOT re-add `source: google` font declarations
+# here: with `embed-resources: true` Quarto base64-embeds every declared
+# family (CJK families are tens of MB per weight) into the theme CSS,
+# which is then emitted three times (light + alternates) — this inflated
+# the 2026-06 rapid HTML to 152 MB (~50 MB × 3 stylesheets). Readers
+# without the primary fonts installed fall back to system fonts, which
+# is the intended Phase 0 web-delivery behaviour. If real webfonts are
+# wanted later, self-host subset woff2 next to the published report and
+# reference them externally instead of embedding.

@@ -562,6 +562,24 @@ STR = {
         "sat_col_status": "Status", "sat_col_notice": "Notice",
         "sat_col_satellite": "Satellite", "sat_col_signals": "Signals",
         # asis prose
+        "preview_note": (
+            "::: {.callout-note appearance='minimal'}\n"
+            "**Template preview note**: This report is rendered with "
+            "synthetic data for template development. Production reports "
+            "use real GEONET observations processed through the "
+            "pntmoni-pipeline. The structure shown here is the Phase 0 "
+            "launch structure; sections marked \"Coming Soon\" appear in "
+            "Phase 1+ per the rollout plan in "
+            "`30-evaluation-methodology/03-monthly-report-structure.md`.\n"
+            ":::\n"
+        ),
+        "revision_history": (
+            "# Revision History\n\n"
+            "| Version | Date | Notes |\n"
+            "|---|---|---|\n"
+            "| 1.0 | {date} | Initial edition |\n"
+        ),
+        "revision_pending": "(pending publication)",
         "rapid_banner": (
             ":::: {.callout-warning appearance='default'}\n"
             "**Rapid edition**: this report uses the **GSI Rapid series** "
@@ -666,6 +684,22 @@ STR = {
         "sat_col_clock": "原子時計", "sat_col_status": "状態",
         "sat_col_notice": "通知", "sat_col_satellite": "衛星",
         "sat_col_signals": "送信信号",
+        "preview_note": (
+            "::: {.callout-note appearance='minimal'}\n"
+            "**テンプレートプレビュー注記**: 本レポートはテンプレート"
+            "開発用の**合成データ**で描画されています。本番レポートは "
+            "pntmoni-pipeline で処理した実 GEONET 観測データを使用します。"
+            "本文構成は Phase 0 ローンチ構成で、\"Coming Soon\" 表示の"
+            "セクションは Phase 1 以降に追加されます。\n"
+            ":::\n"
+        ),
+        "revision_history": (
+            "# 改訂履歴\n\n"
+            "| バージョン | 日付 | 内容 |\n"
+            "|------------|------------|------------|\n"
+            "| 1.0 | {date} | 初版 |\n"
+        ),
+        "revision_pending": "(発行待ち)",
         "rapid_banner": (
             ":::: {.callout-warning appearance='default'}\n"
             "**速報版(Rapid)**:本レポートは **GSI Rapid 系列** "
@@ -788,29 +822,27 @@ if TTFF_PRESENT:
 
 ```
 
-::: {.callout-note appearance="minimal"}
-**Template preview note**: This report is currently rendered with
-synthetic data for template development. Production reports use real
-GEONET observations processed through the pntmoni-pipeline. The
-structure shown here is the Phase 0 launch structure; sections
-marked "Coming Soon" appear in Phase 1+ per the rollout plan in
-`30-evaluation-methodology/03-monthly-report-structure.md`.
-:::
+```{python}
+#| echo: false
+#| output: asis
 
-::: {.content-visible when-profile="en"}
-# Revision History
+# Template-preview note appears ONLY on synthetic renders. A live/trial
+# render must never carry it (it would label real data as synthetic —
+# caught on the 2026-06 rapid publication dry run).
+if DATA_MODE == "synthetic":
+    print(T("preview_note"))
 
-| Version | Date | Notes |
-|---|---|---|
-| 1.0 | (pending publication) | Initial edition |
-:::
-::: {.content-visible when-profile="ja"}
-# 改訂履歴
-
-| バージョン | 日付       | 内容       |
-|------------|------------|------------|
-| 1.0        | (発行待ち) | 初版       |
-:::
+# Revision History: the v1.0 date is stamped at render time for live
+# renders (initial publication date); synthetic previews show a
+# placeholder. Post-publication corrections are added as new rows per
+# 30-evaluation-methodology/03-monthly-report-structure.md §1.
+import datetime as _dt_rev
+_pub_date = (
+    _dt_rev.date.today().isoformat()
+    if DATA_MODE == "live" else T("revision_pending")
+)
+print(T("revision_history").format(date=_pub_date))
+```
 
 ```{python}
 #| echo: false
