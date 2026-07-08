@@ -168,7 +168,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
@@ -181,16 +180,14 @@ COLOR_DANGER = "#ef4444"
 COLOR_INSIDE = "#10b981"   # 網内
 COLOR_OUTSIDE = "#f59e0b"  # 網外
 
-# Sequential single-hue (blue) ramp for magnitude heatmaps — light→dark,
-# perceptually ordered and CVD-safe. A neutral hue with no good/bad
-# semantics, matching the Free-tier spatial maps: the per-station maps
-# read as error magnitude, not a pass/fail verdict (PS-QZSS
-# reference-value convention). Colour limits stay percentile-clipped
-# per map (5th–95th) so station-level outliers remain legible.
-CMAP_SEQUENTIAL = LinearSegmentedColormap.from_list(
-    "pntmoni_seq_blue",
-    ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#104281"], N=256,
-)
+# Perceptually-uniform continuous colormap (matplotlib "plasma") for the
+# magnitude heatmaps, matching the Free-tier spatial maps: perceptually
+# ordered, colorblind-safe, no green/red good–bad coding — the per-station
+# maps read as error magnitude, not a pass/fail verdict (PS-QZSS
+# reference-value convention). Progression: purple (smaller) → yellow
+# (larger). Colour limits stay percentile-clipped per map (5th–95th) so
+# station-level outliers remain legible.
+CMAP_SEQUENTIAL = plt.cm.plasma
 
 mpl.rcParams['axes.spines.top'] = False
 mpl.rcParams['axes.spines.right'] = False
@@ -645,11 +642,11 @@ regional_df
 ### Spatial distribution
 
 The maps below show per-station 95th percentile errors plotted
-geographically. Colour encodes error magnitude on a continuous
-single-hue scale (light = smaller error → dark = larger error), with
-colour limits clipped to the 5th–95th percentile of this map's station
-values so outliers and regional patterns stay legible at station-level
-resolution. The scale is a relative magnitude encoding, not a
+geographically. Colour encodes error magnitude on a
+perceptually-uniform continuous colormap (purple = smaller error →
+yellow = larger error), with colour limits clipped to the 5th–95th
+percentile of this map's station values so outliers and regional
+patterns stay legible at station-level resolution. The scale is a relative magnitude encoding, not a
 Performance-Standard threshold or a compliance judgement (see the
 Methodology note on PS-QZSS reference values).
 

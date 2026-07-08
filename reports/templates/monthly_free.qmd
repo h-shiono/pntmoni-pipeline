@@ -457,7 +457,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
@@ -470,16 +469,15 @@ COLOR_DANGER = "#ef4444"
 COLOR_INSIDE = "#10b981"   # 網内
 COLOR_OUTSIDE = "#f59e0b"  # 網外
 
-# Sequential single-hue (blue) ramp for magnitude heatmaps — light→dark,
-# perceptually ordered and CVD-safe (monotone lightness). Deliberately a
-# neutral hue: unlike a green/amber/red status ramp it carries no
-# good/bad semantics, so the spatial maps read as pure error magnitude,
-# not a per-cell pass/fail verdict. This supports the PS-QZSS
-# reference-value convention (no spec-anchored thresholds on the map).
-CMAP_SEQUENTIAL = LinearSegmentedColormap.from_list(
-    "pntmoni_seq_blue",
-    ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#104281"], N=256,
-)
+# Perceptually-uniform continuous colormap (matplotlib "plasma") for the
+# magnitude heatmaps. Preferred over a single-hue ramp for stronger visual
+# separation of error levels — a single-hue blue read low-contrast at the
+# display alpha — while keeping what matters here: perceptually ordered,
+# colorblind-safe, and, critically, NO green/red good–bad coding and no
+# categorical boundary, so the map reads as pure error magnitude rather
+# than a per-cell pass/fail verdict (PS-QZSS reference-value convention).
+# Progression: purple (smaller error) → yellow (larger error).
+CMAP_SEQUENTIAL = plt.cm.plasma
 
 mpl.rcParams['axes.spines.top'] = False
 mpl.rcParams['axes.spines.right'] = False
@@ -1344,22 +1342,23 @@ losing anonymity, and its percentile is unstable). Southern-island
 stations outside the CLAS service area (`out_of_service`) are excluded
 from cell evaluation.
 
-Colour encodes error magnitude on a **continuous single-hue scale**
-(light = smaller error → dark = larger error), with **no discrete
-boundaries** — the map shows the spatial gradient of performance, not a
-pass/fail classification. The scale spans a fixed range (0–40 cm
-horizontal, 0–60 cm vertical) set from PNT Moni's own historical error
-range, so maps stay comparable month to month; this range is **not** a
-Performance-Standard threshold and the colouring is **not** a compliance
-judgement (see Methodology and the Executive Summary note). Cells
-exceeding the range render at the darkest step (colorbar top arrow).
+Colour encodes error magnitude on a **perceptually-uniform continuous
+colormap** (purple = smaller error → yellow = larger error), with **no
+discrete boundaries** — the map shows the spatial gradient of
+performance, not a pass/fail classification. The scale spans a fixed
+range (0–40 cm horizontal, 0–60 cm vertical) set from PNT Moni's own
+historical error range, so maps stay comparable month to month; this
+range is **not** a Performance-Standard threshold and the colouring is
+**not** a compliance judgement (see Methodology and the Executive
+Summary note). Cells exceeding the range render at the top colour
+(colorbar top arrow).
 :::
 ::: {.content-visible when-profile="ja"}
 ### 空間分布
 
 CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセル、および**異なる観測局が 3 局未満のセルは空白**で表示します(単独局セルは公開座標から逆引き可能で匿名性を欠き、かつパーセンタイルが不安定なため)。CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
 
-色は誤差の大きさを**連続的な単一色相スケール**(淡色=誤差小 → 濃色=誤差大)で表し、**明確な境界を設けません** — 地図は性能の空間的なグラデーションを示すものであり、合否の分類ではありません。スケールは固定レンジ(水平 0〜40 cm、垂直 0〜60 cm)で、PNT Moni 自身の歴史的な誤差レンジから設定しているため、月をまたいで比較できます。このレンジは性能標準の閾値では**なく**、色分けは適合性判定でも**ありません**(§評価手法およびエグゼクティブサマリの注記参照)。レンジを超えるセルは最濃色で表示します(カラーバー上端の矢印)。
+色は誤差の大きさを**知覚均等な連続カラーマップ**(紫=誤差小 → 黄=誤差大)で表し、**明確な境界を設けません** — 地図は性能の空間的なグラデーションを示すものであり、合否の分類ではありません。スケールは固定レンジ(水平 0〜40 cm、垂直 0〜60 cm)で、PNT Moni 自身の歴史的な誤差レンジから設定しているため、月をまたいで比較できます。このレンジは性能標準の閾値では**なく**、色分けは適合性判定でも**ありません**(§評価手法およびエグゼクティブサマリの注記参照)。レンジを超えるセルは上端色で表示します(カラーバー上端の矢印)。
 :::
 
 ```{python}
@@ -1466,7 +1465,9 @@ def _render_hex_panel(col, title, vmax_cm):
         reduce_C_function=lambda v: np.percentile(v, 95),
         gridsize=50, extent=_ext, cmap=CMAP_SEQUENTIAL, norm=_norm,
         edgecolors="white", linewidths=0.3,
-        mincnt=1, alpha=0.85, zorder=10,
+        # alpha matches the QC-tier hex maps (monthly_qc.qmd) for a
+        # consistent map look across products.
+        mincnt=1, alpha=0.5, zorder=10,
     )
 
     # Mandatory minimum-stations-per-cell suppression (ADR 0013): drop
