@@ -56,7 +56,7 @@ params:
   period: "2026-04"
   stream: "final"
   mode: "kinematic_p30_verify"
-  methodology_version: "1.0.0"
+  methodology_version: "1.0.1"
   config_hash: "5b53653d2bff9f1e"
   config_hash_full: "5b53653d2bff9f1e000000000000000000000000000000000000000000000000"
   engine: "pntmoni-claslib"
@@ -88,7 +88,7 @@ MONTH = 4
 PERIOD = "2026-04"
 STREAM = "final"
 MODE = "kinematic_p30_verify"
-METHODOLOGY_VERSION = "1.0.0"
+METHODOLOGY_VERSION = "1.0.1"
 CONFIG_HASH = "5b53653d2bff9f1e"
 CONFIG_HASH_FULL = "5b53653d2bff9f1e" + "0" * 48
 ENGINE = "pntmoni-claslib"
@@ -331,7 +331,7 @@ receiver manufacturers, system integrators, and CLAS-using operators.
 
 The methodology used to produce this report is summarized in the next
 section. Full methodology documentation is at
-[https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
+[https://pntmoni.com/methodology/v1.0.1](https://pntmoni.com/methodology/v1.0.1).
 The Methodology Version Tag at the end of this report uniquely
 identifies the configuration used.
 
@@ -1013,7 +1013,7 @@ For `{python} PERIOD_LABEL`: **No status changes recorded.**
 | Data mode              | `{python} DATA_MODE`               |
 
 For full methodology details, see
-[https://pntmoni.com/methodology/v1.0.0](https://pntmoni.com/methodology/v1.0.0).
+[https://pntmoni.com/methodology/v1.0.1](https://pntmoni.com/methodology/v1.0.1).
 
 ---
 

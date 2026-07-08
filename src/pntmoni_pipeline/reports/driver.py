@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 QC_TOOL_NAME = "teqc"
 QC_TOOL_VERSION = "2019Feb25"
 QC_TOOL_FULL = f"{QC_TOOL_NAME} {QC_TOOL_VERSION}"
-METHODOLOGY_VERSION = "1.0.0"
+METHODOLOGY_VERSION = "1.0.1"
 ENGINE_NAME = "pntmoni-claslib"
 DEFAULT_ENGINE_VERSION = "v0.8.3-pntmoni-1"   # asserted by methodology §3.1
 
