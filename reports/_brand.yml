@@ -11,20 +11,23 @@ meta:
 #   medium: assets/logo/pntmoni.png
 #   large: assets/logo/pntmoni-large.png
 
+# Palette mirrors pntmoni-docs/60-brand/tokens.json (ADR 0017).
+# brand.ink is the primary editorial color; warning/danger map to the
+# data-status colors (degraded/critical), success to status normal.
 color:
   palette:
-    primary: "#10b981"      # L6 Active green
-    secondary: "#1f2937"    # dark slate
-    success: "#10b981"
-    warning: "#f59e0b"
-    danger: "#ef4444"
+    primary: "#22273A"      # brand ink
+    secondary: "#1F5AA6"    # brand blue
+    success: "#2E8B6B"      # status normal
+    warning: "#E08A1E"      # status degraded
+    danger: "#C24B3A"       # status critical
   background: "#ffffff"
-  foreground: "#1f2937"
-  
-# Typography is owned entirely by reports/styles/pntmoni.scss, which
-# defines full font stacks with system fallbacks (Inter → system sans,
-# JetBrains Mono → system mono, Source Serif 4 / Noto Serif JP → Georgia
-# / Hiragino Mincho). Do NOT re-add `source: google` font declarations
+  foreground: "#3A4152"     # brand text.body
+
+# Typography is owned by reports/styles/_pntmoni-tokens.scss (generated
+# from tokens.json) + pntmoni.scss, which define full font stacks with
+# system fallbacks (IBM Plex Sans JP / Noto Sans JP → system sans,
+# IBM Plex Mono → system mono). Do NOT re-add `source: google` font declarations
 # here: with `embed-resources: true` Quarto base64-embeds every declared
 # family (CJK families are tens of MB per weight) into the theme CSS,
 # which is then emitted three times (light + alternates) — this inflated

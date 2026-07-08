@@ -12,7 +12,9 @@ format:
     embed-resources: true
     smooth-scroll: true
     number-sections: true
-    theme: [cosmo, styles/pntmoni.scss]
+    # _pntmoni-tokens.scss is GENERATED from pntmoni-docs/60-brand/tokens.json
+    # (ADR 0017) — never hand-edit.
+    theme: [cosmo, styles/_pntmoni-tokens.scss, styles/pntmoni.scss]
   pdf:
     pdf-engine: xelatex
     documentclass: scrartcl
@@ -171,14 +173,18 @@ import matplotlib as mpl
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
-# PNT Moni brand colors (per _brand.yml)
-COLOR_PRIMARY = "#10b981"   # L6 Active green
-COLOR_SECONDARY = "#1f2937" # dark slate
-COLOR_SUCCESS = "#10b981"
-COLOR_WARNING = "#f59e0b"
-COLOR_DANGER = "#ef4444"
-COLOR_INSIDE = "#10b981"   # 網内
-COLOR_OUTSIDE = "#f59e0b"  # 網外
+# PNT Moni data-palette colors — source of truth is
+# pntmoni-docs/60-brand/tokens.json (ADR 0017). Figures use the DATA
+# palette only; brand gold #E8C438 must never appear in figure code.
+COLOR_PRIMARY = "#2E6DA8"   # data blue — chart primary
+COLOR_SECONDARY = "#22273A" # brand ink — axis labels / reference lines
+COLOR_EMPHASIS = "#16406E"  # data emphasis — trend endpoints / deep blue
+COLOR_SUCCESS = "#2E8B6B"   # status normal — positive/normal deltas
+COLOR_WARNING = "#E08A1E"   # status degraded
+COLOR_DANGER = "#C24B3A"    # status critical
+COLOR_NEUTRAL = "#6B7384"   # muted neutral (brand text.muted)
+COLOR_INSIDE = "#2E6DA8"   # 網内 — data primary
+COLOR_OUTSIDE = "#6B7384"  # 網外 — muted neutral (semantic contrast kept)
 
 # Perceptually-uniform continuous colormap (matplotlib "plasma") for the
 # magnitude heatmaps, matching the Free-tier spatial maps: perceptually
@@ -199,8 +205,9 @@ mpl.rcParams['figure.dpi'] = 100
 # render as tofu boxes in HTML and PDF alike. Prefer macOS Hiragino, then
 # Yu Gothic, then Noto CJK on Linux.
 mpl.rcParams['font.sans-serif'] = [
-    'Hiragino Sans', 'Hiragino Maru Gothic Pro',
-    'Yu Gothic', 'Noto Sans CJK JP', 'DejaVu Sans',
+    'IBM Plex Sans JP', 'IBM Plex Sans', 'Hiragino Sans',
+    'Hiragino Maru Gothic Pro', 'Yu Gothic', 'Noto Sans CJK JP',
+    'DejaVu Sans',
 ]
 mpl.rcParams['font.family'] = 'sans-serif'
 mpl.rcParams['axes.unicode_minus'] = False
@@ -308,6 +315,11 @@ marked "Coming Soon" appear in Phase 1+ per the rollout plan in
 
 # Revision History
 
+<!-- TODO(brand 2026-07, ADR 0017 §6): the FIRST edition published under
+the new brand theme must add a revision row "visual redesign; no
+methodology change". Add it when publishing (this template has no
+`revisions` param yet); remove this TODO once that edition ships. -->
+
 | Version | Date       | Description           |
 |---------|------------|-----------------------|
 | 1.0     | (pending)  | Initial publication   |
@@ -398,7 +410,7 @@ network_patch = Polygon(NETWORK_POLYGON, closed=True,
                          linestyle="--", label="CLAS network coverage")
 ax.add_patch(network_patch)
 
-# Station points: inside (green) and outside (orange)
+# Station points: inside (data blue) and outside (muted neutral)
 ax.scatter(station_lons[inside_network], station_lats[inside_network],
            c=COLOR_INSIDE, s=6, alpha=0.6, label=f"網内 (n={int(inside_network.sum())})")
 ax.scatter(station_lons[~inside_network], station_lats[~inside_network],
@@ -542,13 +554,14 @@ ax.plot(x, trend_h95 * 100, color=COLOR_PRIMARY, linewidth=1.5,
 ax.axvspan(last6_start_idx - 0.5, current_idx + 0.5,
            alpha=0.10, color=COLOR_PRIMARY, label="Last 6 months")
 
-# Mark current month
+# Mark current month — data-emphasis blue (endpoint), not a status
+# color: highlighting the endpoint is emphasis, not an anomaly signal.
 ax.scatter([current_idx], [trend_h95[current_idx] * 100],
-           color=COLOR_DANGER, s=80, zorder=5, label="Current month")
+           color=COLOR_EMPHASIS, s=80, zorder=5, label="Current month")
 
-# Mark year-ago same month
+# Mark year-ago same month — muted neutral comparison reference.
 ax.scatter([yago_idx], [trend_h95[yago_idx] * 100],
-           color=COLOR_WARNING, s=80, zorder=5, marker="D", label="Year-ago same month")
+           color=COLOR_NEUTRAL, s=80, zorder=5, marker="D", label="Year-ago same month")
 
 ax.set_xticks(x)
 ax.set_xticklabels(trend_months, rotation=45, ha="right", fontsize=8)
@@ -568,9 +581,9 @@ ax.plot(x, trend_v95 * 100, color=COLOR_PRIMARY, linewidth=1.5,
 ax.axvspan(last6_start_idx - 0.5, current_idx + 0.5,
            alpha=0.10, color=COLOR_PRIMARY, label="Last 6 months")
 ax.scatter([current_idx], [trend_v95[current_idx] * 100],
-           color=COLOR_DANGER, s=80, zorder=5, label="Current month")
+           color=COLOR_EMPHASIS, s=80, zorder=5, label="Current month")
 ax.scatter([yago_idx], [trend_v95[yago_idx] * 100],
-           color=COLOR_WARNING, s=80, zorder=5, marker="D", label="Year-ago same month")
+           color=COLOR_NEUTRAL, s=80, zorder=5, marker="D", label="Year-ago same month")
 
 ax.set_xticks(x)
 ax.set_xticklabels(trend_months, rotation=45, ha="right", fontsize=8)

@@ -61,7 +61,9 @@ caps:
 
 format:
   html:
-    theme: [cosmo, styles/pntmoni.scss]
+    # _pntmoni-tokens.scss is GENERATED from pntmoni-docs/60-brand/tokens.json
+    # (node 60-brand/generate-tokens.mjs, ADR 0017) — never hand-edit it.
+    theme: [cosmo, styles/_pntmoni-tokens.scss, styles/pntmoni.scss]
     toc: true
     toc-location: left
     code-fold: true

@@ -196,6 +196,30 @@ Every data acquisition records metadata:
 This metadata appears in monthly report's "Data Provenance"
 section. Do not skip metadata recording even for "throwaway" runs.
 
+### Report branding (ADR 0017)
+
+Brand colors, typography, and the dual-palette discipline for the
+Quarto reports are defined in **`pntmoni-docs`**, not here:
+
+- Source of truth: `pntmoni-docs/60-brand/tokens.json` +
+  `pntmoni-docs/70-decisions/adr-0017.md`
+- `reports/styles/_pntmoni-tokens.scss` and
+  `reports/templates/pntmoni-brand.typ` (future Typst PDF path) are
+  **GENERATED** files vendored from pntmoni-docs. Never hand-edit
+  them — regenerate with `node 60-brand/generate-tokens.mjs` in
+  pntmoni-docs and re-vendor.
+- HTML theme list: `[cosmo, styles/_pntmoni-tokens.scss,
+  styles/pntmoni.scss]`; `pntmoni.scss` is the hand-maintained
+  component layer on top of the tokens.
+- Figures use the DATA palette only (chart primary `#2E6DA8`, status
+  normal/degraded/critical `#2E8B6B`/`#E08A1E`/`#C24B3A`); brand gold
+  `#E8C438` must NEVER appear in figure code. Documented exceptions:
+  CLAS hex maps keep matplotlib `plasma`; QC figures keep the
+  status-color interpolation (`CMAP_PERFORMANCE`).
+- NO web-font embedding / `source: google` declarations in the report
+  HTML (a past embed-resources build ballooned to 152 MB) — system
+  fonts + fallback stacks only (see `reports/_brand.yml`).
+
 ### Storage tiering
 
 RINEX OBS files do not stay in local hot storage indefinitely:

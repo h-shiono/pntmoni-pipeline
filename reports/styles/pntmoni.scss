@@ -1,140 +1,59 @@
 /*-- scss:defaults --*/
 
 // =================================================================
-// PNT Moni Brand Variables — "モノクローム台帳" Technical Report
-// (design direction "3a", from temp/design_handoff_pntmoni_report).
-// Near-monochrome, hairline-rule structure; the green accent appears
-// only as a single small square marker, never as a fill or a wide
-// rule. See that handoff's README for the full rationale.
+// PNT Moni report theme — 2026-07 brand handoff (ADR 0017).
+//
+// Token source of truth: pntmoni-docs/60-brand/tokens.json, vendored
+// here as styles/_pntmoni-tokens.scss (GENERATED — never hand-edit;
+// regenerate with `node 60-brand/generate-tokens.mjs` in pntmoni-docs).
+// Theme list: [cosmo, styles/_pntmoni-tokens.scss, styles/pntmoni.scss].
+//
+// Design: dark ink title banner, gold TOC accent, SANS headings
+// (IBM Plex Sans JP stack — screen readability), mono tabular numerals
+// for all numeric/hash/version text. Replaces the former "monochrome
+// ledger" (3a) theme; its Tufte tables, .document-control and
+// .independence-statement are ported below on the new palette.
+//
+// Dual-palette discipline (tokens.json $rules): brand colors (ink /
+// blue / gold / cream) are editorial-only — $pm-gold must NEVER appear
+// inside figure code. Data/status colors live in the templates' Python
+// setup cells and are for figures/signalling only.
+//
+// NOTE on this defaults block: Quarto layers `scss:defaults` in
+// REVERSE theme order (this file's defaults are compiled BEFORE the
+// token partial's), so $pm-* variables are NOT visible here. Keep this
+// block literal-only; everything token-driven goes in scss:rules,
+// which compile in normal order after all defaults.
 // =================================================================
 
-// Ink scale — primary neutral. Replaces the cooler "slate" scale used
-// before; closer to the warm-neutral gray of EUSPA/ESA technical PDFs.
-$ink-900:  #111827;
-$ink-700:  #374151;
-$ink-600:  #4b5563;
-$ink-500:  #6b7280;
-$ink-400:  #9ca3af;
-$ink-300:  #d1d5db;
-$ink-200:  #e5e7eb;
-$ink-100:  #f3f4f6;
-$ink-50:   #f9fafb;
+// Radii (tokens.json radius.sm/md/lg — literals by necessity, see NOTE)
+$border-radius:     4px;
+$border-radius-sm:  2px;
+$border-radius-lg:  6px;
 
-// Primary palette — green is now a MARKER color only (small squares,
-// single data points), never a fill and never a rule of any weight.
-$pntmoni-green:        #10b981;
-$pntmoni-green-dark:   #059669;  // the only accent used in the report body
-$pntmoni-green-light:  #d1fae5;  // report body unused; kept for the web dashboard
-
-// Status colors (dashboard only — not used in the report body)
-$status-active:        #10b981;
-$status-stale:         #f59e0b;
-$status-lost:          #ef4444;
-$status-fix:           #10b981;
-$status-float:         #f59e0b;
-$status-spp:           #6b7280;
-
-// Neutral palette — retained as aliases so existing dashboard
-// components that reference $slate-* keep working. Report components
-// should use $ink-* above instead.
-$slate-50:   $ink-50;
-$slate-100:  $ink-100;
-$slate-200:  $ink-200;
-$slate-300:  $ink-300;
-$slate-400:  $ink-400;
-$slate-500:  $ink-500;
-$slate-600:  #4b5563;
-$slate-700:  $ink-700;
-$slate-800:  #1f2937;
-$slate-900:  $ink-900;
-
-// Semantic
-$body-bg:           white;
-$body-color:        $ink-700;
-$link-color:        $ink-900;
-$link-hover-color:  $pntmoni-green-dark;
-$border-color:      $ink-300;
-$code-bg:           $ink-100;
-$code-color:        $ink-900;
-
-// Typography
-$font-family-sans-serif:
-  "Inter",
-  "Noto Sans JP",
-  -apple-system,
-  BlinkMacSystemFont,
-  "Segoe UI",
-  Roboto,
-  "Helvetica Neue",
-  Arial,
-  sans-serif;
-
-$font-family-monospace:
-  "JetBrains Mono",
-  "SF Mono",
-  Consolas,
-  "Liberation Mono",
-  Menlo,
-  monospace;
-
-$font-family-serif:
-  "Source Serif 4",
-  "Source Serif Pro",
-  "Noto Serif JP",
-  Georgia,
-  "Times New Roman",
-  serif;
-
-// h1 (the cover title) is the only prominent serif heading; body h2/h3
-// are handled explicitly in the rules below.
-$headings-font-family:  $font-family-serif;
+$headings-font-weight:  700;
 
 // Sizing
-$font-size-base:        1rem;
-$font-size-sm:          0.875rem;
-$font-size-lg:          1.125rem;
-$font-size-xl:          1.25rem;
-$line-height-base:      1.65;
-$line-height-tight:     1.3;
-
-// Headings — h1 kept serif/prominent for the cover; h2 is demoted to a
-// small-caps monospace "section label" (see rules), which is the core
-// visual idea of this direction. h3 stays a modest sans sub-heading.
-$h1-font-size:    2rem;
-$h2-font-size:    0.6875rem;   // a small-caps mono LABEL, not a display heading
-$h3-font-size:    1.0625rem;
-$headings-color:        $ink-900;
-$headings-font-weight:  600;
-$headings-line-height:  $line-height-tight;
-$headings-letter-spacing: -0.005em;
-
-// Borders & spacing — zero radius everywhere. No rounded corners at all.
-$border-radius:         0;
-$border-radius-sm:      0;
-$border-radius-lg:      0;
-
-// Sidebar (dashboard only, unchanged)
-$sidebar-bg:            white;
-$sidebar-fg:            $ink-700;
-
-// Code blocks
-$code-block-bg:         $ink-900;
-$code-block-color:      $ink-50;
+$font-size-base:    1rem;
+$font-size-sm:      0.875rem;
+$line-height-base:  1.65;
 
 
 /*-- scss:rules --*/
 
+// Local aliases (token partial's defaults are in scope here).
+$pm-mono: $font-family-monospace;
+$pm-sans: $font-family-sans-serif;
+
 // =================================================================
-// Base typography refinements
+// Base typography
 // =================================================================
 
 body {
-  font-feature-settings: "ss01", "ss02", "cv01", "cv11";  // Inter のリガチャー
-  font-variant-numeric: tabular-nums;  // 数値を等幅に(表で揃いやすい)
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: $body-bg;
-  color: $body-color;
+  background-color: $pm-white;
+  color: $pm-text;
 }
 
 // 日本語混在時の調整
@@ -143,137 +62,252 @@ body {
   line-height: 1.75;
 }
 
-// 数値強調
+// All numeric text (tables / KPIs / versions / hashes): tabular figures.
+table, .kpi, .kpi-grid, .quarto-title-meta-contents,
+.document-control, .repro {
+  font-variant-numeric: tabular-nums;
+}
+
 .numeric, .stat-value, td.numeric {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
 }
 
-// =================================================================
-// Headings — the single biggest lever of this direction: sections read
-// as numbered ledger entries, not as app-UI headers.
-// =================================================================
-
-// h1 — the report title on the cover, plus top-level (# ) sections.
-// Serif, with a single full-width hairline underneath.
-h1 {
-  font-family: $headings-font-family;
-  font-weight: 600;
-  border-bottom: 1px solid $ink-300;
-  padding-bottom: 0.5rem;
-  margin-top: 2rem;
-  margin-bottom: 1.25rem;
-
-  &.title {
-    font-size: 2.25rem;
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-}
-
-// h2 — was a colored-bar section heading; now a small-caps monospace
-// "section label" with one black 1px underline. The colored left bar
-// is removed entirely.
-h2 {
-  font-family: $font-family-monospace;
-  font-size: $h2-font-size;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: $ink-900;
-  border-bottom: 1px solid $ink-900;
-  padding: 0 0 0.625rem 0;
-  margin: 2.25rem 0 1.125rem 0;
-
-  &::before {
-    content: none;   // remove the old colored left-bar
-  }
-}
-
-h3 {
-  font-family: $font-family-sans-serif;
-  color: $ink-700;
-  font-weight: 700;
-  margin-top: 1.5rem;
-  font-size: $h3-font-size;
+// Version / hash values are always mono.
+table code, .version, .config-hash, .dataset-sha {
+  font-family: $pm-mono;
 }
 
 // =================================================================
-// Links — no color chrome; the accent appears only on hover.
+// Links — blue, hover deep blue + underline
 // =================================================================
 
 a {
-  color: $link-color;
-  text-decoration-color: $ink-300;
+  color: $pm-blue;
   text-underline-offset: 2px;
 
   &:hover {
-    color: $link-hover-color;
-    text-decoration-color: $link-hover-color;
+    color: $pm-blue-deep;
+    text-decoration: underline;
   }
 }
 
 // =================================================================
-// Status indicators — plain text + a single square marker. No pills,
-// no borders-as-badges, no animation; the marker square is the ONLY
-// place color appears at UI-chrome scale. (Report scope — the live
-// dashboard keeps its own styles in the web repo.)
+// Headings — sans 700 ink; h2 carries the 2px ink section rule;
+// section numbers are mono blue (handoff: "01" 等).
 // =================================================================
 
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: $font-size-sm;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  color: $ink-900;
-
-  &::before {
-    content: "";
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    background: currentColor;
-  }
-
-  &.active { color: $pntmoni-green-dark; }
-  &.stale  { color: #92610a; }
-  &.lost   { color: #9f1d1d; }
+h1, h2, h3, h4, h5 {
+  font-family: $pm-sans;
+  font-weight: 700;
+  color: $pm-ink;
 }
 
-.l6-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.625rem;
-  font-weight: 600;
+h1 {
+  font-size: 1.625rem;
+  margin-top: 2.25rem;
+  margin-bottom: 1.1rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  border-bottom: 2px solid $pm-ink;
+  padding-bottom: 0.4rem;
+  margin: 2.25rem 0 1.125rem 0;
+}
+
+h3 {
   font-size: 1.0625rem;
-  color: $ink-900;
+  margin-top: 1.5rem;
+}
 
-  &::before {
-    content: "";
-    display: inline-block;
-    width: 8px;
-    height: 8px;
-    background-color: $pntmoni-green-dark;
-    animation: none;
+.header-section-number {
+  font-family: $pm-mono;
+  color: $pm-blue;
+  font-weight: 600;
+  margin-right: 0.35em;
+}
+
+// Eyebrow label (mono uppercase blue + gold underline, per handoff) —
+// available for template use above the H1.
+.eyebrow {
+  display: inline-block;
+  font-family: $pm-mono;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: $pm-blue;
+  border-bottom: 2px solid $pm-gold;
+  padding-bottom: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+// =================================================================
+// Dark title banner (matches website header)
+// =================================================================
+
+#title-block-header.quarto-title-block,
+#title-block-header {
+  background: $pm-ink;
+  border-radius: $border-radius;
+  padding: 1.5rem 1.75rem 1.25rem 1.75rem;
+  margin-bottom: 2rem;
+
+  .title, h1.title {
+    color: $pm-white;
+    border: none;
+    margin-top: 0;
   }
 
-  &.active::after {
-    content: "ACTIVE";
-    font-family: $font-family-monospace;
-    font-size: 0.6875rem;
+  .subtitle, p.subtitle {
+    color: $pm-on-dark;
+    margin-bottom: 0.25rem;
+  }
+
+  .quarto-title-meta {
+    margin-top: 1rem;
+  }
+
+  .quarto-title-meta-heading {
+    font-family: $pm-mono;
+    font-size: 0.675rem;
+    font-weight: 600;
     letter-spacing: 0.1em;
-    color: $ink-500;
-    margin-left: 0.25rem;
+    text-transform: uppercase;
+    color: $pm-faint;
+    opacity: 1;
+  }
+
+  .quarto-title-meta-contents {
+    font-family: $pm-mono;
+    color: $pm-on-dark;
+
+    p { color: $pm-on-dark; }
+    a { color: $pm-on-dark; text-decoration-color: $pm-faint; }
+    a:hover { color: $pm-white; }
   }
 }
 
 // =================================================================
-// Tables — Tufte-style: top/bottom hairline only, no header shading,
-// no row hover. A numeric column can carry a single small green marker
-// on the one figure the report wants to draw the eye to, placed
-// per-row via a manual <span class="mark">, not automatically.
+// Left TOC — subtle panel; section label mono uppercase blue; active
+// item = 3px gold left border + cream bg + ink text.
+// =================================================================
+
+#quarto-sidebar-toc-left.sidebar.toc-left,
+.sidebar.toc-left {
+  background: $pm-surface-subtle;
+  border-right: 1px solid $pm-border;
+}
+
+#toc-title,
+.quarto-alternate-formats h2 {
+  font-family: $pm-mono;
+  font-size: 0.675rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: $pm-blue;
+}
+
+nav#TOC a.nav-link,
+.sidebar nav[role="doc-toc"] ul > li > a {
+  border-left: 3px solid transparent;
+  color: $pm-muted;
+
+  .header-section-number { color: $pm-faint; }
+}
+
+nav#TOC a.nav-link.active,
+.sidebar nav[role="doc-toc"] ul > li > a.active {
+  border-left: 3px solid $pm-gold !important;
+  background: $pm-cream;
+  color: $pm-ink;
+  font-weight: 600;
+
+  .header-section-number { color: $pm-blue; }
+}
+
+nav#TOC a.nav-link:hover {
+  color: $pm-ink;
+  text-decoration: none;
+}
+
+.quarto-alternate-formats a { color: $pm-muted; }
+.quarto-alternate-formats a:hover { color: $pm-blue-deep; }
+
+// =================================================================
+// Callouts — note/tip: cream panel + 3px gold left border (editorial
+// accent). Real warnings keep the data-status colors (degraded /
+// critical) on the border — that is signalling, not decoration.
+//
+// Quarto's own callout CSS ships in a separate stylesheet that loads
+// AFTER this theme with higher-specificity selectors, so we match its
+// specificity and use `!important` on the structural properties.
+// =================================================================
+
+div.callout,
+.callout.callout-style-default,
+.callout.callout-style-simple {
+  border: none !important;
+  border-left: 3px solid $pm-gold !important;
+  border-radius: 0 $border-radius $border-radius 0 !important;
+  background: $pm-cream !important;
+  margin: 1.5rem 0;
+}
+
+.callout.callout-warning,
+.callout.callout-caution {
+  border-left-color: $pm-status-degraded !important;
+}
+
+.callout.callout-important {
+  border-left-color: $pm-status-critical !important;
+}
+
+.callout {
+  .callout-header {
+    background: none !important;
+    border-bottom: none !important;
+    padding: 0.75rem 1rem 0 1rem;
+  }
+
+  // Title as a small mono label (handoff: "ノート").
+  .callout-title-container {
+    font-family: $pm-mono;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: $pm-muted;
+  }
+
+  &.callout-warning .callout-title-container,
+  &.callout-caution .callout-title-container {
+    color: $pm-status-degraded;
+  }
+
+  &.callout-important .callout-title-container {
+    color: $pm-status-critical;
+  }
+
+  // The label text carries the meaning; drop the colored icon.
+  .callout-icon-container {
+    display: none;
+  }
+
+  .callout-body-container,
+  .callout-body {
+    background: none !important;
+    padding: 0.35rem 1rem 0.9rem 1rem;
+    color: $pm-text;
+  }
+}
+
+// =================================================================
+// Tables — Tufte-style (ported from the monochrome-ledger theme):
+// top/bottom ink rules, hairline row separators, no header shading,
+// no zebra, no hover. Numerals are tabular (set above).
 // =================================================================
 
 table {
@@ -281,29 +315,28 @@ table {
   border-collapse: collapse;
   font-size: $font-size-sm;
   margin: 1.25rem 0;
-  font-variant-numeric: tabular-nums;
 
   thead tr {
-    border-top: 1px solid $ink-900;
-    border-bottom: 1px solid $ink-900;
-    background: none;   // no header shading (was $slate-100)
+    border-top: 1px solid $pm-ink;
+    border-bottom: 1px solid $pm-ink;
+    background: none;
 
     th {
       padding: 0.375rem 0.75rem 0.375rem 0;
       font-weight: 600;
       text-align: left;
-      color: $ink-900;
+      color: $pm-ink;
     }
   }
 
   tbody {
     tr {
-      border-bottom: 1px solid $ink-200;   // no hover, no zebra
+      border-bottom: 1px solid $pm-hairline;
     }
 
     td {
       padding: 0.375rem 0.75rem 0.375rem 0;
-      color: $ink-700;
+      color: $pm-text;
 
       &.numeric {
         text-align: right;
@@ -315,17 +348,17 @@ table {
   tfoot {
     background: none;
     font-weight: 600;
-    border-top: 1px solid $ink-900;
+    border-top: 1px solid $pm-ink;
   }
 }
 
-// The single accent marker for a called-out figure inside a table/body:
-// a small green square placed before the value with <span class="accent-mark">.
-// NOTE: deliberately NOT named ".mark" — Bootstrap owns "mark"/".mark" and
-// paints a highlight background on it, which would fight this rule.
+// Single accent marker for a called-out figure inside a table/body
+// (ported; marker is now brand blue — gold stays editorial-chrome-only
+// and the old green is retired). Use <span class="accent-mark">.
+// NOTE: deliberately NOT named ".mark" — Bootstrap owns ".mark".
 .accent-mark {
   background: none;
-  color: $ink-900;
+  color: $pm-ink;
   font-weight: 600;
 
   &::before {
@@ -334,187 +367,136 @@ table {
     width: 6px;
     height: 6px;
     margin-right: 0.4em;
-    background: $pntmoni-green-dark;
+    background: $pm-blue;
     vertical-align: middle;
   }
 }
 
 // =================================================================
-// Callouts — Quarto native DOM (.callout-note / -warning / -important
-// with an auto-rendered header). We keep Quarto's own title text and
-// only restyle to monochrome: hairline top/bottom, no tinted header,
-// no colored left rule, no icon color. Do NOT inject a ::before label
-// here — Quarto already renders the title, and a ::before would
-// duplicate it.
-//
-// Quarto's own callout CSS ships in a separate stylesheet that loads
-// AFTER this theme and uses higher-specificity selectors
-// (.callout.callout-style-default, .callout-note{border-left-color}...),
-// so plain `.callout {}` rules lose the cascade. We match that
-// specificity and use `!important` on the few structural properties
-// (border, background, radius) that Quarto would otherwise win.
+// KPI grid — numbers mono 24px ink, tabular; deltas use the data
+// status colors (data signalling, not decoration).
 // =================================================================
 
-div.callout,
-.callout.callout-style-default,
-.callout.callout-style-simple {
-  border: none !important;
-  border-top: 1px solid $ink-900 !important;
-  border-bottom: 1px solid $ink-300 !important;
-  border-radius: 0 !important;
-  background: none !important;
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  background: $pm-border;
+  border: 1px solid $pm-border;
+  border-radius: $border-radius;
+  overflow: hidden;
   margin: 1.5rem 0;
 }
 
-// Flatten the per-type colored left bar to nothing.
-.callout.callout-note,
-.callout.callout-tip,
-.callout.callout-important,
-.callout.callout-caution,
-.callout.callout-warning {
-  border-left-color: transparent !important;
-  border-left-width: 0 !important;
-}
+.kpi {
+  background: $pm-white;
+  padding: 0.75rem 1rem;
 
-// appearance="minimal" (Quarto ".callout-style-simple"): lighter — a
-// single top hairline only, no bottom rule.
-.callout.callout-style-simple {
-  border-top: 1px solid $ink-300 !important;
-  border-bottom: none !important;
-}
-
-.callout {
-  .callout-header {
-    background: none !important;
-    border-bottom: none !important;
-    padding: 0.75rem 0 0.25rem 0;
-  }
-
-  // Title as a mono ledger label, distinguished by text not color.
-  .callout-title-container {
-    font-family: $font-family-monospace;
-    font-size: 0.7rem;
+  .kpi-label {
+    font-family: $pm-mono;
+    font-size: 0.65rem;
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: $ink-900;
+    color: $pm-muted;
   }
 
-  // Drop the colored type icon — the label text carries the meaning.
-  .callout-icon-container {
-    display: none;
+  .kpi-value {
+    font-family: $pm-mono;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: $pm-ink;
+    font-variant-numeric: tabular-nums;
   }
 
-  .callout-body-container,
-  .callout-body {
-    background: none !important;
-    padding: 0.25rem 0 0.9rem 0;
-    color: $ink-700;
-  }
+  .kpi-delta { font-family: $pm-mono; font-size: 0.8rem; }
+  .kpi-delta-normal   { color: $pm-status-normal; }
+  .kpi-delta-degraded { color: $pm-status-degraded; }
+  .kpi-delta-critical { color: $pm-status-critical; }
 }
 
-// =================================================================
-// Tier gates — a plain hairline block: top/bottom black rules only, mono
-// label, underlined text-link CTA. No box border, no background tint.
-// =================================================================
+// Status utility classes (figures / inline signalling only).
+.status-normal   { color: $pm-status-normal; }
+.status-degraded { color: $pm-status-degraded; }
+.status-critical { color: $pm-status-critical; }
 
-.tier-gate {
-  margin: 2rem 0;
-  padding: 1.25rem 0;
-  background: none;
-  border: none;
-  border-top: 1px solid $ink-900;
-  border-bottom: 1px solid $ink-900;
-  border-radius: 0;
-  text-align: left;
+// Ported status badge (square marker + label) remapped onto the token
+// status colors. active→normal, stale→degraded, lost→critical.
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: $font-size-sm;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: $pm-ink;
 
-  .tier-gate-label {
-    display: block;
-    font-family: $font-family-monospace;
-    font-size: 0.65625rem;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: $ink-900;
-    background: none;
-    padding: 0;
-    margin-bottom: 0.75rem;
-  }
-
-  .tier-gate-cta {
+  &::before {
+    content: "";
     display: inline-block;
-    margin-top: 0;
-    padding: 0 0 2px 0;
-    background: none;
-    color: $ink-900;
-    border-bottom: 1px solid $ink-900;
-    border-radius: 0;
-    font-weight: 600;
-    text-decoration: none;
-
-    &:hover {
-      color: $pntmoni-green-dark;
-      border-bottom-color: $pntmoni-green-dark;
-    }
+    width: 7px;
+    height: 7px;
+    background: currentColor;
   }
+
+  &.active { color: $pm-status-normal; }
+  &.stale  { color: $pm-status-degraded; }
+  &.lost   { color: $pm-status-critical; }
 }
 
 // =================================================================
-// Code blocks — zero radius, otherwise unchanged.
+// Reproducibility block — dark ink panel, gold mono uppercase labels,
+// body on-dark, hash/code lines mono (handoff §2 再現性ブロック).
+// Usage: ::: {.repro} ... ::: — <strong>/.label render as the gold
+// labels; code spans carry hashes.
 // =================================================================
 
-pre {
-  background-color: $code-block-bg;
-  color: $code-block-color;
+.repro {
+  background: $pm-ink;
+  color: $pm-on-dark;
+  border-radius: $border-radius;
   padding: 1rem 1.25rem;
-  border-radius: 0;
-  overflow-x: auto;
-
-  code {
-    background-color: transparent;
-    padding: 0;
-    color: inherit;
-  }
-}
-
-code {
-  background-color: $code-bg;
-  color: $code-color;
-  padding: 0.125rem 0.375rem;
-  border-radius: 0;
-  font-size: 0.875em;
-}
-
-// =================================================================
-// Figures — matplotlib/line-art output gets a hairline border instead
-// of a drop shadow; captions stay small, muted, italic. Line-art charts
-// distinguish series by black solid/dashed strokes with green square
-// markers only at percentile call-outs (handled in the figure code,
-// not here).
-// =================================================================
-
-figure {
   margin: 2rem 0;
+  font-size: 0.85rem;
 
-  img {
-    max-width: 100%;
-    height: auto;
-    border-radius: 0;
-    border: 1px solid $ink-200;
-    box-shadow: none;
+  .label,
+  strong {
+    color: $pm-gold;
+    font-family: $pm-mono;
+    font-size: 0.75em;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
   }
 
-  figcaption {
-    margin-top: 0.625rem;
-    font-size: $font-size-sm;
-    color: $ink-500;
-    font-style: italic;
-    text-align: center;
+  code, .hash {
+    font-family: $pm-mono;
+    background: transparent !important; // beat Quarto's `p code` bg
+    color: $pm-faint;
+    padding: 0;
   }
+
+  a {
+    color: $pm-on-dark;
+    text-decoration: underline;
+    text-decoration-color: $pm-faint;
+
+    &:hover { color: $pm-white; }
+  }
+
+  // Tables inside the dark panel stay legible.
+  table {
+    thead tr { border-color: $pm-faint; th { color: $pm-white; } }
+    tbody tr { border-color: rgba($pm-faint, 0.35); }
+    tbody td { color: $pm-on-dark; }
+  }
+
+  p:last-child { margin-bottom: 0; }
 }
 
 // =================================================================
-// Document control block (cover-side metadata table)
+// Document control block (cover-side metadata table) — ported.
+// Labels muted sans; values mono (versions / hashes / dates).
 // =================================================================
 
 .document-control {
@@ -525,37 +507,38 @@ figure {
 
     td:first-child {
       width: 11rem;
-      color: $ink-500;
+      color: $pm-muted;
       font-weight: 600;
     }
 
     td:last-child {
-      font-family: $font-family-monospace;
+      font-family: $pm-mono;
       font-size: 0.875em;
     }
   }
 }
 
 // =================================================================
-// Data provenance / metadata block — hairline framed, mono label.
+// Data provenance / metadata block — ported onto the new palette.
 // =================================================================
 
 .data-provenance {
   background: none;
-  border-top: 1px solid $ink-900;
-  border-bottom: 1px solid $ink-300;
+  border-top: 1px solid $pm-ink;
+  border-bottom: 1px solid $pm-border;
   padding: 1rem 0;
   margin: 2rem 0;
   font-size: $font-size-sm;
 
   h3 {
     margin-top: 0;
-    font-family: $font-family-monospace;
-    color: $ink-500;
+    font-family: $pm-mono;
+    color: $pm-blue;
     font-size: 0.6875rem;
     text-transform: uppercase;
     letter-spacing: 0.1em;
     font-weight: 600;
+    border: none;
   }
 
   dl {
@@ -566,42 +549,138 @@ figure {
 
     dt {
       font-weight: 600;
-      color: $ink-700;
+      color: $pm-text;
     }
 
     dd {
       margin: 0;
-      color: $ink-700;
-      font-family: $font-family-monospace;
+      color: $pm-text;
+      font-family: $pm-mono;
       font-size: 0.875em;
     }
   }
 }
 
 // =================================================================
-// Independence statement — hairline framed, mono ledger label.
+// Independence statement — ported; restyled as a cream panel with the
+// gold editorial accent and a mono label in brand blue.
 // =================================================================
 
 .independence-statement {
   margin: 2rem 0;
-  padding: 1rem 0;
-  border-top: 1px solid $ink-900;
-  border-bottom: 1px solid $ink-300;
-  background: none;
+  padding: 1rem 1.25rem;
+  border-left: 3px solid $pm-gold;
+  border-radius: 0 $border-radius $border-radius 0;
+  background: $pm-cream;
   font-size: $font-size-sm;
-  color: $ink-700;
+  color: $pm-text;
   font-style: italic;
 
   &::before {
     content: "独立性に関する声明";
     display: block;
-    font-family: $font-family-monospace;
+    font-family: $pm-mono;
     font-style: normal;
     font-size: 0.65625rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: $ink-500;
+    color: $pm-blue;
     margin-bottom: 0.5rem;
+  }
+}
+
+// =================================================================
+// Tier gates — ported onto the new palette: cream panel, mono label,
+// ink CTA underline (hover deep blue).
+// =================================================================
+
+.tier-gate {
+  margin: 2rem 0;
+  padding: 1.25rem;
+  background: $pm-cream;
+  border: none;
+  border-left: 3px solid $pm-gold;
+  border-radius: 0 $border-radius $border-radius 0;
+  text-align: left;
+
+  .tier-gate-label {
+    display: block;
+    font-family: $pm-mono;
+    font-size: 0.65625rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: $pm-blue;
+    background: none;
+    padding: 0;
+    margin-bottom: 0.75rem;
+  }
+
+  .tier-gate-cta {
+    display: inline-block;
+    margin-top: 0;
+    padding: 0 0 2px 0;
+    background: none;
+    color: $pm-ink;
+    border-bottom: 1px solid $pm-ink;
+    border-radius: 0;
+    font-weight: 600;
+    text-decoration: none;
+
+    &:hover {
+      color: $pm-blue-deep;
+      border-bottom-color: $pm-blue-deep;
+    }
+  }
+}
+
+// =================================================================
+// Code blocks — dark ink panel; inline code hairline-tinted.
+// =================================================================
+
+pre {
+  background-color: $pm-ink;
+  color: $pm-cream;
+  padding: 1rem 1.25rem;
+  border-radius: $border-radius;
+  overflow-x: auto;
+
+  code {
+    background-color: transparent;
+    padding: 0;
+    color: inherit;
+  }
+}
+
+code {
+  background-color: $pm-hairline;
+  color: $pm-ink;
+  padding: 0.125rem 0.375rem;
+  border-radius: $border-radius-sm;
+  font-size: 0.875em;
+}
+
+// =================================================================
+// Figures — hairline border, muted italic captions.
+// =================================================================
+
+figure {
+  margin: 2rem 0;
+
+  img {
+    max-width: 100%;
+    height: auto;
+    border-radius: $border-radius-sm;
+    border: 1px solid $pm-border;
+    box-shadow: none;
+  }
+
+  figcaption {
+    margin-top: 0.625rem;
+    font-size: $font-size-sm;
+    color: $pm-muted;
+    font-style: italic;
+    text-align: center;
   }
 }
 
@@ -622,9 +701,9 @@ figure {
     page-break-inside: avoid;
   }
 
-  .tier-gate {
-    border-top: 1px solid $ink-900;
-    border-bottom: 1px solid $ink-900;
-    background: white;
+  #title-block-header,
+  .repro {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

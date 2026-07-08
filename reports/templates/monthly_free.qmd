@@ -12,7 +12,9 @@ format:
     embed-resources: true
     smooth-scroll: true
     number-sections: true
-    theme: [cosmo, styles/pntmoni.scss]
+    # _pntmoni-tokens.scss is GENERATED from pntmoni-docs/60-brand/tokens.json
+    # (ADR 0017) — never hand-edit.
+    theme: [cosmo, styles/_pntmoni-tokens.scss, styles/pntmoni.scss]
   pdf:
     pdf-engine: xelatex
     documentclass: scrartcl
@@ -460,14 +462,18 @@ import matplotlib as mpl
 from matplotlib.patches import Polygon
 from matplotlib.collections import PatchCollection
 
-# PNT Moni brand colors (per _brand.yml)
-COLOR_PRIMARY = "#10b981"   # L6 Active green
-COLOR_SECONDARY = "#1f2937" # dark slate
-COLOR_SUCCESS = "#10b981"
-COLOR_WARNING = "#f59e0b"
-COLOR_DANGER = "#ef4444"
-COLOR_INSIDE = "#10b981"   # 網内
-COLOR_OUTSIDE = "#f59e0b"  # 網外
+# PNT Moni data-palette colors — source of truth is
+# pntmoni-docs/60-brand/tokens.json (ADR 0017). Figures use the DATA
+# palette only; brand gold #E8C438 must never appear in figure code.
+COLOR_PRIMARY = "#2E6DA8"   # data blue — chart primary
+COLOR_SECONDARY = "#22273A" # brand ink — axis labels / reference lines
+COLOR_EMPHASIS = "#16406E"  # data emphasis — trend endpoints / deep blue
+COLOR_SUCCESS = "#2E8B6B"   # status normal — positive/normal deltas
+COLOR_WARNING = "#E08A1E"   # status degraded
+COLOR_DANGER = "#C24B3A"    # status critical
+COLOR_NEUTRAL = "#6B7384"   # muted neutral (brand text.muted)
+COLOR_INSIDE = "#2E6DA8"   # 網内 — data primary
+COLOR_OUTSIDE = "#6B7384"  # 網外 — muted neutral (semantic contrast kept)
 
 # Perceptually-uniform continuous colormap (matplotlib "plasma") for the
 # magnitude heatmaps. Preferred over a single-hue ramp for stronger visual
@@ -488,8 +494,9 @@ mpl.rcParams['figure.dpi'] = 100
 # has no JP glyphs; titles/axis labels render as tofu boxes. Prefer the
 # macOS-bundled Hiragino family, then Yu Gothic, then Noto CJK on Linux.
 mpl.rcParams['font.sans-serif'] = [
-    'Inter', 'Hiragino Sans', 'Hiragino Maru Gothic Pro',
-    'Yu Gothic', 'Noto Sans CJK JP', 'DejaVu Sans',
+    'IBM Plex Sans JP', 'IBM Plex Sans', 'Hiragino Sans',
+    'Hiragino Maru Gothic Pro', 'Yu Gothic', 'Noto Sans CJK JP',
+    'DejaVu Sans',
 ]
 mpl.rcParams['font.family'] = 'sans-serif'
 mpl.rcParams['axes.unicode_minus'] = False
@@ -859,6 +866,13 @@ if DATA_MODE == "synthetic":
 # publication date via ``initial_pub_date`` (today() would be wrong) and
 # the correction rows via ``revisions``, per
 # 30-evaluation-methodology/03-monthly-report-structure.md §1.
+#
+# TODO(brand 2026-07, ADR 0017 §6): the FIRST edition published under
+# the new brand theme must carry a revision row "visual redesign; no
+# methodology change" (JA: 「ビジュアルリデザイン。方法論の変更なし」).
+# Pass it through the driver's ``revisions`` param at render time — do
+# NOT hardcode it here (earlier periods re-rendered from this template
+# must not inherit it). Remove this TODO once that edition ships.
 import datetime as _dt_rev
 _pub_date = INITIAL_PUB_DATE or (
     _dt_rev.date.today().isoformat()

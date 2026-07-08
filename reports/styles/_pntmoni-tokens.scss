@@ -1,0 +1,39 @@
+// pntmoni brand tokens v1.0.0 — GENERATED from pntmoni-docs/60-brand/tokens.json
+// Do not hand-edit. Regenerate: node 60-brand/generate-tokens.mjs (see ADR 0017)
+
+/*-- scss:defaults --*/
+
+// brand palette — editorial/UI only; gold NEVER in a chart or map
+$pm-ink:          #22273A;
+$pm-blue:         #1F5AA6;
+$pm-blue-deep:    #16406E;
+$pm-gold:         #E8C438;
+$pm-cream:        #EFF0EB;
+$pm-white:        #FFFFFF;
+$pm-text:         #3A4152;
+$pm-muted:        #6B7384;
+$pm-faint:        #8A93A6;
+$pm-surface-subtle: #FAFAFA;
+$pm-panel:        #EFF0EB;
+$pm-panel-gray:   #D7DED7;
+$pm-on-dark:      #C7CCD8;
+$pm-border:       #E4E4E6;
+$pm-hairline:     #EDEDF0;
+
+// data palette — figures only (CLAS hex maps use plasma per ADR 0017)
+$pm-seq: (#DCE6F1, #A9C4E0, #6E9BC8, #2E6DA8, #16406E);
+$pm-data-primary:  #2E6DA8;
+$pm-data-emphasis: #16406E;
+$pm-data-scarce:   #D7DED7;
+$pm-status-normal:   #2E8B6B;
+$pm-status-degraded: #E08A1E;
+$pm-status-critical: #C24B3A;
+
+// report headings = sans; NO font embedding (system-installed + fallbacks only)
+$font-family-sans-serif: "IBM Plex Sans JP", "Noto Sans JP", system-ui, sans-serif;
+$font-family-monospace:  "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+$body-color:     $pm-text;
+$link-color:     $pm-blue;
+$primary:        $pm-ink;
+$headings-color: $pm-ink;
