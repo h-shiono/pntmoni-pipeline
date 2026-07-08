@@ -1610,6 +1610,12 @@ qualification metric in Shiono & Kubo (2025).
 | Multipath (L1, E5b partner) | `MP17` | RMS of the L1 multipath combination using E5b as partner, in metres. The `2/(α-1)` coefficient in the multipath formula is large for the L1/E5b frequency pair, hence the larger numerical values. |
 | Multipath (E5b, L1 partner) | `MP71` | RMS of the E5b multipath combination using L1 as partner, in metres. |
 | Cycle slips (extended) | `cycle_slips_extended` | `cycle_slips_core` plus `MP17` and `MP71` slips. Useful when assessing receivers that track Galileo E5b; not used in qualification. |
+
+---
+
+::: {.callout-note appearance="minimal"}
+**Sources & terms of use**: GEONET data is distributed by GSI under PDL 1.0 (source: GSI GEONET data service). Satellite operational notices are sourced from the official feeds (GPS = USCG NAVCEN, QZSS = QSS, Galileo = GSC Europa).
+:::
 :::
 ::: {.content-visible when-profile="ja"}
 ## 指標用語集 {#metric-definitions}
@@ -1651,4 +1657,10 @@ L1/L2/L5 ペアよりも局間ばらつきが大きく、Shiono & Kubo (2025) �
 | マルチパス(L1、E5b パートナー) | `MP17` | E5b をパートナーとする L1 マルチパス組合せの RMS(m)。マルチパスの式における `2/(α-1)` 係数が L1/E5b 周波数ペアで大きいため、数値も大きくなります。 |
 | マルチパス(E5b、L1 パートナー) | `MP71` | L1 をパートナーとする E5b マルチパス組合せの RMS(m)。 |
 | サイクルスリップ(拡張) | `cycle_slips_extended` | `cycle_slips_core` に `MP17` と `MP71` のスリップを加えたもの。Galileo E5b を追尾する受信機の評価に有用ですが、クオリフィケーションには使用しません。 |
+
+---
+
+::: {.callout-note appearance="minimal"}
+**出典・利用条件**:GEONET データは国土地理院が PDL 1.0 で配布(出典:国土地理院 電子基準点データ提供サービス)。衛星運用通知は各公式フィード(GPS = USCG NAVCEN、QZSS = QSS、Galileo = GSC Europa)より取得。
+:::
 :::
