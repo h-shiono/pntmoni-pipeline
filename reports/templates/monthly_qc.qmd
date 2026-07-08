@@ -575,7 +575,8 @@ station_monthly["_y_aea"] = _hxy[:, 1]
 **`{python} T('lbl_qc_tool')`:** `{python} f"{QC_TOOL} {QC_VERSION}"` &nbsp;·&nbsp;
 **`{python} T('lbl_convbin')`:** `{python} CONVBIN_VERSION` &nbsp;·&nbsp;
 **`{python} T('lbl_stations')`:** `{python} f"{N_STATIONS_REPORTED:,}"` &nbsp;·&nbsp;
-**`{python} T('lbl_days_covered')`:** `{python} N_DAILY_FILES`
+**`{python} T('lbl_days_covered')`:** `{python} N_DAILY_FILES` &nbsp;·&nbsp;
+[https://pntmoni.com/methodology/qc/v1.0.0](https://pntmoni.com/methodology/qc/v1.0.0)
 :::
 
 ::: {.content-visible when-profile="en"}
@@ -604,8 +605,10 @@ The report is intentionally limited in scope. It does **not** include:
   diagnostics, or cross-engine comparisons (Phase 1+).
 
 The data and methods used to produce this report are openly
-documented (see [§Methodology](#methodology)) and reproducible from
-publicly available GEONET inputs.
+documented and reproducible from publicly available GEONET inputs.
+[§Methodology](#methodology) below summarises them; the full
+methodology document is
+[https://pntmoni.com/methodology/qc/v1.0.0](https://pntmoni.com/methodology/qc/v1.0.0).
 :::
 
 ::: {.content-visible when-profile="ja"}
@@ -631,25 +634,28 @@ publicly available GEONET inputs.
 - インテグリティ指標、電離層・対流圏補正の診断、エンジン間比較
   (Phase 1 以降)。
 
-本レポートの生成に用いたデータと手法は公開文書化されており
-([§評価手法](#methodology) を参照)、公開されている GEONET 入力から
-再現可能です。
+本レポートの生成に用いたデータと手法は公開文書化されており、公開されている
+GEONET 入力から再現可能です。[§評価手法](#methodology) に要約を示します。
+完全な方法論文書は
+[https://pntmoni.com/methodology/qc/v1.0.0](https://pntmoni.com/methodology/qc/v1.0.0)
+を参照してください。
 :::
 
 ::: {.content-visible when-profile="en"}
 # Methodology {#methodology}
 
-## Data sources
+This section summarises the methodology; the full document is
+[https://pntmoni.com/methodology/qc/v1.0.0](https://pntmoni.com/methodology/qc/v1.0.0).
 
-- **GEONET RINEX 3.02** observation and broadcast-navigation files,
-  retrieved from GSI's archive under the
-  [Public Data License 1.0](https://www.gsi.go.jp/kibanjouhou/kibanjouhou60017.html).
-  All `{python} f"{N_STATIONS_REPORTED:,}"` continuously-operating
-  GEONET reference stations active for `{python} PERIOD_LABEL` are
-  included.
-- 30-second sampling, 24-hour daily files.
+**Data sources** (methodology §2): GEONET RINEX 3.02 observation and
+broadcast-navigation files (30-second sampling, 24-hour daily files),
+retrieved from GSI's archive under the
+[Public Data License 1.0](https://www.gsi.go.jp/kibanjouhou/kibanjouhou60017.html).
+All `{python} f"{N_STATIONS_REPORTED:,}"` continuously-operating
+GEONET reference stations active for `{python} PERIOD_LABEL` are
+included.
 
-## QC pipeline
+**QC pipeline** (methodology §3):
 
 ```
 RINEX 3 (GEONET)
@@ -660,85 +666,45 @@ RINEX 3 (GEONET)
   → data/processed/qc_summary/...     1 row × 639 cols per station-day
 ```
 
-QZSS LNAV broadcasts use the post-2024 health-flag encoding defined
-in [IS-QZSS-PNT-006 §4.1.2.3(4)](https://qzss.go.jp/en/technical/download/pdf/ps-is-qzss/is-qzss-pnt-006.pdf):
-the L1C/B health bit (LSB) is set on every L1C/A-broadcasting
-satellite. The pipeline masks this bit before passing the QNAV to
-teqc so that L1C/A-broadcasting QZS satellites are correctly QC'd.
-QZS-1R (currently broadcasting L1C/B) remains correctly excluded
-from L1C/A-based QC.
+QZSS LNAV broadcasts use the post-2024 health-flag encoding of
+[IS-QZSS-PNT-006 §4.1.2.3(4)](https://qzss.go.jp/en/technical/download/pdf/ps-is-qzss/is-qzss-pnt-006.pdf);
+the pipeline masks the L1C/B health bit before passing the QNAV to
+teqc so that L1C/A-broadcasting QZS satellites are correctly QC'd
+(methodology §2.1).
 
-## Metric definitions {#metric-definitions}
+**Metrics** (methodology §4): the four core families established in
+**Shiono & Kubo (2025)** (ION GNSS+ 2025) and extended in
+**Shiono & Kubo (2026)** (NAVIGATION,
+[doi:10.33012/navi.762](https://doi.org/10.33012/navi.762)) —
+**Visibility, SNR, Multipath, and Cycle Slips** — plus data
+availability. The Galileo E5b family (`SN7`, `MP17`, `MP71`) is
+reported as informative reference only, not part of the
+absolute-evaluation baseline. Symbol-by-symbol definitions are in the
+[Appendix glossary](#metric-definitions).
 
-The QC framework follows the absolute-evaluation methodology
-established in **Shiono & Kubo (2025)** "Comprehensive Performance
-Evaluation of QZSS CLAS Over Four Years (2021–2024)" (ION GNSS+
-2025) and extended in **Shiono & Kubo (2026)** "Navigating the
-Storm: A Five-Year Diagnostic of QZSS CLAS Through Solar Cycle 25"
-(NAVIGATION, [doi:10.33012/navi.762](https://doi.org/10.33012/navi.762)).
-Those papers define the four headline metrics — **Visibility, SNR,
-Multipath, and Cycle Slips** — evaluated in 5° elevation bins for
-satellites observed above 15° elevation.
-
-### Core metrics (absolute-evaluation baseline)
-
-These are the four families used in the paper's Table 1 station
-selection and are the **basis for the planned absolute station
-qualification** (see [§5.6](#absolute-station-qualification-coming-soon)).
-
-| Metric | Symbol | Description |
-|---|---|---|
-| Data availability | `data_availability` | `epochs_w_obs / expected_epochs` — fraction of the day's 2,880 nominal 30-second epochs where the station logged at least one observation. Measures whether the station was up and recording. |
-| Visibility (可視率) | `visibility` | `Complete obs >10° / Possible obs >10°` — fraction of expected satellite-epoch tracks above teqc's 10° elevation mask that were actually obtained. Measures track completeness when the station was operating: low values indicate antenna obstructions, RF interference, or receiver issues even on a station that logs data every epoch. |
-| L1 C/A SNR | `SN1` | Mean signal-to-noise ratio on L1 C/A, in dB-Hz. |
-| L2 SNR | `SN2` | Mean signal-to-noise ratio on L2 (P-code or L2C), in dB-Hz. |
-| L5 SNR | `SN5` | Mean signal-to-noise ratio on L5, in dB-Hz. |
-| Multipath (L1, L2 partner) | `MP12` | RMS of the L1 multipath combination using L2 as partner, in metres. |
-| Multipath (L2, L1 partner) | `MP21` | RMS of the L2 multipath combination using L1 as partner, in metres. |
-| Multipath (L1, L5 partner) | `MP15` | RMS of the L1 multipath combination using L5 as partner, in metres. |
-| Multipath (L5, L1 partner) | `MP51` | RMS of the L5 multipath combination using L1 as partner, in metres. |
-| Cycle slips (core) | `cycle_slips_core` | Sum of teqc-reported ION slips and the four core MP-combination slips (`MP12 + MP21 + MP15 + MP51`). Paper-aligned definition. |
-
-### Reference / supplementary monitoring (Galileo E5b)
-
-These are reported as **informational reference**. They are *not*
-part of the absolute-qualification baseline because the L1/E5b
-frequency pair exhibits considerably larger site-to-site variance
-than the L1/L2/L5 pairs and was therefore not adopted as a
-qualification metric in Shiono & Kubo (2025).
-
-| Metric | Symbol | Description |
-|---|---|---|
-| Galileo E5b SNR | `SN7` | Mean signal-to-noise ratio on E5b (1207.140 MHz), in dB-Hz. |
-| Multipath (L1, E5b partner) | `MP17` | RMS of the L1 multipath combination using E5b as partner, in metres. The `2/(α-1)` coefficient in the multipath formula is large for the L1/E5b frequency pair, hence the larger numerical values. |
-| Multipath (E5b, L1 partner) | `MP71` | RMS of the E5b multipath combination using L1 as partner, in metres. |
-| Cycle slips (extended) | `cycle_slips_extended` | `cycle_slips_core` plus `MP17` and `MP71` slips. Useful when assessing receivers that track Galileo E5b; not used in qualification. |
-
-### Aggregation
-
-All multipath, SNR and slip figures are computed from teqc's
-**5° elevation bins** with an **elevation mask of `{python} ELMASK_DEG`°**
-applied — only bins with lower bound ≥ `{python} ELMASK_DEG`° are
-included (15 of 19 bins). Multipath/SNR aggregate values are
-obs-count weighted across the kept bins; slip totals are summed.
-This matches both the methodology of Shiono & Kubo (2025) and the
-elmask used by the positioning engines (CLASLIB, RTKLIB), so the
-QC figures correspond to the bins the engines actually use.
+**Aggregation** (methodology §5): all multipath, SNR and slip figures
+are computed from teqc's 5° elevation bins with an elevation mask of
+`{python} ELMASK_DEG`° applied (15 of 19 bins kept); multipath/SNR
+values are obs-count weighted across the kept bins, slip totals are
+summed. This matches both Shiono & Kubo (2025) and the elmask used by
+the positioning engines (CLASLIB, RTKLIB).
 :::
 
 ::: {.content-visible when-profile="ja"}
 # 評価手法 {#methodology}
 
-## データソース
+本節は方法論の要約です。完全な方法論文書は
+[https://pntmoni.com/methodology/qc/v1.0.0](https://pntmoni.com/methodology/qc/v1.0.0)
+を参照してください。
 
-- **GEONET RINEX 3.02** の観測ファイルおよび放送暦ファイル。GSI の
-  アーカイブから [Public Data License 1.0](https://www.gsi.go.jp/kibanjouhou/kibanjouhou60017.html)
-  のもとで取得。`{python} PERIOD_LABEL` に稼働していた連続観測中の
-  GEONET 電子基準点 `{python} f"{N_STATIONS_REPORTED:,}"` 局すべてを
-  対象とします。
-- 30 秒サンプリング、24 時間の日次ファイル。
+**データソース**(方法論 §2): GEONET RINEX 3.02 の観測ファイルおよび
+放送暦ファイル(30 秒サンプリング、24 時間日次ファイル)。GSI の
+アーカイブから [Public Data License 1.0](https://www.gsi.go.jp/kibanjouhou/kibanjouhou60017.html)
+のもとで取得。`{python} PERIOD_LABEL` に稼働していた連続観測中の
+GEONET 電子基準点 `{python} f"{N_STATIONS_REPORTED:,}"` 局すべてを
+対象とします。
 
-## QC パイプライン
+**QC パイプライン**(方法論 §3):
 
 ```
 RINEX 3 (GEONET)
@@ -749,66 +715,24 @@ RINEX 3 (GEONET)
   → data/processed/qc_summary/...     1 row × 639 cols per station-day
 ```
 
-QZSS の LNAV 放送は、[IS-QZSS-PNT-006 §4.1.2.3(4)](https://qzss.go.jp/en/technical/download/pdf/ps-is-qzss/is-qzss-pnt-006.pdf)
-で定義された 2024 年以降のヘルスフラグ符号化を使用します:L1C/A を
-放送する全衛星で L1C/B ヘルスビット(LSB)が立ちます。本パイプラインは
-QNAV を teqc に渡す前にこのビットをマスクし、L1C/A 放送中の QZS 衛星を
-正しく QC します。QZS-1R(現在 L1C/B を放送)は L1C/A ベースの QC から
-正しく除外されます。
+QZSS の LNAV 放送は [IS-QZSS-PNT-006 §4.1.2.3(4)](https://qzss.go.jp/en/technical/download/pdf/ps-is-qzss/is-qzss-pnt-006.pdf)
+の 2024 年以降のヘルスフラグ符号化を使用します。本パイプラインは QNAV を
+teqc に渡す前に L1C/B ヘルスビットをマスクし、L1C/A 放送中の QZS 衛星を
+正しく QC します(方法論 §2.1)。
 
-## 指標定義 {#metric-definitions}
+**指標**(方法論 §4): **Shiono & Kubo (2025)**(ION GNSS+ 2025)で確立し、
+**Shiono & Kubo (2026)**(NAVIGATION,
+[doi:10.33012/navi.762](https://doi.org/10.33012/navi.762))で拡張した
+4 つのコア指標ファミリ — **可視率・SNR・マルチパス・サイクルスリップ** —
+にデータアベイラビリティを加えたものです。Galileo E5b 系(`SN7`、`MP17`、
+`MP71`)は参考情報としてのみ報告し、絶対評価ベースラインには含みません。
+記号ごとの定義は [付録の指標用語集](#metric-definitions) を参照してください。
 
-QC のフレームワークは、**Shiono & Kubo (2025)** "Comprehensive
-Performance Evaluation of QZSS CLAS Over Four Years (2021–2024)"
-(ION GNSS+ 2025)で確立し、**Shiono & Kubo (2026)** "Navigating the
-Storm: A Five-Year Diagnostic of QZSS CLAS Through Solar Cycle 25"
-(NAVIGATION, [doi:10.33012/navi.762](https://doi.org/10.33012/navi.762))
-で拡張した絶対評価手法に従います。これらの論文では 4 つの主要指標
-— **可視率・SNR・マルチパス・サイクルスリップ** — を、仰角15°超で
-観測された衛星について 5°仰角ビンで評価します。
-
-### コア指標(絶対評価ベースライン)
-
-論文の Table 1 の局選定に用いられた 4 ファミリであり、計画中の
-**絶対局クオリフィケーション** の **基礎** です
-(see [§5.6](#absolute-station-qualification-coming-soon))。
-
-| 指標 | 記号 | 説明 |
-|---|---|---|
-| データアベイラビリティ | `data_availability` | `epochs_w_obs / expected_epochs` — 1日の公称 2,880 個の 30 秒エポックのうち、局が少なくとも 1 つの観測を記録したエポックの割合。局が稼働・記録していたかを測ります。 |
-| 可視率 | `visibility` | `Complete obs >10° / Possible obs >10°` — teqc の仰角10°マスク超で本来得られるべき衛星エポックトラックのうち、実際に取得された割合。局が稼働していたときのトラック完全性を測ります。値が低い場合、毎エポック記録している局でもアンテナ遮蔽・RF 干渉・受信機の問題を示唆します。 |
-| L1 C/A SNR | `SN1` | L1 C/A の平均 SNR(dB-Hz)。 |
-| L2 SNR | `SN2` | L2(P コードまたは L2C)の平均 SNR(dB-Hz)。 |
-| L5 SNR | `SN5` | L5 の平均 SNR(dB-Hz)。 |
-| マルチパス(L1、L2 パートナー) | `MP12` | L2 をパートナーとする L1 マルチパス組合せの RMS(m)。 |
-| マルチパス(L2、L1 パートナー) | `MP21` | L1 をパートナーとする L2 マルチパス組合せの RMS(m)。 |
-| マルチパス(L1、L5 パートナー) | `MP15` | L5 をパートナーとする L1 マルチパス組合せの RMS(m)。 |
-| マルチパス(L5、L1 パートナー) | `MP51` | L1 をパートナーとする L5 マルチパス組合せの RMS(m)。 |
-| サイクルスリップ(コア) | `cycle_slips_core` | teqc が報告する ION スリップと 4 つのコア MP 組合せスリップ(`MP12 + MP21 + MP15 + MP51`)の合計。論文準拠の定義。 |
-
-### 参考・補助モニタリング(Galileo E5b)
-
-これらは **参考情報** として報告します。L1/E5b 周波数ペアは
-L1/L2/L5 ペアよりも局間ばらつきが大きく、Shiono & Kubo (2025) では
-評価指標として採用されなかったため、絶対評価ベースラインには
-**含みません**。
-
-| 指標 | 記号 | 説明 |
-|---|---|---|
-| Galileo E5b SNR | `SN7` | E5b(1207.140 MHz)の平均 SNR(dB-Hz)。 |
-| マルチパス(L1、E5b パートナー) | `MP17` | E5b をパートナーとする L1 マルチパス組合せの RMS(m)。マルチパスの式における `2/(α-1)` 係数が L1/E5b 周波数ペアで大きいため、数値も大きくなります。 |
-| マルチパス(E5b、L1 パートナー) | `MP71` | L1 をパートナーとする E5b マルチパス組合せの RMS(m)。 |
-| サイクルスリップ(拡張) | `cycle_slips_extended` | `cycle_slips_core` に `MP17` と `MP71` のスリップを加えたもの。Galileo E5b を追尾する受信機の評価に有用ですが、クオリフィケーションには使用しません。 |
-
-### 集計
-
-マルチパス・SNR・スリップの値はすべて teqc の **5°仰角ビン** から、
-**仰角マスク `{python} ELMASK_DEG`°** を適用して算出します — 下限が
-`{python} ELMASK_DEG`° 以上のビンのみを含めます(19 ビン中 15 ビン)。
-マルチパス・SNR の集計値は採用ビン間で観測数重み付け平均、スリップは
-合算です。これは Shiono & Kubo (2025) の手法と、測位エンジン
-(CLASLIB、RTKLIB)が用いる仰角マスクの双方に一致するため、QC の数値は
-エンジンが実際に使用するビンに対応します。
+**集計**(方法論 §5): マルチパス・SNR・スリップの値はすべて teqc の
+5° 仰角ビンから、仰角マスク `{python} ELMASK_DEG`° を適用して算出します
+(19 ビン中 15 ビンを採用)。マルチパス・SNR は採用ビン間で観測数重み付け
+平均、スリップは合算です。これは Shiono & Kubo (2025) の手法と、測位
+エンジン(CLASLIB、RTKLIB)の仰角マスクの双方に一致します。
 :::
 
 ::: {.content-visible when-profile="en"}
@@ -1258,13 +1182,13 @@ plt.show()
 Per free-tier scope, only the hex-aggregated (per-cell median) values
 are shown — individual station identifiers and per-station values are
 reserved for the Pro-tier report. Color scales are fixed per signal
-(see [§Methodology](#metric-definitions)) so successive months can be
+(see the [Appendix glossary](#metric-definitions)) so successive months can be
 compared at a glance.
 :::
 ::: {.content-visible when-profile="ja"}
 Free tier の範囲として、六角形集約(セル中央値)の値のみを表示します —
 個々の局識別子や局単位の値は Pro tier レポートで提供します。カラースケールは
-信号ごとに固定(see [§評価手法](#metric-definitions))のため、月をまたいで
+信号ごとに固定([付録の指標用語集](#metric-definitions) を参照)のため、月をまたいで
 一目で比較できます。
 :::
 :::
@@ -1643,4 +1567,88 @@ and configuration are versioned alongside the report.
 ツールチェーンにより、公開されている GEONET アーカイブから生成して
 います。方法論と構成はレポートと併せてバージョン管理されています。
 :::
+:::
+
+::: {.content-visible when-profile="en"}
+## Metric Glossary {#metric-definitions}
+
+Symbol-by-symbol definitions of the metrics used throughout this
+report, as established in Shiono & Kubo (2025, 2026). The full
+methodology document is
+[https://pntmoni.com/methodology/qc/v1.0.0](https://pntmoni.com/methodology/qc/v1.0.0).
+
+### Core metrics (absolute-evaluation baseline)
+
+These are the four families used in the paper's Table 1 station
+selection and are the **basis for the planned absolute station
+qualification** (see [§5.6](#absolute-station-qualification-coming-soon)).
+
+| Metric | Symbol | Description |
+|---|---|---|
+| Data availability | `data_availability` | `epochs_w_obs / expected_epochs` — fraction of the day's 2,880 nominal 30-second epochs where the station logged at least one observation. Measures whether the station was up and recording. |
+| Visibility (可視率) | `visibility` | `Complete obs >10° / Possible obs >10°` — fraction of expected satellite-epoch tracks above teqc's 10° elevation mask that were actually obtained. Measures track completeness when the station was operating: low values indicate antenna obstructions, RF interference, or receiver issues even on a station that logs data every epoch. |
+| L1 C/A SNR | `SN1` | Mean signal-to-noise ratio on L1 C/A, in dB-Hz. |
+| L2 SNR | `SN2` | Mean signal-to-noise ratio on L2 (P-code or L2C), in dB-Hz. |
+| L5 SNR | `SN5` | Mean signal-to-noise ratio on L5, in dB-Hz. |
+| Multipath (L1, L2 partner) | `MP12` | RMS of the L1 multipath combination using L2 as partner, in metres. |
+| Multipath (L2, L1 partner) | `MP21` | RMS of the L2 multipath combination using L1 as partner, in metres. |
+| Multipath (L1, L5 partner) | `MP15` | RMS of the L1 multipath combination using L5 as partner, in metres. |
+| Multipath (L5, L1 partner) | `MP51` | RMS of the L5 multipath combination using L1 as partner, in metres. |
+| Cycle slips (core) | `cycle_slips_core` | Sum of teqc-reported ION slips and the four core MP-combination slips (`MP12 + MP21 + MP15 + MP51`). Paper-aligned definition. |
+
+### Reference / supplementary monitoring (Galileo E5b)
+
+These are reported as **informational reference**. They are *not*
+part of the absolute-qualification baseline because the L1/E5b
+frequency pair exhibits considerably larger site-to-site variance
+than the L1/L2/L5 pairs and was therefore not adopted as a
+qualification metric in Shiono & Kubo (2025).
+
+| Metric | Symbol | Description |
+|---|---|---|
+| Galileo E5b SNR | `SN7` | Mean signal-to-noise ratio on E5b (1207.140 MHz), in dB-Hz. |
+| Multipath (L1, E5b partner) | `MP17` | RMS of the L1 multipath combination using E5b as partner, in metres. The `2/(α-1)` coefficient in the multipath formula is large for the L1/E5b frequency pair, hence the larger numerical values. |
+| Multipath (E5b, L1 partner) | `MP71` | RMS of the E5b multipath combination using L1 as partner, in metres. |
+| Cycle slips (extended) | `cycle_slips_extended` | `cycle_slips_core` plus `MP17` and `MP71` slips. Useful when assessing receivers that track Galileo E5b; not used in qualification. |
+:::
+::: {.content-visible when-profile="ja"}
+## 指標用語集 {#metric-definitions}
+
+本レポートで使用する指標の記号ごとの定義です(Shiono & Kubo 2025, 2026
+で確立)。完全な方法論文書は
+[https://pntmoni.com/methodology/qc/v1.0.0](https://pntmoni.com/methodology/qc/v1.0.0)
+を参照してください。
+
+### コア指標(絶対評価ベースライン)
+
+論文の Table 1 の局選定に用いられた 4 ファミリであり、計画中の
+**絶対局クオリフィケーション** の **基礎** です
+([§5.6](#absolute-station-qualification-coming-soon) を参照)。
+
+| 指標 | 記号 | 説明 |
+|---|---|---|
+| データアベイラビリティ | `data_availability` | `epochs_w_obs / expected_epochs` — 1日の公称 2,880 個の 30 秒エポックのうち、局が少なくとも 1 つの観測を記録したエポックの割合。局が稼働・記録していたかを測ります。 |
+| 可視率 | `visibility` | `Complete obs >10° / Possible obs >10°` — teqc の仰角10°マスク超で本来得られるべき衛星エポックトラックのうち、実際に取得された割合。局が稼働していたときのトラック完全性を測ります。値が低い場合、毎エポック記録している局でもアンテナ遮蔽・RF 干渉・受信機の問題を示唆します。 |
+| L1 C/A SNR | `SN1` | L1 C/A の平均 SNR(dB-Hz)。 |
+| L2 SNR | `SN2` | L2(P コードまたは L2C)の平均 SNR(dB-Hz)。 |
+| L5 SNR | `SN5` | L5 の平均 SNR(dB-Hz)。 |
+| マルチパス(L1、L2 パートナー) | `MP12` | L2 をパートナーとする L1 マルチパス組合せの RMS(m)。 |
+| マルチパス(L2、L1 パートナー) | `MP21` | L1 をパートナーとする L2 マルチパス組合せの RMS(m)。 |
+| マルチパス(L1、L5 パートナー) | `MP15` | L5 をパートナーとする L1 マルチパス組合せの RMS(m)。 |
+| マルチパス(L5、L1 パートナー) | `MP51` | L1 をパートナーとする L5 マルチパス組合せの RMS(m)。 |
+| サイクルスリップ(コア) | `cycle_slips_core` | teqc が報告する ION スリップと 4 つのコア MP 組合せスリップ(`MP12 + MP21 + MP15 + MP51`)の合計。論文準拠の定義。 |
+
+### 参考・補助モニタリング(Galileo E5b)
+
+これらは **参考情報** として報告します。L1/E5b 周波数ペアは
+L1/L2/L5 ペアよりも局間ばらつきが大きく、Shiono & Kubo (2025) では
+評価指標として採用されなかったため、絶対評価ベースラインには
+**含みません**。
+
+| 指標 | 記号 | 説明 |
+|---|---|---|
+| Galileo E5b SNR | `SN7` | E5b(1207.140 MHz)の平均 SNR(dB-Hz)。 |
+| マルチパス(L1、E5b パートナー) | `MP17` | E5b をパートナーとする L1 マルチパス組合せの RMS(m)。マルチパスの式における `2/(α-1)` 係数が L1/E5b 周波数ペアで大きいため、数値も大きくなります。 |
+| マルチパス(E5b、L1 パートナー) | `MP71` | L1 をパートナーとする E5b マルチパス組合せの RMS(m)。 |
+| サイクルスリップ(拡張) | `cycle_slips_extended` | `cycle_slips_core` に `MP17` と `MP71` のスリップを加えたもの。Galileo E5b を追尾する受信機の評価に有用ですが、クオリフィケーションには使用しません。 |
 :::
