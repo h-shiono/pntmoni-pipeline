@@ -181,9 +181,15 @@ COLOR_DANGER = "#ef4444"
 COLOR_INSIDE = "#10b981"   # 網内
 COLOR_OUTSIDE = "#f59e0b"  # 網外
 
-# Custom diverging colormap for heatmaps (good → warning → bad)
-CMAP_PERFORMANCE = LinearSegmentedColormap.from_list(
-    "pntmoni_perf", ["#10b981", "#f59e0b", "#ef4444"], N=256
+# Sequential single-hue (blue) ramp for magnitude heatmaps — light→dark,
+# perceptually ordered and CVD-safe. A neutral hue with no good/bad
+# semantics, matching the Free-tier spatial maps: the per-station maps
+# read as error magnitude, not a pass/fail verdict (PS-QZSS
+# reference-value convention). Colour limits stay percentile-clipped
+# per map (5th–95th) so station-level outliers remain legible.
+CMAP_SEQUENTIAL = LinearSegmentedColormap.from_list(
+    "pntmoni_seq_blue",
+    ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#104281"], N=256,
 )
 
 mpl.rcParams['axes.spines.top'] = False
@@ -639,9 +645,13 @@ regional_df
 ### Spatial distribution
 
 The maps below show per-station 95th percentile errors plotted
-geographically. The colormap runs green (best) → orange (warning)
-→ red (worst). Outliers and regional patterns are visible at
-station-level resolution.
+geographically. Colour encodes error magnitude on a continuous
+single-hue scale (light = smaller error → dark = larger error), with
+colour limits clipped to the 5th–95th percentile of this map's station
+values so outliers and regional patterns stay legible at station-level
+resolution. The scale is a relative magnitude encoding, not a
+Performance-Standard threshold or a compliance judgement (see the
+Methodology note on PS-QZSS reference values).
 
 ```{python}
 #| label: fig-heatmap-horiz
@@ -662,7 +672,7 @@ ax.add_patch(network_patch)
 vmin = np.percentile(station_h95 * 100, 5)
 vmax = np.percentile(station_h95 * 100, 95)
 sc = ax.scatter(station_lons, station_lats,
-                c=station_h95 * 100, cmap=CMAP_PERFORMANCE,
+                c=station_h95 * 100, cmap=CMAP_SEQUENTIAL,
                 vmin=vmin, vmax=vmax, s=10, alpha=0.85,
                 edgecolor="white", linewidth=0.2)
 
@@ -691,7 +701,7 @@ ax.add_patch(network_patch)
 vmin = np.percentile(station_v95 * 100, 5)
 vmax = np.percentile(station_v95 * 100, 95)
 sc = ax.scatter(station_lons, station_lats,
-                c=station_v95 * 100, cmap=CMAP_PERFORMANCE,
+                c=station_v95 * 100, cmap=CMAP_SEQUENTIAL,
                 vmin=vmin, vmax=vmax, s=10, alpha=0.85,
                 edgecolor="white", linewidth=0.2)
 

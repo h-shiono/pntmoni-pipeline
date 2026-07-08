@@ -470,9 +470,15 @@ COLOR_DANGER = "#ef4444"
 COLOR_INSIDE = "#10b981"   # 網内
 COLOR_OUTSIDE = "#f59e0b"  # 網外
 
-# Custom diverging colormap for heatmaps (good → warning → bad)
-CMAP_PERFORMANCE = LinearSegmentedColormap.from_list(
-    "pntmoni_perf", ["#10b981", "#f59e0b", "#ef4444"], N=256
+# Sequential single-hue (blue) ramp for magnitude heatmaps — light→dark,
+# perceptually ordered and CVD-safe (monotone lightness). Deliberately a
+# neutral hue: unlike a green/amber/red status ramp it carries no
+# good/bad semantics, so the spatial maps read as pure error magnitude,
+# not a per-cell pass/fail verdict. This supports the PS-QZSS
+# reference-value convention (no spec-anchored thresholds on the map).
+CMAP_SEQUENTIAL = LinearSegmentedColormap.from_list(
+    "pntmoni_seq_blue",
+    ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#104281"], N=256,
 )
 
 mpl.rcParams['axes.spines.top'] = False
@@ -536,6 +542,7 @@ STR = {
         # Hex maps
         "hex_title_horiz": "Horizontal error 95th percentile",
         "hex_title_vert": "Vertical error 95th percentile",
+        "hex_cbar_label": "95th-percentile error [cm]",
         # Availability figure
         "avail_xlabel": "Availability [%]",
         "avail_ylabel": "Stations",
@@ -665,6 +672,7 @@ STR = {
         "ttff_preview_title": "(プレビュー:合成データ)",
         "hex_title_horiz": "水平誤差 95 パーセンタイル",
         "hex_title_vert": "垂直誤差 95 パーセンタイル",
+        "hex_cbar_label": "誤差 95 パーセンタイル [cm]",
         "avail_xlabel": "可用性 [%]",
         "avail_ylabel": "観測局数",
         "exec_col_metric": "指標",
@@ -1336,22 +1344,22 @@ losing anonymity, and its percentile is unstable). Southern-island
 stations outside the CLAS service area (`out_of_service`) are excluded
 from cell evaluation.
 
-The colour scale uses the PS-QZSS standard values (kinematic,
-horizontal 95% 12 cm / vertical 95% 24 cm) as an absolute **reference
-scale**: **green = at or below the standard value**, **amber = up to
-2× the standard value** (watch), **red = beyond 2× the standard
-value** (clearly degraded). Because this evaluation is run under
-conditions that differ from the official compliance verification (see
-Methodology and the Executive Summary note), the colouring supports
-spatial comparison within a consistent methodology — it is **not** a
-PS-QZSS compliance judgement per cell.
+Colour encodes error magnitude on a **continuous single-hue scale**
+(light = smaller error → dark = larger error), with **no discrete
+boundaries** — the map shows the spatial gradient of performance, not a
+pass/fail classification. The scale spans a fixed range (0–40 cm
+horizontal, 0–60 cm vertical) set from PNT Moni's own historical error
+range, so maps stay comparable month to month; this range is **not** a
+Performance-Standard threshold and the colouring is **not** a compliance
+judgement (see Methodology and the Executive Summary note). Cells
+exceeding the range render at the darkest step (colorbar top arrow).
 :::
 ::: {.content-visible when-profile="ja"}
 ### 空間分布
 
 CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセル、および**異なる観測局が 3 局未満のセルは空白**で表示します(単独局セルは公開座標から逆引き可能で匿名性を欠き、かつパーセンタイルが不安定なため)。CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
 
-色階は PS-QZSS の性能標準値(kinematic、水平 95% 12 cm / 垂直 95% 24 cm)を**参照スケール**として用いた絶対閾値です:**緑 = 標準値以下**、**黄 = 標準値の 2 倍以下**(要観察)、**赤 = 標準値の 2 倍超**(明確な劣化)。本評価は公式の適合性検証とは異なる条件で行われているため(§評価手法およびエグゼクティブサマリの注記参照)、この色分けは同一手法内での空間比較のためのものであり、セル単位の PS-QZSS **適合性判定ではありません**。
+色は誤差の大きさを**連続的な単一色相スケール**(淡色=誤差小 → 濃色=誤差大)で表し、**明確な境界を設けません** — 地図は性能の空間的なグラデーションを示すものであり、合否の分類ではありません。スケールは固定レンジ(水平 0〜40 cm、垂直 0〜60 cm)で、PNT Moni 自身の歴史的な誤差レンジから設定しているため、月をまたいで比較できます。このレンジは性能標準の閾値では**なく**、色分けは適合性判定でも**ありません**(§評価手法およびエグゼクティブサマリの注記参照)。レンジを超えるセルは最濃色で表示します(カラーバー上端の矢印)。
 :::
 
 ```{python}
@@ -1360,17 +1368,23 @@ CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、�
 
 import cartopy.crs as ccrs
 import cartopy.feature as cfeature
-from matplotlib.colors import ListedColormap, BoundaryNorm
-from matplotlib.lines import Line2D
+from matplotlib.colors import Normalize
+from matplotlib.ticker import FuncFormatter
 
-# Absolute thresholds using the PS-QZSS standard values as a reference
-# scale — NOT a compliance judgement (PS-QZSS reference-value
-# convention, 30-evaluation-methodology/03-monthly-report-structure.md):
-#   緑 = 標準値以下(水平 ≤12 cm / 垂直 ≤24 cm)
-#   黄 = 標準値の2倍まで(要観察)
-#   赤 = 標準値の2倍超(明確な劣化)
-H_THRESHOLDS_CM = (12.0, 24.0)
-V_THRESHOLDS_CM = (24.0, 48.0)
+# Continuous colour-scale upper bounds (cm). The maps encode error
+# magnitude on a single-hue ramp from 0 to these caps — deliberately NOT
+# a discrete threshold at the PS-QZSS standard values, which read as a
+# pass/fail boundary (PS-QZSS reference-value convention,
+# 30-evaluation-methodology/03-monthly-report-structure.md). The caps are
+# set from PNT Moni's own historical error range (kinematic 95th
+# percentile over the 2021–2025 series, Shiono & Kubo 2026), NOT as a
+# multiple of the spec, so month-to-month maps stay comparable while the
+# scale references our own methodology rather than the standard. Typical
+# months sit in the lower-middle of the ramp; genuinely degraded cells
+# approach the top without saturating. Cells beyond the cap render at the
+# darkest step (colorbar `extend="max"`).
+H_VMAX_CM = 40.0
+V_VMAX_CM = 60.0
 
 # Mandatory minimum-stations-per-cell suppression (ADR 0013, shared
 # Product 1 / Product 2 hex requirement): a cell backed by fewer than
@@ -1407,7 +1421,7 @@ if HEX_PRESENT:
         _stcode=pd.factorize(HEX_EPOCHS_DF["station"])[0],
     )
 
-def _render_hex_panel(col, title, thresholds_cm):
+def _render_hex_panel(col, title, vmax_cm):
     fig, ax = plt.subplots(
         figsize=(7, 7),
         subplot_kw={"projection": _PROJ_AEA},
@@ -1420,10 +1434,12 @@ def _render_hex_panel(col, title, thresholds_cm):
     ax.add_feature(cfeature.COASTLINE.with_scale("50m"),
                    linewidth=0.4, edgecolor="#94a3b8")
 
-    # Discrete absolute-threshold colormap: green / amber / red.
-    _thr_m = [t / 100.0 for t in thresholds_cm]
-    _cmap = ListedColormap([COLOR_SUCCESS, COLOR_WARNING, COLOR_DANGER])
-    _norm = BoundaryNorm([0.0, *_thr_m, 10.0], _cmap.N)
+    # Continuous single-hue scale: 0 → vmax_cm, light→dark. No discrete
+    # boundary (so no value reads as a spec threshold). Values above the
+    # cap clamp to the darkest step; the colorbar's `extend="max"` arrow
+    # flags that the cap is a display bound, not a data maximum.
+    _vmax_m = vmax_cm / 100.0
+    _norm = Normalize(vmin=0.0, vmax=_vmax_m)
 
     # matplotlib.hexbin: per-bin reduce_C_function pools all epochs
     # landing in the hex and returns its 95 percentile (methodology
@@ -1448,9 +1464,9 @@ def _render_hex_panel(col, title, thresholds_cm):
     hb = ax.hexbin(
         _x, _y, C=HEX_EPOCHS_DF[col].to_numpy(),
         reduce_C_function=lambda v: np.percentile(v, 95),
-        gridsize=50, extent=_ext, cmap=_cmap, norm=_norm,
+        gridsize=50, extent=_ext, cmap=CMAP_SEQUENTIAL, norm=_norm,
         edgecolors="white", linewidths=0.3,
-        mincnt=1, alpha=0.5, zorder=10,
+        mincnt=1, alpha=0.85, zorder=10,
     )
 
     # Mandatory minimum-stations-per-cell suppression (ADR 0013): drop
@@ -1461,27 +1477,19 @@ def _render_hex_panel(col, title, thresholds_cm):
     hb.set_offsets(hb.get_offsets()[_keep])
     hb.set_array(hb.get_array()[_keep])
 
-    ax.set_title(title + " [cm]", fontsize=11)
+    ax.set_title(title, fontsize=11)
     ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
-    # Inline-math labels via matplotlib mathtext ($...$): \leq and >
-    # come from matplotlib's bundled DejaVu Math / STIX fonts, which
-    # are independent of the CJK font (Hiragino) selected for plain
-    # text and so don't fall victim to Hiragino's missing U+2264 glyph.
-    legend_handles = [
-        Line2D([0], [0], marker="h", color="none",
-               markerfacecolor=COLOR_SUCCESS, markeredgecolor="white",
-               markersize=10, label=rf"$\leq {thresholds_cm[0]:.0f}$"),
-        Line2D([0], [0], marker="h", color="none",
-               markerfacecolor=COLOR_WARNING, markeredgecolor="white",
-               markersize=10, label=f"{thresholds_cm[0]:.0f}–{thresholds_cm[1]:.0f}"),
-        Line2D([0], [0], marker="h", color="none",
-               markerfacecolor=COLOR_DANGER, markeredgecolor="white",
-               markersize=10, label=rf"$> {thresholds_cm[1]:.0f}$"),
-    ]
-    ax.legend(
-        handles=legend_handles, loc="upper left", fontsize=8,
-        framealpha=0.9, title="cm", title_fontsize=8,
+
+    # Continuous colorbar in cm (data is metres → format ticks ×100).
+    # `extend="max"` draws the top arrow noted above. Five even ticks
+    # from 0 to the cap.
+    cbar = fig.colorbar(
+        hb, ax=ax, fraction=0.04, pad=0.03, extend="max",
+        ticks=np.linspace(0.0, _vmax_m, 5),
     )
+    cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v * 100:.0f}"))
+    cbar.set_label(T("hex_cbar_label"), fontsize=9)
+    cbar.ax.tick_params(labelsize=8)
     plt.tight_layout()
 ```
 
@@ -1498,7 +1506,7 @@ if HEX_PRESENT and not HEX_REAL_DATA:
 #| fig-cap: "{{< meta caps.free.hex_horizontal >}}"
 
 if HEX_PRESENT:
-    _render_hex_panel("horizontal_m", T("hex_title_horiz"), H_THRESHOLDS_CM)
+    _render_hex_panel("horizontal_m", T("hex_title_horiz"), H_VMAX_CM)
 else:
     print(T("hex_missing").format(period=PERIOD_LABEL))
 ```
@@ -1508,7 +1516,7 @@ else:
 #| fig-cap: "{{< meta caps.free.hex_vertical >}}"
 
 if HEX_PRESENT:
-    _render_hex_panel("vertical_m", T("hex_title_vert"), V_THRESHOLDS_CM)
+    _render_hex_panel("vertical_m", T("hex_title_vert"), V_VMAX_CM)
 ```
 
 ```{python}
