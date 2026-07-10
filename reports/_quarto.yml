@@ -68,8 +68,14 @@ format:
     toc-location: left
     code-fold: true
     smooth-scroll: true
-  pdf:
-    documentclass: scrartcl
+  # PDF is produced via Quarto's bundled Typst (ADR 0017 Phase D) — the
+  # former xelatex `pdf` format is retired (it was broken; see the
+  # 2026-05 report entry in tasks/todo.md). Each template's frontmatter
+  # carries the full typst config incl. `template-partials`
+  # (typst-template.typ / typst-show.typ, which import the GENERATED
+  # templates/pntmoni-brand.typ palette — never hand-edit that file).
+  # Render with `--to typst`; the output artifact is a .pdf.
+  typst:
     papersize: a4
-    fontsize: 10pt
-    toc: true
+    page-numbering: "1"
+    toc: false

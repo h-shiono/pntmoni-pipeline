@@ -280,9 +280,14 @@ def render(
         lang_dir = output_dir / lang
         lang_dir.mkdir(parents=True, exist_ok=True)
         for fmt in formats:
+            # "pdf" renders via Quarto's bundled Typst (ADR 0017 Phase D;
+            # the former xelatex `pdf` format is retired). The typst
+            # format writes a .pdf; template setup lives in
+            # reports/templates/typst-{template,show}.typ.
+            quarto_to = "typst" if fmt in ("pdf", "typst") else fmt
             cmd = [
                 "quarto", "render", str(template),
-                "--to", fmt,
+                "--to", quarto_to,
                 "--profile", lang,
                 "--output-dir", str(lang_dir.resolve()),
                 # The Jupyter execute-daemon caches a kernel across

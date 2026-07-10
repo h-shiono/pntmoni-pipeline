@@ -15,39 +15,28 @@ format:
     # _pntmoni-tokens.scss is GENERATED from pntmoni-docs/60-brand/tokens.json
     # (ADR 0017) — never hand-edit.
     theme: [cosmo, styles/_pntmoni-tokens.scss, styles/pntmoni.scss]
-  pdf:
-    pdf-engine: xelatex
-    documentclass: scrartcl
+  # PDF via Quarto's bundled Typst (ADR 0017 Phase D; replaces the
+  # broken xelatex path). Shell + provenance cover: typst-template.typ /
+  # typst-show.typ next to this template; the palette import is the
+  # GENERATED pntmoni-brand.typ (never hand-edit). Fonts are
+  # system-installed only (IBM Plex Sans JP if present, else Hiragino
+  # Sans; mono falls back to Menlo) — missing brand families produce
+  # non-fatal Typst "unknown font family" warnings. (The matplotlib
+  # figures handle their own CJK via the rcParams font stack in setup.)
+  typst:
+    template-partials:
+      - typst-template.typ
+      - typst-show.typ
     papersize: a4
-    fontsize: 10pt
-    geometry:
-      - top=20mm
-      - bottom=20mm
-      - left=20mm
-      - right=20mm
-    mainfont: "Helvetica Neue"
-    sansfont: "Helvetica Neue"
-    monofont: "Menlo"
-    # Japanese body text. Hiragino is the macOS system JP family; xelatex
-    # picks it up via xeCJK. Without these, the default LaTeX font has no
-    # CJK glyphs and the Japanese prose silently drops from the PDF. (The
-    # matplotlib figures handle their own CJK via pdf.fonttype=42 in setup.)
-    CJKmainfont: "Hiragino Sans"
-    CJKsansfont: "Hiragino Sans"
-    CJKmonofont: "Hiragino Sans"
-    toc: true
+    margin:
+      x: 2.2cm
+      y: 2cm
+    page-numbering: "1"
+    section-numbering: "1.1.1"
     toc-depth: 3
-    number-sections: true
-    colorlinks: true
-    linkcolor: "blue"
-    urlcolor: "blue"
-    fig-pos: "H"
-    include-in-header:
-      text: |
-        \usepackage{float}
-        \usepackage{caption}
-        \captionsetup[figure]{font=small,labelfont=bf}
-        \captionsetup[table]{font=small,labelfont=bf}
+    # TOC is emitted by the typst-cover cell right after the cover page
+    # (Quarto's own toc would land before it).
+    toc: false
 execute:
   echo: false
   warning: false
@@ -848,6 +837,81 @@ if TTFF_PRESENT:
     TTFF50 = TTFF_P50_SEC
     TTFF95 = TTFF_P95_SEC
 
+```
+
+```{python}
+#| label: typst-cover
+#| output: asis
+
+# PDF (typst) cover — ADR 0017 Phase D provenance cover (pm-cover in
+# typst-template.typ). Emits a raw ```{=typst}``` block, so it lands
+# only in the typst/PDF output; the HTML writer drops it. The block
+# only UPDATES the pm-cover-data state (Quarto wraps cell output in a
+# #block container where `set page` is forbidden); the cover + TOC are
+# rendered at document level by the `article` shell. Title/subtitle
+# come from the document metadata, so they follow the active language
+# profile; provenance values come from the driver-injected params
+# (PNTMONI_REPORT_PARAMS) with the template defaults as fallback.
+import hashlib as _hashlib
+from datetime import date as _cover_date
+from pathlib import Path as _CoverPath
+
+# Dataset digest: sha256 over the present monthly input parquets
+# (sorted by input key) — a reproducible fingerprint of exactly which
+# input set the report was computed from. Synthetic previews (no
+# inputs on disk) are labelled as such instead of hashed.
+_ds_files = [
+    _CoverPath(p) for _k, p in sorted(INPUTS.items())
+    if isinstance(p, str) and _CoverPath(p).is_file()
+] if isinstance(INPUTS, dict) else []
+if _ds_files:
+    _ds_h = _hashlib.sha256()
+    for _p in _ds_files:
+        with open(_p, "rb") as _fp:
+            for _chunk in iter(lambda: _fp.read(1 << 20), b""):
+                _ds_h.update(_chunk)
+    _ds_hex = _ds_h.hexdigest()
+    _ds_label = f"sha256:{_ds_hex[:8]}…{_ds_hex[-4:]} ({len(_ds_files)} files)"
+else:
+    _ds_label = "synthetic preview"
+
+_cover_pub = INITIAL_PUB_DATE or (
+    _cover_date.today().isoformat() if DATA_MODE == "live" else "preview"
+)
+
+_cover_labels = {
+    "ja": ("対象月", "公開日", "方法論バージョン", "config hash", "dataset"),
+    "en": ("Reporting period", "Published", "Methodology version",
+           "Config hash", "Dataset"),
+}[LANG]
+_cover_note = {
+    "ja": "メーカー・行政機関から独立した第三者評価。スポンサー・広告なし。"
+          "評価手法は公開後不変。",
+    "en": "Independent third-party evaluation — no manufacturer or "
+          "government affiliation, no sponsors, no advertising. The "
+          "methodology is immutable after publication.",
+}[LANG]
+_toc_title = {"ja": "目次", "en": "Contents"}[LANG]
+
+print(f"""```{{=typst}}
+#pm-cover-data.update((
+  eyebrow: "MONTHLY REPORT",
+  month: "{PERIOD}",
+  published: "{_cover_pub}",
+  methodology: "v{METHODOLOGY_VERSION}",
+  config-hash: "cfg:{CONFIG_HASH}",
+  dataset: "{_ds_label}",
+  labels: (
+    month: "{_cover_labels[0]}",
+    published: "{_cover_labels[1]}",
+    methodology: "{_cover_labels[2]}",
+    config-hash: "{_cover_labels[3]}",
+    dataset: "{_cover_labels[4]}",
+  ),
+  note: "{_cover_note}",
+  toc-title: "{_toc_title}",
+))
+```""")
 ```
 
 ```{python}

@@ -1276,9 +1276,12 @@ End-to-end render for 2026-04 rapid:
 
 ### Open Issues (deferred)
 
-- **PDF render** still fails (driver invokes HTML+PDF; PDF path errors
-  on LaTeX/typst — HTML works). Either gate PDF behind a flag or fix
-  the typst toolchain.
+- **PDF render**: RESOLVED 2026-07 (ADR 0017 Phase D) — the broken
+  xelatex `format: pdf` was replaced by Quarto's bundled Typst
+  (`--formats pdf` now renders `--to typst`; provenance cover +
+  document shell in `reports/templates/typst-{template,show}.typ`
+  importing the generated `pntmoni-brand.typ` palette; system fonts
+  only, Hiragino/Menlo fallback when IBM Plex is absent).
 - **L6 alerts**: April raw L6 not yet acquired (`data/raw/l6/` empty).
   Run `acquire l6 --date YYYY-MM-DD` × 30 then
   `analyze l6-alerts --period 2026-04`.

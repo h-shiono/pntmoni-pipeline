@@ -51,11 +51,10 @@ def cmd_monthly(
         str,
         typer.Option(
             "--formats",
-            help="Comma-separated render formats: html, pdf. Default html."
-                 " PDF needs matplotlib's PDF backend to handle the figures'"
-                 " CJK fonts (Hiragino etc. fail the ASCII-only Name encoder"
-                 " on matplotlib<3.x); enable only if a working stack is"
-                 " staged.",
+            help="Comma-separated render formats: html, pdf (alias:"
+                 " typst). Default html. PDF renders via Quarto's bundled"
+                 " Typst (ADR 0017 Phase D) with the provenance cover from"
+                 " reports/templates/typst-template.typ; system fonts only.",
         ),
     ] = "html",
     langs: Annotated[
@@ -91,9 +90,11 @@ def cmd_monthly(
     _formats = tuple(
         f.strip().lower() for f in formats.split(",") if f.strip()
     )
-    bad = [f for f in _formats if f not in ("html", "pdf")]
+    bad = [f for f in _formats if f not in ("html", "pdf", "typst")]
     if bad:
-        raise typer.BadParameter(f"unknown format(s): {bad} (allowed: html, pdf)")
+        raise typer.BadParameter(
+            f"unknown format(s): {bad} (allowed: html, pdf, typst)"
+        )
     _langs = tuple(
         l.strip().lower() for l in langs.split(",") if l.strip()
     )

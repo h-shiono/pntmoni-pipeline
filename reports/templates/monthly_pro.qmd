@@ -15,38 +15,28 @@ format:
     # _pntmoni-tokens.scss is GENERATED from pntmoni-docs/60-brand/tokens.json
     # (ADR 0017) — never hand-edit.
     theme: [cosmo, styles/_pntmoni-tokens.scss, styles/pntmoni.scss]
-  pdf:
-    pdf-engine: xelatex
-    documentclass: scrartcl
+  # PDF via Quarto's bundled Typst (ADR 0017 Phase D; replaces the
+  # broken xelatex path). Shell + provenance cover: typst-template.typ /
+  # typst-show.typ next to this template; the palette import is the
+  # GENERATED pntmoni-brand.typ (never hand-edit). Fonts are
+  # system-installed only (IBM Plex Sans JP if present, else Hiragino
+  # Sans; mono falls back to Menlo) — missing brand families produce
+  # non-fatal Typst "unknown font family" warnings; the JP tokens
+  # (網内 / 網外, GSI attribution) render via the CJK fallback.
+  typst:
+    template-partials:
+      - typst-template.typ
+      - typst-show.typ
     papersize: a4
-    fontsize: 10pt
-    geometry:
-      - top=20mm
-      - bottom=20mm
-      - left=20mm
-      - right=20mm
-    mainfont: "Helvetica Neue"
-    sansfont: "Helvetica Neue"
-    monofont: "Menlo"
-    # Japanese tokens (網内 / 網外, GSI attribution) appear in the body
-    # and tables; xelatex needs a CJK font or they silently drop. (The
-    # matplotlib figures handle their own CJK via pdf.fonttype=42 in setup.)
-    CJKmainfont: "Hiragino Sans"
-    CJKsansfont: "Hiragino Sans"
-    CJKmonofont: "Hiragino Sans"
-    toc: true
+    margin:
+      x: 2.2cm
+      y: 2cm
+    page-numbering: "1"
+    section-numbering: "1.1.1"
     toc-depth: 3
-    number-sections: true
-    colorlinks: true
-    linkcolor: "blue"
-    urlcolor: "blue"
-    fig-pos: "H"
-    include-in-header:
-      text: |
-        \usepackage{float}
-        \usepackage{caption}
-        \captionsetup[figure]{font=small,labelfont=bf}
-        \captionsetup[table]{font=small,labelfont=bf}
+    # TOC is emitted by the typst-cover cell right after the cover page
+    # (Quarto's own toc would land before it).
+    toc: false
 execute:
   echo: false
   warning: false
@@ -302,6 +292,61 @@ NETWORK_POLYGON = np.array([
     [136.0, 43.0], [133.0, 38.0], [131.0, 35.5], [130.0, 33.5],
     [129.5, 31.0]
 ])
+```
+
+```{python}
+#| label: typst-cover
+#| output: asis
+
+# PDF (typst) cover — ADR 0017 Phase D provenance cover (pm-cover in
+# typst-template.typ). Emits a raw ```{=typst}``` block, so it lands
+# only in the typst/PDF output; the HTML writer drops it. The block
+# only UPDATES the pm-cover-data state (Quarto wraps cell output in a
+# #block container where `set page` is forbidden); the cover + TOC are
+# rendered at document level by the `article` shell. This template is
+# EN-only (no profile switch), so the labels are fixed English.
+import hashlib as _hashlib
+from datetime import date as _cover_date
+from pathlib import Path as _CoverPath
+
+_ds_files = [
+    _CoverPath(p) for _k, p in sorted(INPUTS.items())
+    if isinstance(p, str) and _CoverPath(p).is_file()
+] if isinstance(INPUTS, dict) else []
+if _ds_files:
+    _ds_h = _hashlib.sha256()
+    for _p in _ds_files:
+        with open(_p, "rb") as _fp:
+            for _chunk in iter(lambda: _fp.read(1 << 20), b""):
+                _ds_h.update(_chunk)
+    _ds_hex = _ds_h.hexdigest()
+    _ds_label = f"sha256:{_ds_hex[:8]}…{_ds_hex[-4:]} ({len(_ds_files)} files)"
+else:
+    _ds_label = "synthetic preview"
+
+_cover_pub = (
+    _cover_date.today().isoformat() if DATA_MODE == "live" else "preview"
+)
+
+print(f"""```{{=typst}}
+#pm-cover-data.update((
+  eyebrow: "MONTHLY REPORT — PRO TIER",
+  month: "{PERIOD}",
+  published: "{_cover_pub}",
+  methodology: "v{METHODOLOGY_VERSION}",
+  config-hash: "cfg:{CONFIG_HASH}",
+  dataset: "{_ds_label}",
+  labels: (
+    month: "Reporting period",
+    published: "Published",
+    methodology: "Methodology version",
+    config-hash: "Config hash",
+    dataset: "Dataset",
+  ),
+  note: "Independent third-party evaluation — no manufacturer or government affiliation, no sponsors, no advertising. The methodology is immutable after publication.",
+  toc-title: "Contents",
+))
+```""")
 ```
 
 ::: {.callout-note appearance="minimal"}
