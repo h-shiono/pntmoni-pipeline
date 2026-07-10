@@ -39,9 +39,47 @@ logger = logging.getLogger(__name__)
 QC_TOOL_NAME = "teqc"
 QC_TOOL_VERSION = "2019Feb25"
 QC_TOOL_FULL = f"{QC_TOOL_NAME} {QC_TOOL_VERSION}"
-METHODOLOGY_VERSION = "1.0.1"
+
+# Two-track methodology versioning. Product 1 (CLAS evaluation) and
+# Product 2 (GEONET QC) evolve on independent version tracks per
+# pntmoni-docs/30-evaluation-methodology/04-versioning-and-hashing.md
+# (Postscripts 2026-05-12 / 2026-07-07). The product version feeds both
+# the report's Methodology Version Tag and the §7.2 config_hash, so a
+# single global here would silently re-stamp Product 2 reports whenever
+# Product 1 bumps (and vice versa) and break hash reproducibility of
+# published editions — e.g. the 2026-06 GEONET QC final was published
+# under qc 1.0.0 while clas was already at 1.0.1.
+METHODOLOGY_VERSIONS = {
+    "clas": "1.0.1",   # Product 1 — CLAS evaluation (monthly_free / monthly_pro)
+    "qc": "1.0.0",     # Product 2 — GEONET QC (monthly_qc)
+}
+
+# Template stem → product track. New templates MUST be registered here;
+# product_for_template raises on unknown stems rather than guessing (a
+# wrong methodology version in a published report is a provenance bug).
+TEMPLATE_PRODUCTS = {
+    "monthly_free": "clas",
+    "monthly_pro": "clas",
+    "monthly_qc": "qc",
+}
+
 ENGINE_NAME = "pntmoni-claslib"
 DEFAULT_ENGINE_VERSION = "v0.8.3-pntmoni-1"   # asserted by methodology §3.1
+
+
+def product_for_template(template: Path) -> str:
+    """Return the product track ("clas" | "qc") for a report template."""
+    stem = Path(template).stem
+    try:
+        return TEMPLATE_PRODUCTS[stem]
+    except KeyError:
+        raise ValueError(
+            f"template {stem!r} has no product mapping in"
+            " TEMPLATE_PRODUCTS (reports/driver.py) — register it so the"
+            " correct per-product methodology version (two-track policy,"
+            " 30-evaluation-methodology/04-versioning-and-hashing.md)"
+            " flows into the report tag and config_hash"
+        ) from None
 
 DEFAULT_TEMPLATE = Path("reports/templates/monthly_free.qmd")
 DEFAULT_OUTPUT_ROOT = Path("data/reports")
@@ -181,15 +219,20 @@ def default_config_inputs(
 
 def compute_monthly_config_hash(
     *, mode: str, engine_version: str = DEFAULT_ENGINE_VERSION,
-    config_dir: Path = DEFAULT_CONFIG_DIR,
+    config_dir: Path = DEFAULT_CONFIG_DIR, product: str = "clas",
 ) -> _ch.ConfigHashResult:
-    """Wrap :func:`config_hash.compute_config_hash` for the monthly run."""
+    """Wrap :func:`config_hash.compute_config_hash` for the monthly run.
+
+    ``product`` selects the methodology version track ("clas" | "qc",
+    see :data:`METHODOLOGY_VERSIONS`) — the version string is a hash
+    input, so the two products' hashes differ by design.
+    """
     tomls, confs = default_config_inputs(config_dir=config_dir, mode=mode)
     return _ch.compute_config_hash(
         engine_version=f"{ENGINE_NAME} {engine_version}",
         qc_tool_version=QC_TOOL_FULL,
         reference_coord_version=_reference_coords.METHODOLOGY_VERSION,
-        methodology_version=METHODOLOGY_VERSION,
+        methodology_version=METHODOLOGY_VERSIONS[product],
         toml_paths=tomls, conf_paths=confs,
     )
 
@@ -205,10 +248,16 @@ def assemble_params(
     config_hash_full: str,
     engine_version: str = DEFAULT_ENGINE_VERSION,
     data_mode: str = "live",
+    product: str = "clas",
     revisions: list[dict[str, str]] | None = None,
     initial_pub_date: str = "",
 ) -> dict[str, Any]:
-    """Build the Quarto params dict for the monthly template (§7.4 tag)."""
+    """Build the Quarto params dict for the monthly template (§7.4 tag).
+
+    ``product`` selects the methodology version track (two-track policy,
+    see :data:`METHODOLOGY_VERSIONS`); it must match the ``product``
+    used for ``config_hash_full``.
+    """
     year = int(period[:4])
     month = int(period[5:7])
     return {
@@ -217,7 +266,8 @@ def assemble_params(
         "period": period,
         "stream": stream,
         "mode": mode,
-        "methodology_version": METHODOLOGY_VERSION,
+        "product": product,
+        "methodology_version": METHODOLOGY_VERSIONS[product],
         "config_hash": config_hash_full[: _ch.DISPLAY_LEN],
         "config_hash_full": config_hash_full,
         "engine": ENGINE_NAME,
@@ -382,13 +432,19 @@ def run_monthly(
     initial_pub_date: str = "",
 ) -> RunResult:
     """Gather inputs, compute config_hash, assemble params, optionally render."""
+    # Product track (clas | qc) follows from the template being rendered;
+    # it selects the methodology version for BOTH the params and the
+    # config_hash (two-track policy — see METHODOLOGY_VERSIONS above).
+    product = product_for_template(template)
     inputs = gather_inputs(period, mode, processed_root=processed_root)
     ch = compute_monthly_config_hash(
         mode=mode, engine_version=engine_version, config_dir=config_dir,
+        product=product,
     )
     params = assemble_params(
         period=period, mode=mode, stream=stream, inputs=inputs,
         config_hash_full=ch.full, engine_version=engine_version, data_mode=data_mode,
+        product=product,
         revisions=revisions, initial_pub_date=initial_pub_date,
     )
     out_dir = output_root / stream / period
