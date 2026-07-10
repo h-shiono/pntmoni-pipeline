@@ -931,12 +931,10 @@ if DATA_MODE == "synthetic":
 # the correction rows via ``revisions``, per
 # 30-evaluation-methodology/03-monthly-report-structure.md §1.
 #
-# TODO(brand 2026-07, ADR 0017 §6): the FIRST edition published under
-# the new brand theme must carry a revision row "visual redesign; no
-# methodology change" (JA: 「ビジュアルリデザイン。方法論の変更なし」).
-# Pass it through the driver's ``revisions`` param at render time — do
-# NOT hardcode it here (earlier periods re-rendered from this template
-# must not inherit it). Remove this TODO once that edition ships.
+# ADR 0017 §6: the first edition published under the new brand theme
+# carries a "visual redesign; no methodology change" revision row,
+# passed through the driver's ``revisions`` param at render time (see
+# the 2026-06 rapid edition's v1.3 revision).
 import datetime as _dt_rev
 _pub_date = INITIAL_PUB_DATE or (
     _dt_rev.date.today().isoformat()

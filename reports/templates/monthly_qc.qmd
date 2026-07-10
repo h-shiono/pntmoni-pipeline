@@ -271,6 +271,18 @@ mpl.rcParams['pdf.fonttype'] = 42
 # ---- Reporting period -----------------------------------------------
 YEAR = 2026
 MONTH = 4
+# Product 2 (GEONET QC) methodology track — independent from Product 1
+# (CLAS) per the two-track policy in pntmoni-docs
+# 30-evaluation-methodology/04-versioning-and-hashing.md (Postscript
+# 2026-07-07). The driver injects the authoritative value from its
+# METHODOLOGY_VERSIONS["qc"] mapping via params; this default only
+# covers a bare `quarto render` preview.
+METHODOLOGY_VERSION = "1.0.0"
+# Post-publication corrections (Revision History rows after v1.0) and
+# the original v1.0 publication date for re-renders — same mechanism as
+# monthly_free (30-evaluation-methodology/03-monthly-report-structure.md §1).
+REVISIONS: list[dict] = []
+INITIAL_PUB_DATE = ""
 # Driver override: `report monthly` writes a params JSON and points
 # PNTMONI_REPORT_PARAMS at it (same mechanism as monthly_free). Reading
 # it here lets `report monthly --template monthly_qc.qmd --period YYYY-MM`
@@ -282,12 +294,15 @@ if _pp:
         _qc_params = _json.load(_fp)
     YEAR = int(_qc_params.get("year", YEAR))
     MONTH = int(_qc_params.get("month", MONTH))
+    METHODOLOGY_VERSION = _qc_params.get(
+        "methodology_version", METHODOLOGY_VERSION)
+    REVISIONS = _qc_params.get("revisions", REVISIONS)
+    INITIAL_PUB_DATE = _qc_params.get("initial_pub_date", INITIAL_PUB_DATE)
 # Period label is language-dependent: "April 2026" vs "2026年4月".
 PERIOD_LABEL = (
     f"{YEAR}年{MONTH}月" if LANG == "ja"
     else pd.Timestamp(YEAR, MONTH, 1).strftime("%B %Y")
 )
-METHODOLOGY_VERSION = "1.0.0"
 QC_TOOL = "teqc"
 QC_VERSION = "2019Feb25"
 CONVBIN_VERSION = "RTKLIB 2.4.2"
@@ -645,18 +660,38 @@ print(f"""```{{=typst}}
 [https://pntmoni.com/methodology/qc/v1.0.0](https://pntmoni.com/methodology/qc/v1.0.0)
 :::
 
-<!-- TODO(brand 2026-07, ADR 0017 §6): the FIRST edition published under
-the new brand theme must add a revision row "visual redesign; no
-methodology change" (JA: 「ビジュアルリデザイン。方法論の変更なし」) to
-both language tables below. Remove this TODO once that edition ships. -->
+```{python}
+#| echo: false
+#| output: asis
+
+# Revision History — mirrors monthly_free: the v1.0 date is stamped at
+# render time for a first publication; on a correction re-render the
+# driver passes the original publication date via ``initial_pub_date``
+# (today() would be wrong) and the correction rows via ``revisions``,
+# per 30-evaluation-methodology/03-monthly-report-structure.md §1.
+# ADR 0017 §6: the first edition published under the new brand theme
+# carries a "visual redesign; no methodology change" revision row,
+# passed through the driver's ``revisions`` param at render time (see
+# the 2026-06 QC final edition's v1.1 revision).
+import datetime as _dt_rev
+_pub_date = INITIAL_PUB_DATE or _dt_rev.date.today().isoformat()
+_rev_head = {
+    "en": ("# Revision History\n\n"
+           "| Version | Date | Notes |\n|---|---|---|\n"
+           f"| 1.0 | {_pub_date} | Initial publication. |\n"),
+    "ja": ("# 改訂履歴\n\n"
+           "| バージョン | 日付 | 内容 |\n|---|---|---|\n"
+           f"| 1.0 | {_pub_date} | 初版。 |\n"),
+}[LANG]
+_extra_rows = "".join(
+    f"| {_rev.get('version', '?')} | {_rev.get('date', '?')} | "
+    f"{_rev.get('note_' + LANG) or _rev.get('note', '')} |\n"
+    for _rev in REVISIONS
+)
+print(_rev_head + _extra_rows)
+```
 
 ::: {.content-visible when-profile="en"}
-# Revision History
-
-| Version | Date | Notes |
-|---|---|---|
-| 1.0 | `{python} pd.Timestamp.today().strftime('%Y-%m-%d')` | Initial publication. |
-
 # Introduction
 
 This monthly report summarises the **observation-quality** state of
@@ -683,12 +718,6 @@ methodology document is
 :::
 
 ::: {.content-visible when-profile="ja"}
-# 改訂履歴
-
-| バージョン | 日付 | 内容 |
-|---|---|---|
-| 1.0 | `{python} pd.Timestamp.today().strftime('%Y-%m-%d')` | 初版。 |
-
 # はじめに
 
 本レポートは、国土地理院(GSI)が運用する GEONET(GNSS 連続観測網)
