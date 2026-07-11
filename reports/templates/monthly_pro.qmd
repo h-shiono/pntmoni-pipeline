@@ -264,7 +264,10 @@ if _ep_dir_str:
             _per_day = max(1, RAW_CDF_TARGET_ROWS // len(_ep_paths))
             _frames = []
             for _p in _ep_paths:
-                _cols = ["horizontal_m", "vertical_m"]
+                # is_day carried through for the Pro §6.1 day/night facet
+                # (Shiono & Kubo 2026 UTC split: day 00–09:59 & 21–23:59,
+                # night 10–20:59 — precomputed in Stage-1 epoch_errors).
+                _cols = ["horizontal_m", "vertical_m", "is_day"]
                 if QUALIFIED_STATIONS is not None:
                     _cols = ["station", *_cols]
                 _d = _pd_at.read_parquet(_p, columns=_cols)
@@ -310,7 +313,7 @@ if _ep_dir_str and _rc_dir_str:
             # `groupby('station').apply(g.sample(...))` pattern which in
             # pandas 2.2+ strips the grouping column from the result.
             _df = _pd_at.read_parquet(
-                _p, columns=["station", "horizontal_m", "vertical_m"],
+                _p, columns=["station", "horizontal_m", "vertical_m", "is_day"],
             ).dropna()
             if QUALIFIED_STATIONS is not None:
                 _df = _df[_df["station"].isin(QUALIFIED_STATIONS)]
@@ -324,7 +327,7 @@ if _ep_dir_str and _rc_dir_str:
             _big = _pd_at.concat(_frames_he, ignore_index=True)
             HEX_EPOCHS_DF = (
                 _big.merge(_st_coords, on="station")
-                [["station", "lon", "lat", "horizontal_m", "vertical_m"]]
+                [["station", "lon", "lat", "horizontal_m", "vertical_m", "is_day"]]
             )
             HEX_REAL_DATA = True
     except Exception:
@@ -374,6 +377,15 @@ if HEX_EPOCHS_DF is None:
             "horizontal_m": _rng_hex.gamma(3.0, 0.025, _n_st * _rep),
             "vertical_m": _rng_hex.gamma(3.0, 0.04, _n_st * _rep),
         })
+# Ensure the day/night flag exists for the §6.2 facet: real data carries
+# it (added at load), the synthetic branches above do not. Night gets a
+# 1.3× error bump so the preview shows the ionospheric contrast.
+if HEX_EPOCHS_DF is not None and "is_day" not in HEX_EPOCHS_DF.columns:
+    import numpy as _np_hd
+    _rng_hd = _np_hd.random.default_rng(7)
+    _isday_syn = _rng_hd.random(len(HEX_EPOCHS_DF)) < (13 / 24)
+    HEX_EPOCHS_DF = HEX_EPOCHS_DF.assign(is_day=_isday_syn)
+    HEX_EPOCHS_DF.loc[~_isday_syn, ["horizontal_m", "vertical_m"]] *= 1.3
 HEX_PRESENT = HEX_EPOCHS_DF is not None and len(HEX_EPOCHS_DF) > 0
 
 # B3-7: per-window TTFF for the §5.2 histogram. Daily TTFF parquets
@@ -426,6 +438,53 @@ if _ee_ttff_dir_str:
                 TTFF_WINDOW_SEC = _np_tt.concatenate(_ttff_chunks).astype(float)
         except Exception:
             TTFF_WINDOW_SEC = None
+```
+
+```{python}
+#| label: equipment-data
+#| include: false
+
+# Receiver × firmware accuracy (Pro §6.3). Two data products:
+#  - EQUIP_ACC_DF: exact pooled per-combo percentiles for the ranking
+#    table (accuracy_equipment_monthly, analyze monthly rollup).
+#  - EQUIP_STATION_H95: per-station H95/V95 tagged with its receiver ×
+#    firmware combo, for the box/strip plot — accuracy_station_monthly
+#    joined to the latest qc_summary (rec_type, rec_fw_ver) snapshot in
+#    the period. Only combos surviving §6.3's min-station suppression
+#    (mirrored from the aggregation) are plotted.
+EQUIP_ACC_DF = _read_input_parquet("accuracy_equipment")
+EQUIP_PRESENT = EQUIP_ACC_DF is not None and not EQUIP_ACC_DF.empty
+
+def _latest_qc_summary_equip():
+    _d = INPUTS.get("qc_summary_dir") if isinstance(INPUTS, dict) else None
+    if not _d:
+        return None
+    import calendar as _cal_eq
+    _yy, _mm = int(PERIOD[:4]), int(PERIOD[5:7])
+    _dir = _Path_at(_d) / f"{_yy}"
+    for _dd in range(_cal_eq.monthrange(_yy, _mm)[1], 0, -1):
+        _p = _dir / f"{_yy}{_mm:02d}{_dd:02d}.parquet"
+        if _p.is_file():
+            _e = _pd_at.read_parquet(_p, columns=["id", "rec_type", "rec_fw_ver"])
+            return _e.rename(columns={"id": "station"}).drop_duplicates("station")
+    return None
+
+EQUIP_STATION_H95 = None
+_acc_station_eq = _read_input_parquet("accuracy_station")
+_equip_map = _latest_qc_summary_equip()
+if _acc_station_eq is not None and _equip_map is not None:
+    _st = _acc_station_eq[_acc_station_eq["window"] == "all"][
+        ["station", "hor_p95", "ver_p95"]
+    ].copy()
+    _st["station"] = _st["station"].astype(str)
+    _equip_map["station"] = _equip_map["station"].astype(str)
+    for _c in ("rec_type", "rec_fw_ver"):
+        _equip_map[_c] = (
+            _equip_map[_c].fillna("UNKNOWN").astype(str).str.strip().replace("", "UNKNOWN")
+        )
+    _m = _st.merge(_equip_map, on="station", how="inner")
+    _m["combo"] = _m["rec_type"] + " / " + _m["rec_fw_ver"]
+    EQUIP_STATION_H95 = _m
 
 # Tiny display helpers used by later inline `{python}` expressions.
 def fmt_cm(m, nd=1):
@@ -657,6 +716,28 @@ STR = {
             "`pntmoni-pipeline acquire constellation`."
         ),
         "cs_fetched": "**Fetched at:** {ts}",
+        # --- Pro §6 National Overview (day/night × inside/outside; equip) ---
+        "label_day": "Daytime",
+        "label_night": "Nighttime",
+        "dn_preview": "Preview: synthetic day/night data (night scaled up for illustration).",
+        "xt_scope": "Region",
+        "xt_inside": "Inside network",
+        "xt_outside": "Outside network",
+        "xt_h95": "H95 [cm]",
+        "xt_v95": "V95 [cm]",
+        "xt_ttff95": "TTFF95 [s]",
+        "eq_col_combo": "Receiver / firmware",
+        "eq_col_nstn": "Stations",
+        "eq_col_h95": "H95 [cm]",
+        "eq_col_v95": "V95 [cm]",
+        "eq_col_fix": "Fix rate",
+        "eq_box_ylabel": "Per-station H95 [cm]",
+        "eq_box_xlabel": "Receiver / firmware combination",
+        "eq_missing": (
+            "Receiver × firmware accuracy not yet computed. Run the monthly "
+            "roll-up (`analyze monthly`) with qc_summary present."
+        ),
+        "eq_preview": "Preview: synthetic receiver × firmware data.",
     },
     "ja": {
         "net_legend_src_current": "当月評価対象({period})",
@@ -781,6 +862,28 @@ STR = {
             "`pntmoni-pipeline acquire constellation` を実行してください。"
         ),
         "cs_fetched": "**取得時刻**:{ts}",
+        # --- Pro §6 全国概況(昼夜 × 網内外;受信機×FW)---
+        "label_day": "昼間",
+        "label_night": "夜間",
+        "dn_preview": "プレビュー:合成の昼夜データ(夜間は説明のため拡大)。",
+        "xt_scope": "区分",
+        "xt_inside": "網内",
+        "xt_outside": "網外",
+        "xt_h95": "H95 [cm]",
+        "xt_v95": "V95 [cm]",
+        "xt_ttff95": "TTFF95 [秒]",
+        "eq_col_combo": "受信機 / FW",
+        "eq_col_nstn": "局数",
+        "eq_col_h95": "H95 [cm]",
+        "eq_col_v95": "V95 [cm]",
+        "eq_col_fix": "Fix率",
+        "eq_box_ylabel": "局別 H95 [cm]",
+        "eq_box_xlabel": "受信機 / FW 組合せ",
+        "eq_missing": (
+            "受信機×FW 精度は未計算です。qc_summary が揃った状態で月次"
+            "ロールアップ(`analyze monthly`)を実行してください。"
+        ),
+        "eq_preview": "プレビュー:合成の受信機×FWデータ。",
     },
 }
 
@@ -1346,67 +1449,330 @@ subsections. **Source:** `acquire satellite-outages` (NAGU/NANU/NAQU) +
 ::: {.content-visible when-profile="en"}
 # National Overview
 
-National error and spatial distributions for the period, **stratified
-by day / night** (to expose the ionospheric effect) and by **Inside /
-Outside Network**. All percentiles are computed by pooling the epoch
-errors within each cell (Methodology §5.1); day/night and network
-scope are pre-computed in the `accuracy_network_monthly` cube.
+National error and spatial distributions for the period, **stratified by
+day / night** and by **Inside / Outside Network**. Daytime and nighttime
+follow the Shiono & Kubo (2026, NAVIGATION) UTC split — **daytime
+00:00–09:59 and 21:00–23:59 UTC, nighttime 10:00–20:59 UTC** — the
+window during which the ionosphere over Japan is sunlit; the day/night
+accuracy gap is the ionospheric signal. All percentiles pool the epoch
+errors within each cell (Methodology §5.1); day/night and network scope
+are pre-computed in the `accuracy_network_monthly` cube.
 
 ## Error Distribution
 
-::: {.callout-note appearance="simple"}
-**Contents** — horizontal / vertical / TTFF cumulative distributions,
-faceted **day vs night** and overlaid **Inside vs Outside Network**.
-:::
-
-::: {.callout-warning appearance="simple"}
-**TODO (figure):** faceted CDFs (H / V / TTFF). **Source:**
-`accuracy_network_monthly` + `ttff_network_monthly` (netid=`all`,
-window ∈ {`all`,`day`,`night`}, scope ∈ {`all`,`inside`,`outside`},
-station_set=`qualified`) for the headline percentiles, and
-`epoch_errors` (streaming subsample) for the smooth CDF curves.
-:::
-
-## Spatial Distribution
-
-::: {.callout-note appearance="simple"}
-**Contents** — hex-cell maps of the H95 / V95, one map per **day /
-night** window (60 km cells, epochs pooled, min-stations-per-cell
-suppression per ADR 0013).
-:::
-
-::: {.callout-warning appearance="simple"}
-**TODO (figure):** day/night hex-map pair (reuse the Free-tier
-`_render_hex_panel` machinery). **Source:** `epoch_errors` — `time_utc`
-drives the day/night split; per-epoch `lat_deg`/`lon_deg` drive the
-binning.
-:::
+Cumulative distributions of horizontal and vertical error, split
+**daytime vs nighttime**. The exact day/night × Inside/Outside-network
+percentiles are tabulated below the curves.
 :::
 ::: {.content-visible when-profile="ja"}
 # 全国概況
 
-対象期間の全国誤差分布・空間分布を、**昼/夜別**(電離圏の影響を可視化)および**網内/網外別**に層別化して示します。パーセンタイルはすべて各セル内のエポック誤差をプールして算出します(方法論 §5.1)。昼夜・網スコープは `accuracy_network_monthly` キューブに事前計算済みです。
+対象期間の全国誤差分布・空間分布を、**昼/夜別**および**網内/網外別**に層別化して示します。昼間・夜間は Shiono & Kubo (2026, NAVIGATION) の UTC 区分 —— **昼間 00:00–09:59・21:00–23:59 UTC、夜間 10:00–20:59 UTC** —— に従います。これは日本上空の電離圏が太陽光に照らされる時間帯であり、昼夜の精度差が電離圏の影響を表します。パーセンタイルはすべて各セル内のエポック誤差をプールして算出します(方法論 §5.1)。昼夜・網スコープは `accuracy_network_monthly` キューブに事前計算済みです。
 
 ## 誤差の分布
 
-::: {.callout-note appearance="simple"}
-**内容** — 水平/垂直/TTFF の累積分布。**昼 vs 夜**でファセット、**網内 vs 網外**を重ね描き。
+水平・垂直誤差の累積分布を**昼間 vs 夜間**で分けて示します。昼夜 × 網内/網外 の正確なパーセンタイルは曲線の下の表に掲載します。
 :::
 
-::: {.callout-warning appearance="simple"}
-**TODO(図):** ファセット CDF(H / V / TTFF)。**データ源:** ヘッドライン・パーセンタイルは `accuracy_network_monthly` + `ttff_network_monthly`(netid=`all`、window ∈ {`all`,`day`,`night`}、scope ∈ {`all`,`inside`,`outside`}、station_set=`qualified`)、滑らかな CDF 曲線は `epoch_errors`(ストリーミング・サブサンプル)。
-:::
+```{python}
+#| label: setup-daynight-cdf
+#| include: false
 
+# Day/night CDF colours: two DATA-palette blues (day = primary, night =
+# deep emphasis blue). NOT status colours — day/night is a comparison,
+# not a good/bad verdict.
+def _plot_cdf_dn(day_vals, night_vals, *, xlabel):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for _vals, _c, _lab in (
+        (day_vals, COLOR_PRIMARY, T("label_day")),
+        (night_vals, COLOR_EMPHASIS, T("label_night")),
+    ):
+        if _vals is None or len(_vals) == 0:
+            continue
+        _s = np.sort(_vals)
+        _cdf = np.arange(1, len(_s) + 1) / len(_s)
+        ax.plot(_s * 100, _cdf, color=_c, linewidth=2, label=_lab)
+    _pool = [v for v in (day_vals, night_vals) if v is not None and len(v)]
+    if _pool:
+        _p999 = float(np.quantile(np.concatenate(_pool), 0.999)) * 100
+        ax.set_xlim(0, max(_p999 * 1.05, 1.0))
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(T("cdf_ylabel"))
+    ax.legend(loc="lower right", fontsize=9)
+    plt.tight_layout()
+
+def _daynight_split(col, synth_arr):
+    """Return (day_values, night_values, is_preview) for `col`."""
+    if EPOCH_ERRORS_PRESENT and "is_day" in EPOCH_ERRORS_DF.columns:
+        _d = EPOCH_ERRORS_DF.loc[EPOCH_ERRORS_DF["is_day"], col].to_numpy()
+        _n = EPOCH_ERRORS_DF.loc[~EPOCH_ERRORS_DF["is_day"], col].to_numpy()
+        return _d, _n, False
+    # Synthetic preview: split the synthetic pool ~13/24 day, bump night.
+    _rng = np.random.default_rng(11)
+    _mask = _rng.random(len(synth_arr)) < (13 / 24)
+    return synth_arr[_mask], synth_arr[~_mask] * 1.3, True
+```
+
+```{python}
+#| echo: false
+#| output: asis
+_dh, _nh, _dn_preview = _daynight_split("horizontal_m", all_horiz)
+if _dn_preview:
+    print(T("dn_preview"))
+```
+
+```{python}
+#| label: fig-cdf-daynight-h
+#| fig-cap: "{{< meta caps.pro.cdf_daynight_h >}}"
+_plot_cdf_dn(_dh, _nh, xlabel=T("cdf_xlabel_horiz"))
+```
+
+```{python}
+#| label: fig-cdf-daynight-v
+#| fig-cap: "{{< meta caps.pro.cdf_daynight_v >}}"
+_dv, _nv, _ = _daynight_split("vertical_m", all_vert)
+_plot_cdf_dn(_dv, _nv, xlabel=T("cdf_xlabel_vert"))
+```
+
+```{python}
+#| label: tbl-daynight-scope
+#| tbl-cap: "{{< meta caps.pro.xtab_daynight_scope >}}"
+
+def _cube_val(scope, window, col):
+    if ACCURACY_NETWORK_DF is None:
+        return None
+    _sel = ACCURACY_NETWORK_DF[
+        (ACCURACY_NETWORK_DF["network_id"] == "all")
+        & (ACCURACY_NETWORK_DF["scope"] == scope)
+        & (ACCURACY_NETWORK_DF["station_set"] == "qualified")
+        & (ACCURACY_NETWORK_DF["window"] == window)
+    ]
+    if _sel.empty:
+        # fall back to station_set='all' when no qualified set is defined
+        _sel = ACCURACY_NETWORK_DF[
+            (ACCURACY_NETWORK_DF["network_id"] == "all")
+            & (ACCURACY_NETWORK_DF["scope"] == scope)
+            & (ACCURACY_NETWORK_DF["station_set"] == "all")
+            & (ACCURACY_NETWORK_DF["window"] == window)
+        ]
+    return None if _sel.empty else float(_sel.iloc[0][col])
+
+def _cmv(v):
+    return f"{v*100:.2f}" if v is not None and v == v else "n/a"
+
+_col_dh = f'{T("label_day")} {T("xt_h95")}'
+_col_nh = f'{T("label_night")} {T("xt_h95")}'
+_col_dv = f'{T("label_day")} {T("xt_v95")}'
+_col_nv = f'{T("label_night")} {T("xt_v95")}'
+
+if ACCURACY_NETWORK_DF is not None:
+    _rows = []
+    for _scope, _lab in (("inside", T("xt_inside")), ("outside", T("xt_outside"))):
+        _rows.append({
+            T("xt_scope"): _lab,
+            _col_dh: _cmv(_cube_val(_scope, "day", "hor_p95")),
+            _col_nh: _cmv(_cube_val(_scope, "night", "hor_p95")),
+            _col_dv: _cmv(_cube_val(_scope, "day", "ver_p95")),
+            _col_nv: _cmv(_cube_val(_scope, "night", "ver_p95")),
+        })
+    daynight_scope_table = pd.DataFrame(_rows)
+else:
+    # Synthetic preview cross-table (inside slightly better; night worse).
+    _hq = float(np.quantile(all_horiz, 0.95))
+    _vq = float(np.quantile(all_vert, 0.95))
+    _rows = []
+    for _lab, _sm in ((T("xt_inside"), 1.0), (T("xt_outside"), 1.2)):
+        _rows.append({
+            T("xt_scope"): _lab,
+            _col_dh: f"{_hq*_sm*100:.2f}", _col_nh: f"{_hq*_sm*1.3*100:.2f}",
+            _col_dv: f"{_vq*_sm*100:.2f}", _col_nv: f"{_vq*_sm*1.3*100:.2f}",
+        })
+    daynight_scope_table = pd.DataFrame(_rows)
+daynight_scope_table
+```
+
+::: {.content-visible when-profile="en"}
+## Spatial Distribution
+
+Horizontal 95th-percentile error binned into ~60 km hex cells (same rule
+as the Free-tier national map), shown **daytime** and **nighttime** side
+by side. Cells backed by fewer than three distinct stations are left
+blank (ADR 0013). The day → night change is the spatial fingerprint of
+the ionosphere.
+:::
+::: {.content-visible when-profile="ja"}
 ## 空間分布
 
-::: {.callout-note appearance="simple"}
-**内容** — H95 / V95 の hex セル地図。**昼/夜**ウィンドウごとに1枚(60 km セル、エポック・プール、ADR 0013 のセル当たり最小局数の抑制)。
+水平誤差 95 パーセンタイルを約 60 km の hex セルに集計し(Free tier の全国図と同一規則)、**昼間**・**夜間**を並べて表示します。3局未満のセルは空白とします(ADR 0013)。昼→夜の変化が電離圏の空間的な痕跡です。
 :::
 
-::: {.callout-warning appearance="simple"}
-**TODO(図):** 昼夜の hex 地図ペア(Free tier の `_render_hex_panel` 機構を再利用)。**データ源:** `epoch_errors` — `time_utc` で昼夜分割、エポック毎の `lat_deg`/`lon_deg` でビニング。
+```{python}
+#| label: setup-hex-daynight
+#| include: false
+
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+from matplotlib.colors import Normalize
+from matplotlib.ticker import FuncFormatter
+
+# Same small-cell suppression and display cap as the Free-tier hex maps.
+MIN_STATIONS_PER_CELL = 3
+H_VMAX_CM = 30.0
+
+_PROJ_AEA = ccrs.AlbersEqualArea(
+    central_longitude=137.0, central_latitude=35.0,
+    standard_parallels=(30.0, 43.0),
+)
+
+def _hex_panel(fig, ax, df_sub, title, vmax_cm, col="horizontal_m"):
+    ax.set_extent((122, 150, 22, 47), crs=ccrs.PlateCarree())
+    ax.add_feature(cfeature.LAND.with_scale("50m"), facecolor="#f5f5f4", edgecolor="none")
+    ax.add_feature(cfeature.OCEAN.with_scale("50m"), facecolor="#fafafa", edgecolor="none")
+    ax.add_feature(cfeature.COASTLINE.with_scale("50m"), linewidth=0.4, edgecolor="#94a3b8")
+    _vmax_m = vmax_cm / 100.0
+    _norm = Normalize(vmin=0.0, vmax=_vmax_m)
+    _xy = _PROJ_AEA.transform_points(
+        ccrs.PlateCarree(), df_sub["lon"].to_numpy(), df_sub["lat"].to_numpy(),
+    )
+    _x, _y = _xy[:, 0], _xy[:, 1]
+    _stcode = pd.factorize(df_sub["station"])[0]
+    _ext = (_x.min(), _x.max(), _y.min(), _y.max())
+    _hb_cnt = ax.hexbin(
+        _x, _y, C=_stcode, reduce_C_function=lambda v: np.unique(v).size,
+        gridsize=50, extent=_ext, mincnt=1,
+    )
+    _counts = np.asarray(_hb_cnt.get_array())
+    _hb_cnt.remove()
+    hb = ax.hexbin(
+        _x, _y, C=df_sub[col].to_numpy(),
+        reduce_C_function=lambda v: np.percentile(v, 95),
+        gridsize=50, extent=_ext, cmap=CMAP_SEQUENTIAL, norm=_norm,
+        edgecolors="white", linewidths=0.3, mincnt=1, alpha=0.5, zorder=10,
+    )
+    _keep = _counts >= MIN_STATIONS_PER_CELL
+    hb.set_offsets(hb.get_offsets()[_keep])
+    hb.set_array(hb.get_array()[_keep])
+    ax.set_title(title, fontsize=11)
+    ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
+    cbar = fig.colorbar(
+        hb, ax=ax, fraction=0.04, pad=0.03, extend="max",
+        ticks=np.linspace(0.0, _vmax_m, 5),
+    )
+    cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v * 100:.0f}"))
+    cbar.set_label(T("hex_cbar_label"), fontsize=8)
+    cbar.ax.tick_params(labelsize=7)
+```
+
+```{python}
+#| echo: false
+#| output: asis
+if HEX_PRESENT and not HEX_REAL_DATA:
+    print(T("hex_preview"))
+```
+
+```{python}
+#| label: fig-hex-daynight-h
+#| fig-cap: "{{< meta caps.pro.hex_daynight_h >}}"
+
+if HEX_PRESENT:
+    fig, axes = plt.subplots(
+        1, 2, figsize=(11, 6), subplot_kw={"projection": _PROJ_AEA},
+    )
+    _hex_panel(fig, axes[0], HEX_EPOCHS_DF[HEX_EPOCHS_DF["is_day"]],
+               f'{T("hex_title_horiz")} — {T("label_day")}', H_VMAX_CM)
+    _hex_panel(fig, axes[1], HEX_EPOCHS_DF[~HEX_EPOCHS_DF["is_day"]],
+               f'{T("hex_title_horiz")} — {T("label_night")}', H_VMAX_CM)
+    plt.tight_layout()
+else:
+    print(T("hex_missing").format(period=PERIOD_LABEL))
+```
+
+::: {.content-visible when-profile="en"}
+## Accuracy by Receiver / Firmware
+
+Positioning accuracy grouped by the station's **receiver × firmware**
+combination. Percentiles are pooled exactly over every epoch of every
+station carrying that combination (same rule as the network cube);
+combinations backed by fewer than three stations are suppressed
+(ADR 0013). The table gives the exact pooled percentiles; the box plot
+shows the spread of per-station H95 within each combination.
 :::
+::: {.content-visible when-profile="ja"}
+## 受信機 / FW 別精度
+
+観測局の**受信機 × ファームウェア**組合せ別に測位精度を集計します。パーセンタイルは、その組合せを持つ全局・全エポックを正確にプールして算出し(ネットワークキューブと同一規則)、3局未満の組合せは抑制します(ADR 0013)。表は正確なプール・パーセンタイル、箱ひげ図は各組合せ内の局別 H95 のばらつきを示します。
 :::
+
+```{python}
+#| label: tbl-equipment
+#| tbl-cap: "{{< meta caps.pro.equip_table >}}"
+
+if EQUIP_PRESENT:
+    _e = EQUIP_ACC_DF[
+        (EQUIP_ACC_DF["station_set"] == "qualified") & (EQUIP_ACC_DF["window"] == "all")
+    ].copy()
+    if _e.empty:
+        _e = EQUIP_ACC_DF[
+            (EQUIP_ACC_DF["station_set"] == "all") & (EQUIP_ACC_DF["window"] == "all")
+        ].copy()
+    _e["combo"] = _e["rec_type"].astype(str) + " / " + _e["rec_fw_ver"].astype(str)
+    _e = _e.sort_values("n_stations", ascending=False)
+    equipment_table = pd.DataFrame({
+        T("eq_col_combo"): _e["combo"].to_numpy(),
+        T("eq_col_nstn"): [f"{int(n):,}" for n in _e["n_stations"]],
+        T("eq_col_h95"): [f"{v*100:.2f}" for v in _e["hor_p95"]],
+        T("eq_col_v95"): [f"{v*100:.2f}" for v in _e["ver_p95"]],
+        T("eq_col_fix"): [f"{v*100:.1f} %" for v in _e["fix_rate"]],
+    })
+else:
+    equipment_table = pd.DataFrame({
+        T("eq_col_combo"): ["TRIMBLE ALLOY / 6.15 (synthetic)",
+                            "TPS NETG5 / 5.2.6 (synthetic)"],
+        T("eq_col_nstn"): ["742", "553"],
+        T("eq_col_h95"): ["13.37", "14.13"],
+        T("eq_col_v95"): ["22.05", "24.44"],
+        T("eq_col_fix"): ["95.3 %", "94.7 %"],
+    })
+equipment_table
+```
+
+```{python}
+#| label: fig-equipment-box
+#| fig-cap: "{{< meta caps.pro.equip_box >}}"
+
+if EQUIP_STATION_H95 is not None and not EQUIP_STATION_H95.empty:
+    _b = EQUIP_STATION_H95.dropna(subset=["hor_p95"]).copy()
+    _cnt = _b.groupby("combo")["station"].nunique()
+    _b = _b[_b["combo"].isin(_cnt[_cnt >= 3].index)]
+    _order = (
+        _b.groupby("combo")["hor_p95"].median().sort_values().index.tolist()
+    )
+    _data = [_b.loc[_b["combo"] == c, "hor_p95"].to_numpy() * 100 for c in _order]
+    _eq_preview = False
+else:
+    _rng_eq = np.random.default_rng(3)
+    _order = ["TRIMBLE ALLOY / 6.15", "TPS NETG5 / 5.2.6"]
+    _data = [_rng_eq.gamma(6.0, 2.0, 300), _rng_eq.gamma(6.0, 2.3, 220)]
+    _eq_preview = True
+
+fig, ax = plt.subplots(figsize=(8, 0.7 * len(_order) + 1.8))
+_bp = ax.boxplot(_data, vert=False, showfliers=False, patch_artist=True)
+for _patch in _bp["boxes"]:
+    _patch.set_facecolor(COLOR_PRIMARY)
+    _patch.set_alpha(0.35)
+    _patch.set_edgecolor(COLOR_PRIMARY)
+for _med in _bp["medians"]:
+    _med.set_color(COLOR_EMPHASIS)
+    _med.set_linewidth(1.6)
+ax.set_yticks(range(1, len(_order) + 1))
+ax.set_yticklabels(_order, fontsize=8)
+ax.set_xlabel(T("eq_box_ylabel"))
+if _eq_preview:
+    ax.set_title(T("eq_preview"), fontsize=9, color=COLOR_SECONDARY)
+plt.tight_layout()
+```
+
 
 <!-- ==================================================================
      §7  地域概況 / Regional Overview                          [NEW]

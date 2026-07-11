@@ -39,6 +39,13 @@ caps:
     gps_sats: "GPS satellite constellation status."
     qzss_sats: "QZSS satellite constellation status."
     gal_sats: "Galileo satellite constellation status."
+  pro:
+    cdf_daynight_h: "Horizontal-error CDF — daytime vs nighttime (qualified stations, epochs pooled; day/night per Shiono & Kubo 2026 UTC split)."
+    cdf_daynight_v: "Vertical-error CDF — daytime vs nighttime (qualified stations, epochs pooled)."
+    xtab_daynight_scope: "Day/night × Inside/Outside-network error percentiles (exact pooled over qualified stations)."
+    hex_daynight_h: "Horizontal-error 95th-percentile spatial distribution — daytime vs nighttime (60 km hex cells, epochs pooled, ≥3 stations/cell)."
+    equip_table: "Positioning accuracy by receiver × firmware combination (exact pooled percentiles, qualified stations, combos with ≥3 stations)."
+    equip_box: "Per-station horizontal-error 95th percentile by receiver × firmware combination."
   qc:
     network: "GEONET reference stations covered in this report."
     data_avail: "Data availability — fraction of the 2,880 nominal daily epochs with logged observations."

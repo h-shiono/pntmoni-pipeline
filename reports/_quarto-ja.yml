@@ -37,6 +37,13 @@ caps:
     gps_sats: "GPS 衛星コンステレーション状況。"
     qzss_sats: "QZSS 衛星コンステレーション状況。"
     gal_sats: "Galileo 衛星コンステレーション状況。"
+  pro:
+    cdf_daynight_h: "水平誤差の累積分布 — 昼間 vs 夜間(qualified 局、エポック・プール。昼夜は Shiono & Kubo 2026 の UTC 区分)。"
+    cdf_daynight_v: "垂直誤差の累積分布 — 昼間 vs 夜間(qualified 局、エポック・プール)。"
+    xtab_daynight_scope: "昼夜 × 網内/網外 の誤差パーセンタイル(qualified 局のエポックを正確にプール)。"
+    hex_daynight_h: "水平誤差 95 パーセンタイルの空間分布 — 昼間 vs 夜間(60 km hex セル、エポック・プール、セル当たり3局以上)。"
+    equip_table: "受信機 × ファームウェア組合せ別の測位精度(qualified 局のエポックを正確にプール、3局以上の組合せ)。"
+    equip_box: "受信機 × ファームウェア組合せ別の局別 水平誤差 95 パーセンタイル分布。"
   qc:
     network: "本レポートが対象とする GEONET 電子基準点。"
     data_avail: "データアベイラビリティ — 1日あたり公称 2,880 エポックのうち観測が記録されたエポックの割合。"

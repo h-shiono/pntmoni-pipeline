@@ -158,22 +158,26 @@ aggregation.
   exact percentiles, monthly re-pool), NOT a render-time approx.
 
 ### Plan
-- [ ] A. Analysis: `accuracy_equipment` aggregation — join epoch_errors
-      to per-station-day (rec_type, rec_fw_ver), group by
-      (combo × window[× station_set]), pool epochs, exact percentiles
-      (reuse `_group_stats`), ADR-0013 min-stations-per-combo suppression.
-      Mirror `compute_network_accuracy` in `_accuracy_stats.py`.
-- [ ] B. Monthly re-pool in `_monthly.py` → `accuracy_equipment_monthly`.
-- [ ] C. CLI wiring + driver INPUTS path; unit test on the pure fn.
-- [ ] D. §6.1 誤差分布: faceted CDFs (H/V/TTFF), day/night × inside/outside
-      (accuracy_network_monthly netid=all + epoch_errors sample).
-- [ ] E. §6.2 空間分布: day/night hex pair (epoch_errors is_day split,
-      reuse Free `_render_hex_panel`).
-- [ ] F. §6.3 受信機×FW別精度 (NEW subsection): ranking table + box/strip
-      of top-N combos (accuracy_equipment_monthly; min-station suppress).
-- [ ] G. Synthetic fallbacks so `quarto preview` renders standalone.
-- [ ] H. Verify: aggregation on real data (sample parquet) + render
-      both profiles, 0 cell-errors.
+- [x] A. Analysis: `accuracy_equipment` aggregation (combo × station_set ×
+      window, exact epoch pool, ADR-0013 min-3 suppression) in
+      `_accuracy_stats.py`. Committed 6036d6a.
+- [x] B. Monthly re-pool in `_monthly.py` → `accuracy_equipment_monthly`
+      (fail-open). Committed 6036d6a.
+- [x] C. Driver INPUTS (`accuracy_equipment`, `qc_summary_dir`) + 4 unit
+      tests (grouping/suppression/station-set/empty). Suite green (205).
+- [x] D. §6.1 誤差分布: day/night faceted CDFs (H/V) + exact 昼夜×網内外
+      cross-table from the cube.
+- [x] E. §6.2 空間分布: day/night hex pair (is_day split, ported hex).
+- [x] F. §6.3 受信機×FW別精度: ranking table (accuracy_equipment) +
+      per-station H95 box plot (accuracy_station ⊕ qc_summary combo).
+- [x] G. Synthetic fallbacks (CDF/hex/cross-table/equip all preview-safe);
+      is_day threaded into EPOCH_ERRORS_DF + HEX_EPOCHS_DF; caps.pro +
+      STR keys added.
+- [~] H. Verify: synthetic render both profiles = 0 cell-errors, all §6
+      figures/tables produced ✓. Real accuracy_network_monthly cross-cells
+      confirmed (inside/outside × day/night, physical). Real
+      accuracy_equipment_monthly generation IN PROGRESS; template
+      real-data load check pending.
 
 ### Phase Guard
 [ ] Pro tier (see prior task's note). Receiver×FW introduces a Product 2

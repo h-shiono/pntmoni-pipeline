@@ -197,6 +197,14 @@ def gather_inputs(
     bundle.paths["station_qualification_dir"] = (
         processed_root / "station_qualification"
     )
+    # Receiver × firmware accuracy (Pro §6.3). accuracy_equipment holds the
+    # exact pooled per-combo percentiles (ranking table); qc_summary_dir
+    # provides the per-station (rec_type, rec_fw_ver) snapshot the qmd
+    # joins to accuracy_station for the per-station box/strip plot.
+    bundle.paths["accuracy_equipment"] = (
+        processed_root / "accuracy_equipment_monthly" / sub
+    )
+    bundle.paths["qc_summary_dir"] = processed_root / "qc_summary"
     return bundle
 
 
