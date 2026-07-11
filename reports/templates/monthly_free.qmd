@@ -613,9 +613,12 @@ STR = {
         "ttff_success": (
             "**{period}**: TTFF success rate **{rate:.2f} %** "
             "({fixed:,}/{windows:,} reset windows obtained a valid fix). At "
-            "30-second sampling many fixes occur at the epoch right after "
-            "reset, so P50/P95 are often 0 s and P99 reflects the convergence "
-            "tail."
+            "each reset the filter state is fully cleared and the solution "
+            "re-initialized to standalone; TTFF is the time from that reset "
+            "to the first fixed solution, recorded on the 30-second "
+            "observation grid. A fix at the first epoch after reset is "
+            "therefore recorded as 0 s (true TTFF ≤ 30 s), which is why "
+            "P50/P95 are often 0 s; P99 reflects the convergence tail."
         ),
         "hex_preview": (
             "> **Preview (synthetic data)**: this figure is a synthetic sample "
@@ -732,11 +735,14 @@ STR = {
             "::::\n"
         ),
         "ttff_success": (
-            "**{period}**:TTFF 成功率 **{rate:.2f} %** "
-            "({fixed:,}/{windows:,} の リセットウィンドウで有効 Fix を獲得)。"
-            "観測間隔 30 秒では多くの Fix が**リセット直後のエポック**で "
-            "得られるため、P50/P95 が 0 秒となるケースも多く、P99 が収束 "
-            "テールを反映します。"
+            "**{period}**:TTFF 成功率 **{rate:.2f} %**"
+            "({fixed:,}/{windows:,} のリセットウィンドウで有効 Fix を獲得)。"
+            "各リセットではフィルタ状態を全消去し、解を単独測位まで初期化"
+            "しています。TTFF はこのリセットから最初の Fix 解までの時間を"
+            "観測間隔 30 秒の分解能で記録した値であり、リセット後最初の"
+            "エポックで Fix が得られた場合は 0 秒(実際の TTFF は 30 秒"
+            "以下)と記録されます。P50/P95 が 0 秒となりやすいのはこの"
+            "分解能によるもので、P99 が収束テールを反映します。"
         ),
         "hex_preview": (
             "> **プレビュー(合成データ)**:本図は INPUTS 未注入のための "
