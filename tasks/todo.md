@@ -48,7 +48,7 @@ filled section-by-section afterwards.
 4 エグゼクティブサマリ
 5 今月のイベント      (一覧+判定基準 / イベント別深掘り)          [NEW]
 6 全国概況           (誤差分布 / 空間分布 — facet 昼夜 × 網内外)   [facets NEW]
-7 地域概況           (12ネットワークごと定型)                    [NEW]
+7 地域概況           (12ネットワーク: 比較表 + 個別点小マルチプル)  [x] DONE 2026-07-11
 8 トレンド           (全国 + 地域)                              [regional NEW]
 9 要注意局           (例外リストのみ + 局別ページ誘導)            [NEW]
 10 データ可用性       11 異常検出(独立)       12 付録
@@ -204,7 +204,18 @@ Real-data wiring verified: network_assignments↔epoch station-id coverage
   `accuracy_equipment_monthly` parquet produced and unit-tested.
 
 ### Result
-(Fill after completion)
+§6 complete (all three subsections, real data). §7 地域概況 also DONE
+(2026-07-11): comparison table (12 rows from the accuracy/TTFF network
+cubes) + 4×3 per-network small-multiples maps drawing each network's
+stations as INDIVIDUAL points coloured by station H95 (Hex dropped per
+founder) over the CLAS grid-point footprint, auto-zoomed. First full
+real-data render of monthly_pro surfaced a latent §6.1 bug: object-dtype
+`isinside` (bool⊕NaN merge) made `~df["isinside"]` do int bit-negation →
+KeyError; fixed with `.astype(bool)` (commit 770bad5). Real 2026-06 JA
+render green (29/29 cells), delivered. Commits: 9b6d856 (§7), 770bad5
+(§6.1 fix), 706795d (§6.2 exact boundary).
+Remaining Pro sections: §5 events, §8 regional trend, §9 watch-list,
+§10–13 carry-over; docs 03-monthly-report-structure.md update.
 
 ---
 
