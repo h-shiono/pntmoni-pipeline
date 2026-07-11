@@ -173,11 +173,26 @@ aggregation.
 - [x] G. Synthetic fallbacks (CDF/hex/cross-table/equip all preview-safe);
       is_day threaded into EPOCH_ERRORS_DF + HEX_EPOCHS_DF; caps.pro +
       STR keys added.
-- [~] H. Verify: synthetic render both profiles = 0 cell-errors, all §6
-      figures/tables produced ✓. Real accuracy_network_monthly cross-cells
-      confirmed (inside/outside × day/night, physical). Real
-      accuracy_equipment_monthly generation IN PROGRESS; template
-      real-data load check pending.
+- [x] H. Verify: synthetic render both profiles = 0 cell-errors, all §6
+      figures/tables produced. Real accuracy_network_monthly cross-cells
+      confirmed; real accuracy_equipment_monthly generated (30d/112M);
+      template real-data equipment load confirmed.
+
+### Restructure (founder, 2026-07-11) — consistent 3-cut layout
+Each §6 subsection now presents three cuts (全データ / 昼夜 / 網内外):
+- §6.1 誤差分布: H & V as 3-panel CDFs [全 | 昼夜 | 網内外]; exact 昼夜×網内外
+  cross-table; TTFF = national CDF + exact 3-cut table (全/昼/夜/網内/網外)
+  from the TTFF cube.
+- §6.2 空間分布: all-data hex, day/night hex pair, all-data hex with the
+  Inside-network boundary overlaid (per-network convex hull of inside
+  stations, netid from network_assignments).
+- §6.3 受信機×FW: overlaid per-combo error CDFs (few combos → CDF not box)
+  + exact ranking table.
+Plumbing: driver passes network_assignments; qmd parses station→isinside
+/netid; epoch + hex samples enriched with isinside/combo (station always
+in the epoch subsample); synthetic fallbacks for every cut.
+Real-data wiring verified: network_assignments↔epoch station-id coverage
+99.8%, netid 99.4%; qc_summary combo 100%.
 
 ### Phase Guard
 [ ] Pro tier (see prior task's note). Receiver×FW introduces a Product 2

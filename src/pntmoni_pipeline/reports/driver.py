@@ -31,7 +31,7 @@ from typing import Any
 import pandas as pd
 
 from .. import config_hash as _ch
-from ..analysis import _reference_coords
+from ..analysis import _reference_coords, _registry
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +205,11 @@ def gather_inputs(
         processed_root / "accuracy_equipment_monthly" / sub
     )
     bundle.paths["qc_summary_dir"] = processed_root / "qc_summary"
+    # Per-station Inside/Outside-network flag for the Pro §6 network cuts
+    # (CDF facets, spatial boundary overlay). isinside is not in the
+    # accuracy cube nor the qualification parquet; the qmd parses it
+    # straight from the network_assignments registry config.
+    bundle.paths["network_assignments"] = _registry.DEFAULT_NETWORK_ASSIGNMENTS
     return bundle
 
 

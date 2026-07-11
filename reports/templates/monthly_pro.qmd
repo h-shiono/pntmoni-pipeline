@@ -264,12 +264,12 @@ if _ep_dir_str:
             _per_day = max(1, RAW_CDF_TARGET_ROWS // len(_ep_paths))
             _frames = []
             for _p in _ep_paths:
-                # is_day carried through for the Pro §6.1 day/night facet
-                # (Shiono & Kubo 2026 UTC split: day 00–09:59 & 21–23:59,
-                # night 10–20:59 — precomputed in Stage-1 epoch_errors).
-                _cols = ["horizontal_m", "vertical_m", "is_day"]
-                if QUALIFIED_STATIONS is not None:
-                    _cols = ["station", *_cols]
+                # station + is_day carried for the Pro §6 cuts: is_day for
+                # the day/night facet (Shiono & Kubo 2026 UTC split: day
+                # 00–09:59 & 21–23:59, night 10–20:59, precomputed in
+                # Stage-1), station so the enrichment cell can attach
+                # Inside/Outside (network_assignments) and receiver combo.
+                _cols = ["station", "horizontal_m", "vertical_m", "is_day"]
                 _d = _pd_at.read_parquet(_p, columns=_cols)
                 if QUALIFIED_STATIONS is not None:
                     _d = _d[_d["station"].isin(QUALIFIED_STATIONS)]
@@ -485,6 +485,105 @@ if _acc_station_eq is not None and _equip_map is not None:
     _m = _st.merge(_equip_map, on="station", how="inner")
     _m["combo"] = _m["rec_type"] + " / " + _m["rec_fw_ver"]
     EQUIP_STATION_H95 = _m
+
+```
+
+```{python}
+#| label: epoch-network-combo-enrich
+#| include: false
+
+# Attach the Inside/Outside-network flag (network_assignments) and the
+# receiver × firmware combo (qc_summary) to the epoch subsample + hex
+# sample, so the Pro §6 network / receiver cuts can slice per epoch.
+import numpy as np
+
+STATION_META = None
+_na_path = INPUTS.get("network_assignments") if isinstance(INPUTS, dict) else None
+if _na_path and _Path_at(_na_path).is_file():
+    try:
+        import tomllib as _toml_na
+        with open(_na_path, "rb") as _f_na:
+            _na_stations = _toml_na.load(_f_na).get("stations", {})
+        STATION_META = _pd_at.DataFrame([
+            {"station": str(_k), "isinside": bool(_v.get("isinside", False)),
+             "netid": _v.get("netid")}
+            for _k, _v in _na_stations.items()
+        ])
+    except Exception:
+        STATION_META = None
+
+_combo_map = None
+if _equip_map is not None:
+    _combo_map = _equip_map.assign(
+        combo=_equip_map["rec_type"].astype(str) + " / " + _equip_map["rec_fw_ver"].astype(str)
+    )[["station", "combo"]]
+
+def _attach_cuts(df, *, want_combo):
+    if df is None or "station" not in df.columns:
+        return df
+    df = df.copy()
+    df["station"] = df["station"].astype(str)
+    if STATION_META is not None:
+        df = df.merge(STATION_META, on="station", how="left")
+    if want_combo and _combo_map is not None:
+        df = df.merge(_combo_map, on="station", how="left")
+    return df
+
+_rng_cut = np.random.default_rng(23)
+
+# --- Epoch sample (used by §6.1 network CDF + §6.3 combo CDF) ---
+if EPOCH_ERRORS_DF is None:
+    # Full synthetic epoch frame so every §6 cut renders in preview.
+    _ns, _ne = 240, 250
+    _sids = np.array([f"X{i:04d}" for i in range(_ns)])
+    _st_arr = np.repeat(_sids, _ne)
+    _nrow = _ns * _ne
+    _isday = _rng_cut.random(_nrow) < (13 / 24)
+    _nightf = np.where(_isday, 1.0, 1.35)
+    _inside = {s: bool(_rng_cut.random() < 0.75) for s in _sids}
+    _outf = np.array([1.0 if _inside[s] else 1.15 for s in _st_arr])
+    _combos = ["TRIMBLE ALLOY / 6.15", "TPS NETG5 / 5.2.6"]
+    _cmap = {s: _combos[int(_rng_cut.integers(0, 2))] for s in _sids}
+    EPOCH_ERRORS_DF = _pd_at.DataFrame({
+        "station": _st_arr,
+        "horizontal_m": (_rng_cut.gamma(3.0, 0.03, _nrow) * _nightf * _outf).astype("float32"),
+        "vertical_m": (_rng_cut.gamma(3.0, 0.05, _nrow) * _nightf * _outf).astype("float32"),
+        "is_day": _isday,
+        "isinside": np.array([_inside[s] for s in _st_arr]),
+        "combo": np.array([_cmap[s] for s in _st_arr]),
+    })
+    EPOCH_SYNTH = True
+else:
+    EPOCH_ERRORS_DF = _attach_cuts(EPOCH_ERRORS_DF, want_combo=True)
+    if "isinside" in EPOCH_ERRORS_DF.columns:
+        EPOCH_ERRORS_DF["isinside"] = EPOCH_ERRORS_DF["isinside"].fillna(False)
+    if "combo" in EPOCH_ERRORS_DF.columns:
+        EPOCH_ERRORS_DF["combo"] = EPOCH_ERRORS_DF["combo"].fillna("UNKNOWN")
+    EPOCH_SYNTH = False
+EPOCH_HAS_INOUT = "isinside" in EPOCH_ERRORS_DF.columns
+EPOCH_HAS_COMBO = "combo" in EPOCH_ERRORS_DF.columns
+
+# --- Hex sample (used by §6.2 inside-network boundary overlay) ---
+HEX_EPOCHS_DF = _attach_cuts(HEX_EPOCHS_DF, want_combo=False)
+if HEX_EPOCHS_DF is not None:
+    if "isinside" not in HEX_EPOCHS_DF.columns or HEX_EPOCHS_DF["isinside"].isna().all():
+        _hst = HEX_EPOCHS_DF["station"].astype(str)
+        _hmap = {s: bool(_rng_cut.random() < 0.75) for s in _hst.unique()}
+        HEX_EPOCHS_DF = HEX_EPOCHS_DF.assign(isinside=_hst.map(_hmap).to_numpy())
+    else:
+        HEX_EPOCHS_DF["isinside"] = HEX_EPOCHS_DF["isinside"].fillna(False)
+    if "netid" in HEX_EPOCHS_DF.columns:
+        HEX_EPOCHS_DF["netid"] = _pd_at.to_numeric(HEX_EPOCHS_DF["netid"], errors="coerce")
+HEX_HAS_INOUT = HEX_EPOCHS_DF is not None and "isinside" in HEX_EPOCHS_DF.columns
+HEX_HAS_NETID = (
+    HEX_EPOCHS_DF is not None and "netid" in HEX_EPOCHS_DF.columns
+    and HEX_EPOCHS_DF["netid"].notna().any()
+)
+```
+
+```{python}
+#| label: helpers-fmt
+#| include: false
 
 # Tiny display helpers used by later inline `{python}` expressions.
 def fmt_cm(m, nd=1):
@@ -738,6 +837,14 @@ STR = {
             "roll-up (`analyze monthly`) with qc_summary present."
         ),
         "eq_preview": "Preview: synthetic receiver × firmware data.",
+        "cut_all": "All data",
+        "cut_daynight": "Daytime / Nighttime",
+        "cut_inout": "Inside / Outside network",
+        "ttff_cut_col": "Cut",
+        "ttff_cut_all": "National",
+        "hex_title_all": "Horizontal error 95th percentile — all data",
+        "hex_inout_boundary": "H95 with inside-network boundary",
+        "hex_no_netid": "Inside-network boundary needs network_assignments (not available in preview).",
     },
     "ja": {
         "net_legend_src_current": "当月評価対象({period})",
@@ -884,6 +991,14 @@ STR = {
             "ロールアップ(`analyze monthly`)を実行してください。"
         ),
         "eq_preview": "プレビュー:合成の受信機×FWデータ。",
+        "cut_all": "全データ",
+        "cut_daynight": "昼間 / 夜間",
+        "cut_inout": "網内 / 網外",
+        "ttff_cut_col": "区分",
+        "ttff_cut_all": "全国",
+        "hex_title_all": "水平誤差 95 パーセンタイル — 全データ",
+        "hex_inout_boundary": "H95 + 網内境界",
+        "hex_no_netid": "網内境界には network_assignments が必要です(プレビューでは非表示)。",
     },
 }
 
@@ -1449,90 +1564,82 @@ subsections. **Source:** `acquire satellite-outages` (NAGU/NANU/NAQU) +
 ::: {.content-visible when-profile="en"}
 # National Overview
 
-National error and spatial distributions for the period, **stratified by
-day / night** and by **Inside / Outside Network**. Daytime and nighttime
-follow the Shiono & Kubo (2026, NAVIGATION) UTC split — **daytime
-00:00–09:59 and 21:00–23:59 UTC, nighttime 10:00–20:59 UTC** — the
-window during which the ionosphere over Japan is sunlit; the day/night
-accuracy gap is the ionospheric signal. All percentiles pool the epoch
-errors within each cell (Methodology §5.1); day/night and network scope
-are pre-computed in the `accuracy_network_monthly` cube.
+National error and spatial distributions for the period, presented under
+three consistent cuts — **all data**, **daytime / nighttime**, and
+**Inside / Outside network**. Daytime and nighttime follow the Shiono &
+Kubo (2026, NAVIGATION) UTC split — **daytime 00:00–09:59 and
+21:00–23:59 UTC, nighttime 10:00–20:59 UTC** — the window during which
+the ionosphere over Japan is sunlit; the day → night change is the
+ionospheric signal. All percentiles pool the epoch errors within each
+group (Methodology §5.1).
 
 ## Error Distribution
 
-Cumulative distributions of horizontal and vertical error, split
-**daytime vs nighttime**. The exact day/night × Inside/Outside-network
-percentiles are tabulated below the curves.
+Cumulative distributions of horizontal and vertical error under the
+three cuts. The exact day/night × Inside/Outside percentiles follow in
+the cross-table; TTFF closes the subsection.
 :::
 ::: {.content-visible when-profile="ja"}
 # 全国概況
 
-対象期間の全国誤差分布・空間分布を、**昼/夜別**および**網内/網外別**に層別化して示します。昼間・夜間は Shiono & Kubo (2026, NAVIGATION) の UTC 区分 —— **昼間 00:00–09:59・21:00–23:59 UTC、夜間 10:00–20:59 UTC** —— に従います。これは日本上空の電離圏が太陽光に照らされる時間帯であり、昼夜の精度差が電離圏の影響を表します。パーセンタイルはすべて各セル内のエポック誤差をプールして算出します(方法論 §5.1)。昼夜・網スコープは `accuracy_network_monthly` キューブに事前計算済みです。
+対象期間の全国誤差分布・空間分布を、**全データ**・**昼間/夜間**・**網内/網外**の3つのカットで統一的に示します。昼間・夜間は Shiono & Kubo (2026, NAVIGATION) の UTC 区分 —— **昼間 00:00–09:59・21:00–23:59 UTC、夜間 10:00–20:59 UTC** —— に従います。これは日本上空の電離圏が太陽光に照らされる時間帯であり、昼→夜の変化が電離圏の影響を表します。パーセンタイルはすべて各グループ内のエポック誤差をプールして算出します(方法論 §5.1)。
 
 ## 誤差の分布
 
-水平・垂直誤差の累積分布を**昼間 vs 夜間**で分けて示します。昼夜 × 網内/網外 の正確なパーセンタイルは曲線の下の表に掲載します。
+水平・垂直誤差の累積分布を3カットで示します。昼夜 × 網内/網外 の正確なパーセンタイルはクロス表に、TTFF は節末に掲載します。
 :::
 
 ```{python}
-#| label: setup-daynight-cdf
+#| label: setup-sec6-cdf
 #| include: false
 
-# Day/night CDF colours: two DATA-palette blues (day = primary, night =
-# deep emphasis blue). NOT status colours — day/night is a comparison,
-# not a good/bad verdict.
-def _plot_cdf_dn(day_vals, night_vals, *, xlabel):
-    fig, ax = plt.subplots(figsize=(8, 4))
-    for _vals, _c, _lab in (
-        (day_vals, COLOR_PRIMARY, T("label_day")),
-        (night_vals, COLOR_EMPHASIS, T("label_night")),
-    ):
-        if _vals is None or len(_vals) == 0:
-            continue
-        _s = np.sort(_vals)
-        _cdf = np.arange(1, len(_s) + 1) / len(_s)
-        ax.plot(_s * 100, _cdf, color=_c, linewidth=2, label=_lab)
-    _pool = [v for v in (day_vals, night_vals) if v is not None and len(v)]
-    if _pool:
-        _p999 = float(np.quantile(np.concatenate(_pool), 0.999)) * 100
-        ax.set_xlim(0, max(_p999 * 1.05, 1.0))
-    ax.set_ylim(0, 1.02)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(T("cdf_ylabel"))
-    ax.legend(loc="lower right", fontsize=9)
+# 3-cut CDF: panels [all | day/night | inside/outside]. Day = data blue,
+# night = deep emphasis blue; inside = data blue, outside = muted neutral
+# (COLOR_INSIDE/OUTSIDE). None are status colours — the cuts are
+# comparisons, not good/bad verdicts.
+def _cdf_curve(ax, vals, color, label):
+    vals = np.asarray(vals, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if vals.size == 0:
+        return
+    _s = np.sort(vals)
+    _c = np.arange(1, _s.size + 1) / _s.size
+    ax.plot(_s * 100, _c, color=color, linewidth=2, label=label)
+
+def _plot_cdf_3cut(df, col, *, xlabel, preview):
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2), sharey=True)
+    _all = df[col].to_numpy()
+    _cdf_curve(axes[0], _all, COLOR_PRIMARY, T("cut_all"))
+    if "is_day" in df.columns:
+        _cdf_curve(axes[1], df.loc[df["is_day"], col].to_numpy(), COLOR_PRIMARY, T("label_day"))
+        _cdf_curve(axes[1], df.loc[~df["is_day"], col].to_numpy(), COLOR_EMPHASIS, T("label_night"))
+    if "isinside" in df.columns:
+        _cdf_curve(axes[2], df.loc[df["isinside"], col].to_numpy(), COLOR_INSIDE, T("xt_inside"))
+        _cdf_curve(axes[2], df.loc[~df["isinside"], col].to_numpy(), COLOR_OUTSIDE, T("xt_outside"))
+    _xmax = max(float(np.nanquantile(_all, 0.999)) * 100 * 1.05, 1.0)
+    for _ax, _title in zip(axes, (T("cut_all"), T("cut_daynight"), T("cut_inout"))):
+        _ax.set_title(_title, fontsize=10)
+        _ax.set_xlim(0, _xmax)
+        _ax.set_ylim(0, 1.02)
+        _ax.set_xlabel(xlabel)
+        if _ax is not axes[0]:
+            _ax.legend(loc="lower right", fontsize=8)
+    axes[0].set_ylabel(T("cdf_ylabel"))
+    if preview:
+        fig.suptitle(T("dn_preview"), fontsize=9, color=COLOR_SECONDARY, y=1.02)
     plt.tight_layout()
-
-def _daynight_split(col, synth_arr):
-    """Return (day_values, night_values, is_preview) for `col`."""
-    if EPOCH_ERRORS_PRESENT and "is_day" in EPOCH_ERRORS_DF.columns:
-        _d = EPOCH_ERRORS_DF.loc[EPOCH_ERRORS_DF["is_day"], col].to_numpy()
-        _n = EPOCH_ERRORS_DF.loc[~EPOCH_ERRORS_DF["is_day"], col].to_numpy()
-        return _d, _n, False
-    # Synthetic preview: split the synthetic pool ~13/24 day, bump night.
-    _rng = np.random.default_rng(11)
-    _mask = _rng.random(len(synth_arr)) < (13 / 24)
-    return synth_arr[_mask], synth_arr[~_mask] * 1.3, True
 ```
 
 ```{python}
-#| echo: false
-#| output: asis
-_dh, _nh, _dn_preview = _daynight_split("horizontal_m", all_horiz)
-if _dn_preview:
-    print(T("dn_preview"))
+#| label: fig-cdf-h-3cut
+#| fig-cap: "{{< meta caps.pro.cdf_h_3cut >}}"
+_plot_cdf_3cut(EPOCH_ERRORS_DF, "horizontal_m", xlabel=T("cdf_xlabel_horiz"), preview=EPOCH_SYNTH)
 ```
 
 ```{python}
-#| label: fig-cdf-daynight-h
-#| fig-cap: "{{< meta caps.pro.cdf_daynight_h >}}"
-_plot_cdf_dn(_dh, _nh, xlabel=T("cdf_xlabel_horiz"))
-```
-
-```{python}
-#| label: fig-cdf-daynight-v
-#| fig-cap: "{{< meta caps.pro.cdf_daynight_v >}}"
-_dv, _nv, _ = _daynight_split("vertical_m", all_vert)
-_plot_cdf_dn(_dv, _nv, xlabel=T("cdf_xlabel_vert"))
+#| label: fig-cdf-v-3cut
+#| fig-cap: "{{< meta caps.pro.cdf_v_3cut >}}"
+_plot_cdf_3cut(EPOCH_ERRORS_DF, "vertical_m", xlabel=T("cdf_xlabel_vert"), preview=EPOCH_SYNTH)
 ```
 
 ```{python}
@@ -1542,21 +1649,16 @@ _plot_cdf_dn(_dv, _nv, xlabel=T("cdf_xlabel_vert"))
 def _cube_val(scope, window, col):
     if ACCURACY_NETWORK_DF is None:
         return None
-    _sel = ACCURACY_NETWORK_DF[
-        (ACCURACY_NETWORK_DF["network_id"] == "all")
-        & (ACCURACY_NETWORK_DF["scope"] == scope)
-        & (ACCURACY_NETWORK_DF["station_set"] == "qualified")
-        & (ACCURACY_NETWORK_DF["window"] == window)
-    ]
-    if _sel.empty:
-        # fall back to station_set='all' when no qualified set is defined
+    for _ss in ("qualified", "all"):
         _sel = ACCURACY_NETWORK_DF[
             (ACCURACY_NETWORK_DF["network_id"] == "all")
             & (ACCURACY_NETWORK_DF["scope"] == scope)
-            & (ACCURACY_NETWORK_DF["station_set"] == "all")
+            & (ACCURACY_NETWORK_DF["station_set"] == _ss)
             & (ACCURACY_NETWORK_DF["window"] == window)
         ]
-    return None if _sel.empty else float(_sel.iloc[0][col])
+        if not _sel.empty:
+            return float(_sel.iloc[0][col])
+    return None
 
 def _cmv(v):
     return f"{v*100:.2f}" if v is not None and v == v else "n/a"
@@ -1578,37 +1680,113 @@ if ACCURACY_NETWORK_DF is not None:
         })
     daynight_scope_table = pd.DataFrame(_rows)
 else:
-    # Synthetic preview cross-table (inside slightly better; night worse).
-    _hq = float(np.quantile(all_horiz, 0.95))
-    _vq = float(np.quantile(all_vert, 0.95))
-    _rows = []
-    for _lab, _sm in ((T("xt_inside"), 1.0), (T("xt_outside"), 1.2)):
-        _rows.append({
-            T("xt_scope"): _lab,
-            _col_dh: f"{_hq*_sm*100:.2f}", _col_nh: f"{_hq*_sm*1.3*100:.2f}",
-            _col_dv: f"{_vq*_sm*100:.2f}", _col_nv: f"{_vq*_sm*1.3*100:.2f}",
-        })
-    daynight_scope_table = pd.DataFrame(_rows)
+    _hq = float(np.quantile(EPOCH_ERRORS_DF["horizontal_m"].to_numpy(), 0.95))
+    _vq = float(np.quantile(EPOCH_ERRORS_DF["vertical_m"].to_numpy(), 0.95))
+    daynight_scope_table = pd.DataFrame([
+        {T("xt_scope"): _lab,
+         _col_dh: f"{_hq*_sm*100:.2f}", _col_nh: f"{_hq*_sm*1.3*100:.2f}",
+         _col_dv: f"{_vq*_sm*100:.2f}", _col_nv: f"{_vq*_sm*1.3*100:.2f}"}
+        for _lab, _sm in ((T("xt_inside"), 1.0), (T("xt_outside"), 1.15))
+    ])
 daynight_scope_table
+```
+
+```{python}
+#| label: fig-ttff-cdf
+#| fig-cap: "{{< meta caps.pro.ttff_cdf >}}"
+
+# National TTFF CDF (single curve) — reset-window first-fix times pooled
+# nationwide. Real per-window values when available, else synthetic.
+if 'TTFF_WINDOW_SEC' in dir() and TTFF_WINDOW_SEC is not None and len(TTFF_WINDOW_SEC) > 0:
+    _tt = np.asarray(TTFF_WINDOW_SEC, dtype=float)
+    _tt_preview = False
+else:
+    _tt = np.asarray(ttff_15min, dtype=float)
+    _tt_preview = True
+_tt = _tt[np.isfinite(_tt)]
+_s = np.sort(_tt)
+_c = np.arange(1, _s.size + 1) / _s.size
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.plot(_s, _c, color=COLOR_PRIMARY, linewidth=2)
+for _q, _col in ((0.50, COLOR_SECONDARY), (0.95, COLOR_EMPHASIS)):
+    _v = float(np.quantile(_tt, _q))
+    ax.axvline(_v, linestyle="--", color=_col, alpha=0.6)
+    ax.annotate(f"{int(_q*100)}% = {_v:.0f} s", xy=(_v, _q),
+                xytext=(_v + 5, _q - 0.06), fontsize=8, alpha=0.8)
+ax.set_xlim(0, float(np.quantile(_tt, 0.995)) * 1.05)
+ax.set_ylim(0, 1.02)
+ax.set_xlabel(T("ttff_xlabel"))
+ax.set_ylabel(T("cdf_ylabel"))
+if _tt_preview:
+    ax.set_title(T("ttff_preview_title"), fontsize=9, color=COLOR_SECONDARY)
+plt.tight_layout()
+```
+
+```{python}
+#| label: tbl-ttff-cuts
+#| tbl-cap: "{{< meta caps.pro.ttff_cut_table >}}"
+
+def _ttff_cut(scope, window, col):
+    if TTFF_NETWORK_DF is None:
+        return None
+    for _ss in ("qualified", "all"):
+        _sel = TTFF_NETWORK_DF[
+            (TTFF_NETWORK_DF["network_id"] == "all")
+            & (TTFF_NETWORK_DF["scope"] == scope)
+            & (TTFF_NETWORK_DF["station_set"] == _ss)
+            & (TTFF_NETWORK_DF["window"] == window)
+        ]
+        if not _sel.empty:
+            return float(_sel.iloc[0][col])
+    return None
+
+def _s1(v):
+    return f"{v:.1f}" if v is not None and v == v else "n/a"
+
+# Rows: national / day / night / inside / outside; cols: p50 / p95 / p99.
+_cuts = [
+    (T("ttff_cut_all"), "all", "all"),
+    (T("label_day"), "all", "day"),
+    (T("label_night"), "all", "night"),
+    (T("xt_inside"), "inside", "all"),
+    (T("xt_outside"), "outside", "all"),
+]
+if TTFF_NETWORK_DF is not None:
+    ttff_cut_table = pd.DataFrame([
+        {T("ttff_cut_col"): _lab,
+         "p50 [s]": _s1(_ttff_cut(_sc, _w, "ttff_p50_sec")),
+         "p95 [s]": _s1(_ttff_cut(_sc, _w, "ttff_p95_sec")),
+         "p99 [s]": _s1(_ttff_cut(_sc, _w, "ttff_p99_sec"))}
+        for _lab, _sc, _w in _cuts
+    ])
+else:
+    _b50, _b95, _b99 = (float(np.quantile(_tt, q)) for q in (0.50, 0.95, 0.99))
+    ttff_cut_table = pd.DataFrame([
+        {T("ttff_cut_col"): _lab,
+         "p50 [s]": f"{_b50*_m:.1f}", "p95 [s]": f"{_b95*_m:.1f}", "p99 [s]": f"{_b99*_m:.1f}"}
+        for _lab, _m in ((T("ttff_cut_all"), 1.0), (T("label_day"), 0.9),
+                         (T("label_night"), 1.25), (T("xt_inside"), 0.95),
+                         (T("xt_outside"), 1.1))
+    ])
+ttff_cut_table
 ```
 
 ::: {.content-visible when-profile="en"}
 ## Spatial Distribution
 
-Horizontal 95th-percentile error binned into ~60 km hex cells (same rule
-as the Free-tier national map), shown **daytime** and **nighttime** side
-by side. Cells backed by fewer than three distinct stations are left
-blank (ADR 0013). The day → night change is the spatial fingerprint of
-the ionosphere.
+Horizontal 95th-percentile error binned into ~60 km hex cells, under the
+same three cuts: **all data**, **daytime vs nighttime**, and an
+**Inside-network boundary** overlaid on the all-data map. Cells backed by
+fewer than three distinct stations are left blank (ADR 0013).
 :::
 ::: {.content-visible when-profile="ja"}
 ## 空間分布
 
-水平誤差 95 パーセンタイルを約 60 km の hex セルに集計し(Free tier の全国図と同一規則)、**昼間**・**夜間**を並べて表示します。3局未満のセルは空白とします(ADR 0013)。昼→夜の変化が電離圏の空間的な痕跡です。
+水平誤差 95 パーセンタイルを約 60 km の hex セルに集計し、同じ3カット —— **全データ**、**昼間 vs 夜間**、全データマップに **網内境界** を重畳 —— で示します。3局未満のセルは空白とします(ADR 0013)。
 :::
 
 ```{python}
-#| label: setup-hex-daynight
+#| label: setup-sec6-hex
 #| include: false
 
 import cartopy.crs as ccrs
@@ -1616,52 +1794,61 @@ import cartopy.feature as cfeature
 from matplotlib.colors import Normalize
 from matplotlib.ticker import FuncFormatter
 
-# Same small-cell suppression and display cap as the Free-tier hex maps.
 MIN_STATIONS_PER_CELL = 3
 H_VMAX_CM = 30.0
-
 _PROJ_AEA = ccrs.AlbersEqualArea(
-    central_longitude=137.0, central_latitude=35.0,
-    standard_parallels=(30.0, 43.0),
+    central_longitude=137.0, central_latitude=35.0, standard_parallels=(30.0, 43.0),
 )
 
-def _hex_panel(fig, ax, df_sub, title, vmax_cm, col="horizontal_m"):
+def _basemap(ax):
     ax.set_extent((122, 150, 22, 47), crs=ccrs.PlateCarree())
     ax.add_feature(cfeature.LAND.with_scale("50m"), facecolor="#f5f5f4", edgecolor="none")
     ax.add_feature(cfeature.OCEAN.with_scale("50m"), facecolor="#fafafa", edgecolor="none")
     ax.add_feature(cfeature.COASTLINE.with_scale("50m"), linewidth=0.4, edgecolor="#94a3b8")
+
+def _hex_panel(fig, ax, df_sub, title, vmax_cm, col="horizontal_m"):
+    _basemap(ax)
     _vmax_m = vmax_cm / 100.0
     _norm = Normalize(vmin=0.0, vmax=_vmax_m)
     _xy = _PROJ_AEA.transform_points(
-        ccrs.PlateCarree(), df_sub["lon"].to_numpy(), df_sub["lat"].to_numpy(),
-    )
+        ccrs.PlateCarree(), df_sub["lon"].to_numpy(), df_sub["lat"].to_numpy())
     _x, _y = _xy[:, 0], _xy[:, 1]
     _stcode = pd.factorize(df_sub["station"])[0]
     _ext = (_x.min(), _x.max(), _y.min(), _y.max())
-    _hb_cnt = ax.hexbin(
-        _x, _y, C=_stcode, reduce_C_function=lambda v: np.unique(v).size,
-        gridsize=50, extent=_ext, mincnt=1,
-    )
-    _counts = np.asarray(_hb_cnt.get_array())
-    _hb_cnt.remove()
-    hb = ax.hexbin(
-        _x, _y, C=df_sub[col].to_numpy(),
-        reduce_C_function=lambda v: np.percentile(v, 95),
-        gridsize=50, extent=_ext, cmap=CMAP_SEQUENTIAL, norm=_norm,
-        edgecolors="white", linewidths=0.3, mincnt=1, alpha=0.5, zorder=10,
-    )
+    _cnt = ax.hexbin(_x, _y, C=_stcode, reduce_C_function=lambda v: np.unique(v).size,
+                     gridsize=50, extent=_ext, mincnt=1)
+    _counts = np.asarray(_cnt.get_array()); _cnt.remove()
+    hb = ax.hexbin(_x, _y, C=df_sub[col].to_numpy(),
+                   reduce_C_function=lambda v: np.percentile(v, 95),
+                   gridsize=50, extent=_ext, cmap=CMAP_SEQUENTIAL, norm=_norm,
+                   edgecolors="white", linewidths=0.3, mincnt=1, alpha=0.5, zorder=10)
     _keep = _counts >= MIN_STATIONS_PER_CELL
-    hb.set_offsets(hb.get_offsets()[_keep])
-    hb.set_array(hb.get_array()[_keep])
+    hb.set_offsets(hb.get_offsets()[_keep]); hb.set_array(hb.get_array()[_keep])
     ax.set_title(title, fontsize=11)
     ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
-    cbar = fig.colorbar(
-        hb, ax=ax, fraction=0.04, pad=0.03, extend="max",
-        ticks=np.linspace(0.0, _vmax_m, 5),
-    )
+    cbar = fig.colorbar(hb, ax=ax, fraction=0.04, pad=0.03, extend="max",
+                        ticks=np.linspace(0.0, _vmax_m, 5))
     cbar.ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v * 100:.0f}"))
     cbar.set_label(T("hex_cbar_label"), fontsize=8)
     cbar.ax.tick_params(labelsize=7)
+
+def _convex_hull(points):
+    pts = sorted(set(map(tuple, points)))
+    if len(pts) <= 2:
+        return pts
+    def _cross(o, a, b):
+        return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+    lower = []
+    for p in pts:
+        while len(lower) >= 2 and _cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper = []
+    for p in reversed(pts):
+        while len(upper) >= 2 and _cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
 ```
 
 ```{python}
@@ -1672,50 +1859,96 @@ if HEX_PRESENT and not HEX_REAL_DATA:
 ```
 
 ```{python}
+#| label: fig-hex-all
+#| fig-cap: "{{< meta caps.pro.hex_all >}}"
+if HEX_PRESENT:
+    fig, ax = plt.subplots(figsize=(6.4, 6.8), subplot_kw={"projection": _PROJ_AEA})
+    _hex_panel(fig, ax, HEX_EPOCHS_DF, T("hex_title_all"), H_VMAX_CM)
+    plt.tight_layout()
+else:
+    print(T("hex_missing").format(period=PERIOD_LABEL))
+```
+
+```{python}
 #| label: fig-hex-daynight-h
 #| fig-cap: "{{< meta caps.pro.hex_daynight_h >}}"
-
 if HEX_PRESENT:
-    fig, axes = plt.subplots(
-        1, 2, figsize=(11, 6), subplot_kw={"projection": _PROJ_AEA},
-    )
+    fig, axes = plt.subplots(1, 2, figsize=(11, 6), subplot_kw={"projection": _PROJ_AEA})
     _hex_panel(fig, axes[0], HEX_EPOCHS_DF[HEX_EPOCHS_DF["is_day"]],
                f'{T("hex_title_horiz")} — {T("label_day")}', H_VMAX_CM)
     _hex_panel(fig, axes[1], HEX_EPOCHS_DF[~HEX_EPOCHS_DF["is_day"]],
                f'{T("hex_title_horiz")} — {T("label_night")}', H_VMAX_CM)
     plt.tight_layout()
-else:
-    print(T("hex_missing").format(period=PERIOD_LABEL))
+```
+
+```{python}
+#| label: fig-hex-inout
+#| fig-cap: "{{< meta caps.pro.hex_inout >}}"
+if HEX_PRESENT:
+    fig, ax = plt.subplots(figsize=(6.4, 6.8), subplot_kw={"projection": _PROJ_AEA})
+    _hex_panel(fig, ax, HEX_EPOCHS_DF, T("hex_inout_boundary"), H_VMAX_CM)
+    # Overlay the inside-network boundary: per-network convex hull of the
+    # inside-network stations (approximates the CLAS interpolation area).
+    if HEX_HAS_INOUT:
+        _in = HEX_EPOCHS_DF[HEX_EPOCHS_DF["isinside"]].drop_duplicates("station")
+        _groups = (_in.groupby("netid") if HEX_HAS_NETID else [(None, _in)])
+        for _nid, _g in _groups:
+            _hull = _convex_hull(_g[["lon", "lat"]].to_numpy())
+            if len(_hull) >= 3:
+                _poly = np.array(_hull + [_hull[0]])
+                ax.plot(_poly[:, 0], _poly[:, 1], transform=ccrs.PlateCarree(),
+                        color=COLOR_EMPHASIS, linewidth=1.1, alpha=0.85, zorder=20)
+    plt.tight_layout()
 ```
 
 ::: {.content-visible when-profile="en"}
 ## Accuracy by Receiver / Firmware
 
 Positioning accuracy grouped by the station's **receiver × firmware**
-combination. Percentiles are pooled exactly over every epoch of every
-station carrying that combination (same rule as the network cube);
-combinations backed by fewer than three stations are suppressed
-(ADR 0013). The table gives the exact pooled percentiles; the box plot
-shows the spread of per-station H95 within each combination.
+combination. GEONET runs only a few receiver types, so the combinations
+are shown as **overlaid error CDFs** (consistent with §6.1), plus a table
+of the exact pooled percentiles. Combinations backed by fewer than three
+stations are suppressed (ADR 0013).
 :::
 ::: {.content-visible when-profile="ja"}
 ## 受信機 / FW 別精度
 
-観測局の**受信機 × ファームウェア**組合せ別に測位精度を集計します。パーセンタイルは、その組合せを持つ全局・全エポックを正確にプールして算出し(ネットワークキューブと同一規則)、3局未満の組合せは抑制します(ADR 0013)。表は正確なプール・パーセンタイル、箱ひげ図は各組合せ内の局別 H95 のばらつきを示します。
+観測局の**受信機 × ファームウェア**組合せ別に測位精度を集計します。GEONET は受信機の種類が少ないため、組合せは **誤差 CDF の重ね描き**(§6.1 と統一)と、正確なプール・パーセンタイル表で示します。3局未満の組合せは抑制します(ADR 0013)。
 :::
+
+```{python}
+#| label: fig-equipment-cdf
+#| fig-cap: "{{< meta caps.pro.equip_cdf >}}"
+
+_palette = [COLOR_PRIMARY, COLOR_WARNING, COLOR_SUCCESS, COLOR_EMPHASIS, COLOR_NEUTRAL]
+if EPOCH_HAS_COMBO and EPOCH_ERRORS_DF["combo"].notna().any():
+    _cnt = EPOCH_ERRORS_DF.dropna(subset=["combo"]).groupby("combo")["station"].nunique()
+    _combos = list(_cnt[_cnt >= 3].sort_values(ascending=False).index)
+    fig, ax = plt.subplots(figsize=(8, 4.4))
+    for _i, _c in enumerate(_combos):
+        _v = EPOCH_ERRORS_DF.loc[EPOCH_ERRORS_DF["combo"] == _c, "horizontal_m"].to_numpy()
+        _cdf_curve(ax, _v, _palette[_i % len(_palette)], _c)
+    _allv = EPOCH_ERRORS_DF["horizontal_m"].to_numpy()
+    ax.set_xlim(0, max(float(np.nanquantile(_allv, 0.999)) * 100 * 1.05, 1.0))
+    ax.set_ylim(0, 1.02)
+    ax.set_xlabel(T("cdf_xlabel_horiz"))
+    ax.set_ylabel(T("cdf_ylabel"))
+    ax.legend(loc="lower right", fontsize=8)
+    if EPOCH_SYNTH:
+        ax.set_title(T("eq_preview"), fontsize=9, color=COLOR_SECONDARY)
+    plt.tight_layout()
+else:
+    print(T("eq_missing"))
+```
 
 ```{python}
 #| label: tbl-equipment
 #| tbl-cap: "{{< meta caps.pro.equip_table >}}"
 
 if EQUIP_PRESENT:
-    _e = EQUIP_ACC_DF[
-        (EQUIP_ACC_DF["station_set"] == "qualified") & (EQUIP_ACC_DF["window"] == "all")
-    ].copy()
+    _e = EQUIP_ACC_DF[(EQUIP_ACC_DF["station_set"] == "qualified") & (EQUIP_ACC_DF["window"] == "all")].copy()
     if _e.empty:
-        _e = EQUIP_ACC_DF[
-            (EQUIP_ACC_DF["station_set"] == "all") & (EQUIP_ACC_DF["window"] == "all")
-        ].copy()
+        _e = EQUIP_ACC_DF[(EQUIP_ACC_DF["station_set"] == "all") & (EQUIP_ACC_DF["window"] == "all")].copy()
     _e["combo"] = _e["rec_type"].astype(str) + " / " + _e["rec_fw_ver"].astype(str)
     _e = _e.sort_values("n_stations", ascending=False)
     equipment_table = pd.DataFrame({
@@ -1727,50 +1960,13 @@ if EQUIP_PRESENT:
     })
 else:
     equipment_table = pd.DataFrame({
-        T("eq_col_combo"): ["TRIMBLE ALLOY / 6.15 (synthetic)",
-                            "TPS NETG5 / 5.2.6 (synthetic)"],
+        T("eq_col_combo"): ["TRIMBLE ALLOY / 6.15 (synthetic)", "TPS NETG5 / 5.2.6 (synthetic)"],
         T("eq_col_nstn"): ["742", "553"],
-        T("eq_col_h95"): ["13.37", "14.13"],
-        T("eq_col_v95"): ["22.05", "24.44"],
-        T("eq_col_fix"): ["95.3 %", "94.7 %"],
+        T("eq_col_h95"): ["13.30", "14.01"],
+        T("eq_col_v95"): ["21.97", "23.99"],
+        T("eq_col_fix"): ["95.8 %", "95.3 %"],
     })
 equipment_table
-```
-
-```{python}
-#| label: fig-equipment-box
-#| fig-cap: "{{< meta caps.pro.equip_box >}}"
-
-if EQUIP_STATION_H95 is not None and not EQUIP_STATION_H95.empty:
-    _b = EQUIP_STATION_H95.dropna(subset=["hor_p95"]).copy()
-    _cnt = _b.groupby("combo")["station"].nunique()
-    _b = _b[_b["combo"].isin(_cnt[_cnt >= 3].index)]
-    _order = (
-        _b.groupby("combo")["hor_p95"].median().sort_values().index.tolist()
-    )
-    _data = [_b.loc[_b["combo"] == c, "hor_p95"].to_numpy() * 100 for c in _order]
-    _eq_preview = False
-else:
-    _rng_eq = np.random.default_rng(3)
-    _order = ["TRIMBLE ALLOY / 6.15", "TPS NETG5 / 5.2.6"]
-    _data = [_rng_eq.gamma(6.0, 2.0, 300), _rng_eq.gamma(6.0, 2.3, 220)]
-    _eq_preview = True
-
-fig, ax = plt.subplots(figsize=(8, 0.7 * len(_order) + 1.8))
-_bp = ax.boxplot(_data, vert=False, showfliers=False, patch_artist=True)
-for _patch in _bp["boxes"]:
-    _patch.set_facecolor(COLOR_PRIMARY)
-    _patch.set_alpha(0.35)
-    _patch.set_edgecolor(COLOR_PRIMARY)
-for _med in _bp["medians"]:
-    _med.set_color(COLOR_EMPHASIS)
-    _med.set_linewidth(1.6)
-ax.set_yticks(range(1, len(_order) + 1))
-ax.set_yticklabels(_order, fontsize=8)
-ax.set_xlabel(T("eq_box_ylabel"))
-if _eq_preview:
-    ax.set_title(T("eq_preview"), fontsize=9, color=COLOR_SECONDARY)
-plt.tight_layout()
 ```
 
 
