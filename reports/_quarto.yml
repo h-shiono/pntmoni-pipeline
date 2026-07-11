@@ -19,6 +19,8 @@ title_qc: "PNT Moni Monthly QC Report"
 subtitle_qc: "GEONET Observation Quality — Free Tier"
 title_free: "PNT Moni Monthly Report"
 subtitle_free: "QZSS CLAS Performance Evaluation — Free Tier"
+title_pro: "PNT Moni Monthly Report"
+subtitle_pro: "QZSS CLAS Performance Evaluation — Pro Tier"
 
 # Figure / table captions, namespaced per template (qc / free).
 caps:

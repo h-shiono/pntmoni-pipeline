@@ -32,6 +32,111 @@ One sentence describing what this task accomplishes.
 
 ---
 
+## [2026-07-11] Task: Pro-tier report — 12-section framework
+
+### Goal
+Restructure the Pro CLAS report from the legacy 7-section
+(`monthly_pro.qmd`, EN-only) into the founder's new 12-section
+framework, wiring the day/night × inside-outside facets and per-12-network
+regional blocks to the ALREADY-EXISTING `accuracy_network_monthly`
+cube. This entry covers the FRAMEWORK (skeleton) only — figures are
+filled section-by-section afterwards.
+
+### Target structure (founder, 2026-07-11)
+```
+1 改訂履歴          2 はじめに          3 評価手法
+4 エグゼクティブサマリ
+5 今月のイベント      (一覧+判定基準 / イベント別深掘り)          [NEW]
+6 全国概況           (誤差分布 / 空間分布 — facet 昼夜 × 網内外)   [facets NEW]
+7 地域概況           (12ネットワークごと定型)                    [NEW]
+8 トレンド           (全国 + 地域)                              [regional NEW]
+9 要注意局           (例外リストのみ + 局別ページ誘導)            [NEW]
+10 データ可用性       11 異常検出(独立)       12 付録
+```
+
+### Data backbone (already produced — no pipeline change to START)
+- §6/§7/§8 ← `accuracy_network_monthly` + `ttff_network_monthly`
+  cube: netid(1–12,all) × scope(all/inside/outside/outside_wo_southern)
+  × station_set(all/eval/qualified) × window(all/day/night), exact
+  monthly re-pool (`analysis/_accuracy_stats.py`, `_monthly.py`).
+- §6 spatial (hex, day/night facet) ← `epoch_errors` (`time_utc` +
+  per-epoch lat/lon already present).
+- §5 events ← `acquire satellite-outages` (NAGU/NANU/NAQU) +
+  `analyze l6-alerts` + `acquire constellation` status-changes.
+- §9 watch-list ← `accuracy_station` monthly (per-station exceptions).
+- §10/§11/§12 ← carried from free/pro (availability, anomalies, appendix).
+
+### Plan
+- [x] Decide base-template strategy — user chose: rebuild monthly_pro.qmd
+      from bilingual monthly_free.qmd; skeleton-only first; docs synced in
+      a companion pntmoni-docs change.
+- [x] Build renderable 12-section skeleton (bilingual JA/EN, free-template
+      i18n pattern): all headers + section-lead callouts naming content +
+      bound data source + explicit `TODO(figure)` markers
+- [x] Carry §1–§3 verbatim from free (head-copy through the network-map
+      cell, line 1189); §4 keeps the working exec-summary table +
+      PS-QZSS callout. §2 Introduction wording flipped Free→Pro (EN+JA).
+- [x] Scaffold NEW Pro sections (5 events, 6 facets, 7 per-network,
+      8 regional trend, 9 watch-list) with the cube bindings named in
+      each TODO callout
+- [x] Register template (already in driver TEMPLATE_PRODUCTS) + title_pro
+      /subtitle_pro added to _quarto.yml + _quarto-ja.yml; confirmed
+      `quarto render --profile {ja,en} --no-execute-daemon` = 0
+      cell-errors, all 12 sections auto-numbered in both languages.
+- [ ] Fill figures section-by-section (SEPARATE follow-up tasks):
+      §6 facets → §7 per-network → §8 regional trend → §5 events →
+      §9 watch-list → carry §10/§11/§12 working cells from free.
+
+### Structure note (finalised 2026-07-11)
+- Cross-Validation promoted to a top-level section §10 (founder call);
+  Data Availability / Anomaly Detection / Appendix shifted to §11 / §12
+  / §13. Now a **13-section** framework.
+- Carried figure captions still reference the `caps.free.*` namespace
+  (e.g. network_map, exec_summary). TODO: add a `caps.pro` namespace
+  when the Pro figures are built.
+
+### Phase Guard
+[ ] NOTE: CLAUDE.md lists "Pro tier custom report generation" as Phase 3.
+    Free tier is already published (ahead of the written Phase 0 dates);
+    the founder is driving Pro now. Surface to user, do not silently
+    proceed on the Phase question.
+
+### Methodology-doc sync (pntmoni-docs)
+The 12-section order diverges from the authoritative
+`30-evaluation-methodology/03-monthly-report-structure.md` (7 top-level).
+Per CLAUDE.md, report structure is a pntmoni-docs concern. Flag: the
+doc should gain a Pro-tier expanded structure (companion change), not
+edited here.
+
+### Open Questions (for user)
+1. Base template: rebuild `monthly_pro.qmd` from the mature bilingual
+   `monthly_free.qmd` (recommended) vs. extend legacy EN-only pro vs. new file.
+2. Deliverable granularity of "枠組み": pure skeleton first (recommended)
+   vs. skeleton + wire the already-ready §6/§7/§8 figures now.
+3. Methodology-doc: update pntmoni-docs structure doc in a companion
+   change, or treat as pipeline-side experimentation for now?
+
+### Done Criteria
+- `monthly_pro.qmd` renders (ja+en, synthetic) with all 12 sections
+  present and 0 Quarto cell-errors; NEW sections clearly marked TODO.
+
+### Result (2026-07-11 — framework done)
+- `reports/templates/monthly_pro.qmd` rebuilt from monthly_free.qmd:
+  §1–§3 + §4 exec-summary carried working; §5–§9 NEW scaffolds;
+  §10 相互検証 (top-level); §11–§13 structural stubs.
+- Synthetic render, both profiles, 0 cell-errors. Auto-numbering:
+  EN 1 Revision History … 10 Cross-Validation … 13 Appendix;
+  JA 1 改訂履歴 … 10 相互検証 … 13 付録.
+  (reports/output/templates/monthly_pro.html — gitignored.)
+- _quarto.yml + _quarto-ja.yml gained title_pro / subtitle_pro.
+
+### Open Issues
+- Figures deferred to section-by-section follow-ups (see Plan tail).
+- pntmoni-docs 03-monthly-report-structure.md needs the Pro 12-section
+  structure documented (companion change).
+
+---
+
 ## [2026-06-10] Task: Bilingual (JA/EN) report templates
 
 ### Goal

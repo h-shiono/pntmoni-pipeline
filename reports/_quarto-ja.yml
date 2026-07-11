@@ -17,6 +17,8 @@ title_qc: "PNT Moni 月次QCレポート"
 subtitle_qc: "GEONET 観測品質 — Free Tier(無料公開版)"
 title_free: "PNT Moni 月次レポート"
 subtitle_free: "QZSS CLAS 性能評価 — Free Tier(無料公開版)"
+title_pro: "PNT Moni 月次レポート"
+subtitle_pro: "QZSS CLAS 性能評価 — Pro Tier"
 
 # 図表キャプション。テンプレート別に名前空間を分ける(qc / free)。
 caps:
