@@ -864,7 +864,8 @@ STR = {
         "reg_col_v95": "V95 [cm]",
         "reg_col_ttff95": "TTFF95 [s]",
         "reg_col_fix": "Fix rate",
-        "reg_map_cbar": "Station H95 [cm]",
+        "reg_map_cbar_h": "Station H95 [cm]",
+        "reg_map_cbar_v": "Station V95 [cm]",
         "reg_grid_label": "CLAS grid",
         "reg_station_label": "Stations",
         "reg_panel_title": "{netid}: {name} (n={n})",
@@ -1035,7 +1036,8 @@ STR = {
         "reg_col_v95": "V95 [cm]",
         "reg_col_ttff95": "TTFF95 [s]",
         "reg_col_fix": "Fix率",
-        "reg_map_cbar": "局別 H95 [cm]",
+        "reg_map_cbar_h": "局別 H95 [cm]",
+        "reg_map_cbar_v": "局別 V95 [cm]",
         "reg_grid_label": "CLAS グリッド",
         "reg_station_label": "観測局",
         "reg_panel_title": "{netid}: {name}(n={n})",
@@ -2255,12 +2257,14 @@ regional_table
 :::
 
 ```{python}
-#| label: fig-regional-multiples
-#| fig-cap: "{{< meta caps.pro.regional_map >}}"
+#| label: regional-map-helper
+#| include: false
 
-# 12 small-multiple maps (4×3), one per network. Each: CLAS grid points
-# (light footprint) + that network's stations as individual points
-# coloured by station H95 on a SHARED scale, auto-zoomed to the network.
+# Shared builder for the §7 per-network small-multiples. Both the
+# horizontal (H95) and vertical (V95) maps are the same 4×3 layout with
+# the same grid-point footprint and auto-zoom — only the coloured metric
+# and its (independent) colour scale differ, so V's larger errors get
+# their own range rather than saturating an H-tuned scale.
 import cartopy.crs as _ccrs_rg
 import cartopy.feature as _cfeat_rg
 from matplotlib.colors import Normalize as _Norm_rg
@@ -2271,67 +2275,82 @@ _proj_rg = _ccrs_rg.AlbersEqualArea(
 )
 _pc_rg = _ccrs_rg.PlateCarree()
 
-# Shared H95 colour scale across all panels (robust 5–95 pct).
-_allh = REGION_STATION_DF["h95_cm"].to_numpy()
-_allh = _allh[np.isfinite(_allh)]
-_vmin = float(np.floor(np.nanpercentile(_allh, 5))) if _allh.size else 0.0
-_vmax = float(np.ceil(np.nanpercentile(_allh, 95))) if _allh.size else 30.0
-if _vmax <= _vmin:
-    _vmax = _vmin + 1.0
-_norm_rg = _Norm_rg(vmin=_vmin, vmax=_vmax)
-
-fig, _axes_rg = plt.subplots(4, 3, figsize=(9.5, 13.0),
-                             subplot_kw={"projection": _proj_rg})
-_sc_last = None
-for _idx_rg, _nid in enumerate(range(1, 13)):
-    ax = _axes_rg.flat[_idx_rg]
-    _gsub = (REGION_GRID[REGION_GRID["netid"] == _nid]
-             if REGION_GRID is not None else None)
-    _ssub = REGION_STATION_DF[REGION_STATION_DF["netid"] == float(_nid)]
-    _lons, _lats = [], []
-    if _gsub is not None and len(_gsub):
-        _lons += list(_gsub["lon"]); _lats += list(_gsub["lat"])
-    if len(_ssub):
-        _lons += list(_ssub["lon"]); _lats += list(_ssub["lat"])
-    if _lons:
-        _padx = max(0.5, (max(_lons) - min(_lons)) * 0.12)
-        _pady = max(0.4, (max(_lats) - min(_lats)) * 0.12)
-        ax.set_extent([min(_lons) - _padx, max(_lons) + _padx,
-                       min(_lats) - _pady, max(_lats) + _pady], _pc_rg)
-    ax.add_feature(_cfeat_rg.LAND.with_scale("50m"),
-                   facecolor="#f5f5f4", edgecolor="none")
-    ax.add_feature(_cfeat_rg.OCEAN.with_scale("50m"),
-                   facecolor="#fafafa", edgecolor="none")
-    ax.add_feature(_cfeat_rg.COASTLINE.with_scale("50m"),
-                   linewidth=0.3, edgecolor="#94a3b8")
-    if _gsub is not None and len(_gsub):
-        ax.scatter(_gsub["lon"], _gsub["lat"], s=9, marker="s",
-                   color="#d6d3d1", edgecolors="#a8a29e", linewidths=0.2,
-                   transform=_pc_rg, zorder=6)
-    if len(_ssub):
-        _sc_last = ax.scatter(
-            _ssub["lon"], _ssub["lat"], c=_ssub["h95_cm"],
-            cmap=CMAP_SEQUENTIAL, norm=_norm_rg, s=15, marker="o",
-            edgecolors="#061128", linewidths=0.2, transform=_pc_rg, zorder=10,
+def _regional_multiples(metric_col, cbar_label):
+    _vals = REGION_STATION_DF[metric_col].to_numpy()
+    _vals = _vals[np.isfinite(_vals)]
+    _vmin = float(np.floor(np.nanpercentile(_vals, 5))) if _vals.size else 0.0
+    _vmax = float(np.ceil(np.nanpercentile(_vals, 95))) if _vals.size else 30.0
+    if _vmax <= _vmin:
+        _vmax = _vmin + 1.0
+    _norm = _Norm_rg(vmin=_vmin, vmax=_vmax)
+    fig, _axes = plt.subplots(4, 3, figsize=(9.5, 13.0),
+                              subplot_kw={"projection": _proj_rg})
+    _sc = None
+    for _idx, _nid in enumerate(range(1, 13)):
+        ax = _axes.flat[_idx]
+        _gsub = (REGION_GRID[REGION_GRID["netid"] == _nid]
+                 if REGION_GRID is not None else None)
+        _ssub = REGION_STATION_DF[REGION_STATION_DF["netid"] == float(_nid)]
+        _lons, _lats = [], []
+        if _gsub is not None and len(_gsub):
+            _lons += list(_gsub["lon"]); _lats += list(_gsub["lat"])
+        if len(_ssub):
+            _lons += list(_ssub["lon"]); _lats += list(_ssub["lat"])
+        if _lons:
+            _padx = max(0.5, (max(_lons) - min(_lons)) * 0.12)
+            _pady = max(0.4, (max(_lats) - min(_lats)) * 0.12)
+            ax.set_extent([min(_lons) - _padx, max(_lons) + _padx,
+                           min(_lats) - _pady, max(_lats) + _pady], _pc_rg)
+        ax.add_feature(_cfeat_rg.LAND.with_scale("50m"),
+                       facecolor="#f5f5f4", edgecolor="none")
+        ax.add_feature(_cfeat_rg.OCEAN.with_scale("50m"),
+                       facecolor="#fafafa", edgecolor="none")
+        ax.add_feature(_cfeat_rg.COASTLINE.with_scale("50m"),
+                       linewidth=0.3, edgecolor="#94a3b8")
+        if _gsub is not None and len(_gsub):
+            ax.scatter(_gsub["lon"], _gsub["lat"], s=9, marker="s",
+                       color="#d6d3d1", edgecolors="#a8a29e", linewidths=0.2,
+                       transform=_pc_rg, zorder=6)
+        if len(_ssub):
+            _sc = ax.scatter(
+                _ssub["lon"], _ssub["lat"], c=_ssub[metric_col],
+                cmap=CMAP_SEQUENTIAL, norm=_norm, s=15, marker="o",
+                edgecolors="#061128", linewidths=0.2, transform=_pc_rg,
+                zorder=10,
+            )
+        _n_lab = len(_ssub) if len(_ssub) else T("reg_no_stn")
+        ax.set_title(
+            T("reg_panel_title").format(netid=_nid, name=_NET_NAMES[_nid - 1],
+                                        n=_n_lab),
+            fontsize=8,
         )
-    _n_lab = len(_ssub) if len(_ssub) else T("reg_no_stn")
-    ax.set_title(
-        T("reg_panel_title").format(netid=_nid, name=_NET_NAMES[_nid - 1],
-                                    n=_n_lab),
-        fontsize=8,
-    )
-    for _sp in ax.spines.values():
-        _sp.set_edgecolor("#cbd5e1"); _sp.set_linewidth(0.4)
+        for _sp in ax.spines.values():
+            _sp.set_edgecolor("#cbd5e1"); _sp.set_linewidth(0.4)
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.075,
+                        hspace=0.18, wspace=0.06)
+    if _sc is not None:
+        _cax = fig.add_axes([0.28, 0.045, 0.44, 0.012])
+        _cb = fig.colorbar(_sc, cax=_cax, orientation="horizontal")
+        _cb.set_label(cbar_label, fontsize=9)
+        _cb.ax.tick_params(labelsize=7)
+    if REGION_SYNTH:
+        fig.suptitle(T("reg_preview"), y=0.99, fontsize=9,
+                     color=COLOR_SECONDARY)
+    return fig
+```
 
-fig.subplots_adjust(left=0.02, right=0.98, top=0.95, bottom=0.075,
-                    hspace=0.18, wspace=0.06)
-if _sc_last is not None:
-    _cax_rg = fig.add_axes([0.28, 0.045, 0.44, 0.012])
-    _cb_rg = fig.colorbar(_sc_last, cax=_cax_rg, orientation="horizontal")
-    _cb_rg.set_label(T("reg_map_cbar"), fontsize=9)
-    _cb_rg.ax.tick_params(labelsize=7)
-if REGION_SYNTH:
-    fig.suptitle(T("reg_preview"), y=0.99, fontsize=9, color=COLOR_SECONDARY)
+```{python}
+#| label: fig-regional-multiples-h
+#| fig-cap: "{{< meta caps.pro.regional_map_h >}}"
+
+_regional_multiples("h95_cm", T("reg_map_cbar_h"))
+```
+
+```{python}
+#| label: fig-regional-multiples-v
+#| fig-cap: "{{< meta caps.pro.regional_map_v >}}"
+
+_regional_multiples("v95_cm", T("reg_map_cbar_v"))
 ```
 
 <!-- ==================================================================
