@@ -162,6 +162,22 @@
   )
   show table: set text(features: ("tnum",))
   show figure.caption: set text(size: 9pt, fill: pm-muted)
+  // Captioned tables (Quarto wraps them in #figure with kind
+  // "quarto-float-tbl") MUST be breakable: a Typst figure defaults to
+  // an unbreakable block, and an unbreakable figure taller than one
+  // page does not spill to the next page — Typst squashes the trailing
+  // rows on top of each other at the page bottom (observed on the
+  // 2026-06 editions' NAQU/NANU/NAGU events and GPS-constellation
+  // tables; reproduced in isolation with the bundled Typst 0.14.2).
+  // Scoped to table floats so image figures keep their keep-together
+  // placement; `table.header` rows repeat automatically on each page.
+  show figure.where(kind: "quarto-float-tbl"): set block(breakable: true)
+  // ...and rows stay atomic when a table breaks (no mid-row cell splits
+  // at the page boundary): wrapping each cell in an unbreakable block
+  // makes a row that no longer fits move to the next page as a whole
+  // (longtable-like). Verified not to perturb auto column sizing or
+  // per-cell alignment (right / horizon) on the bundled Typst 0.14.2.
+  show table.cell: it => block(breakable: false, inset: 0pt, it)
 
   // Provenance cover + TOC, driven by the typst-cover cell's state
   // update (none when a template renders without the cover cell). The
