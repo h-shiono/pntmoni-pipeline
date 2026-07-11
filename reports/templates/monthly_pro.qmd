@@ -1846,35 +1846,39 @@ def _hex_panel(fig, ax, df_sub, title, vmax_cm, col):
     cbar.set_label(T("hex_cbar_label"), fontsize=8)
     cbar.ax.tick_params(labelsize=7)
 
-def _convex_hull(points):
-    pts = sorted(set(map(tuple, points)))
-    if len(pts) <= 2:
-        return pts
-    def _cross(o, a, b):
-        return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
-    lower = []
-    for p in pts:
-        while len(lower) >= 2 and _cross(lower[-2], lower[-1], p) <= 0:
-            lower.pop()
-        lower.append(p)
-    upper = []
-    for p in reversed(pts):
-        while len(upper) >= 2 and _cross(upper[-2], upper[-1], p) <= 0:
-            upper.pop()
-        upper.append(p)
-    return lower[:-1] + upper[:-1]
+# Inside-network boundary — the EXACT methodology v1.0.0 polygons
+# (fig-02-inside-outside), vendored as GeoJSON (derived from clas_grid.def
+# + the plot_map.py VERTEX definition; networks 3–11). Drawn as boundary
+# lines over the hex fill: the hex grid and the network polygons are
+# independent layers, so cells straddling the boundary are NOT reclassed.
+import json as _json_np
+from pathlib import Path as _Path_np
+
+def _load_network_rings():
+    for _cand in (
+        _Path_np("../data/methodology/v1.0.0/network_polygons.geojson"),
+        _Path_np("reports/data/methodology/v1.0.0/network_polygons.geojson"),
+    ):
+        if _cand.is_file():
+            _fc = _json_np.loads(_cand.read_text())
+            _rings = []
+            for _ft in _fc.get("features", []):
+                _geom = _ft.get("geometry", {})
+                _polys = ([_geom["coordinates"]] if _geom.get("type") == "Polygon"
+                          else _geom.get("coordinates", []))
+                for _poly in _polys:
+                    for _ring in _poly:  # exterior + any holes
+                        _rings.append(np.asarray(_ring, dtype=float))
+            return _rings
+    return []
+
+NETWORK_RINGS = _load_network_rings()
 
 def _draw_inside_boundary(ax):
-    if not HEX_HAS_INOUT:
-        return
-    _in = HEX_EPOCHS_DF[HEX_EPOCHS_DF["isinside"]].drop_duplicates("station")
-    _groups = (_in.groupby("netid") if HEX_HAS_NETID else [(None, _in)])
-    for _nid, _g in _groups:
-        _hull = _convex_hull(_g[["lon", "lat"]].to_numpy())
-        if len(_hull) >= 3:
-            _poly = np.array(_hull + [_hull[0]])
-            ax.plot(_poly[:, 0], _poly[:, 1], transform=ccrs.PlateCarree(),
-                    color=COLOR_EMPHASIS, linewidth=1.1, alpha=0.85, zorder=20)
+    for _ring in NETWORK_RINGS:
+        if _ring.shape[0] >= 3:
+            ax.plot(_ring[:, 0], _ring[:, 1], transform=ccrs.PlateCarree(),
+                    color=COLOR_EMPHASIS, linewidth=1.2, alpha=0.9, zorder=20)
 ```
 
 ```{python}

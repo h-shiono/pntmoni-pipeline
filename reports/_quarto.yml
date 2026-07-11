@@ -48,7 +48,7 @@ caps:
     ttff_cut_table: "TTFF percentiles by cut — national, daytime, nighttime, Inside, Outside network (exact, from the TTFF cube)."
     hex_all: "Spatial 95th-percentile error — all data: horizontal (left) and vertical (right). 60 km hex cells, epochs pooled, ≥3 stations/cell."
     hex_daynight: "Spatial 95th-percentile error — daytime vs nighttime, horizontal (top) and vertical (bottom). 60 km hex cells, epochs pooled."
-    hex_inout: "Spatial 95th-percentile error with the Inside-network boundary overlaid — horizontal (left) and vertical (right)."
+    hex_inout: "Spatial 95th-percentile error with the exact methodology v1.0.0 inside-network boundary overlaid (networks 3–11) — horizontal (left) and vertical (right)."
     equip_table: "Positioning accuracy by receiver × firmware combination (exact pooled percentiles, qualified stations, combos with ≥3 stations)."
     equip_cdf: "Horizontal-error CDF by receiver × firmware combination (epochs pooled per combo; combos with ≥3 stations)."
   qc:
