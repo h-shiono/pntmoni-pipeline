@@ -556,7 +556,13 @@ if EPOCH_ERRORS_DF is None:
 else:
     EPOCH_ERRORS_DF = _attach_cuts(EPOCH_ERRORS_DF, want_combo=True)
     if "isinside" in EPOCH_ERRORS_DF.columns:
-        EPOCH_ERRORS_DF["isinside"] = EPOCH_ERRORS_DF["isinside"].fillna(False)
+        # Merge against STATION_META (bool) leaves object dtype once any
+        # station is unmatched (NaN), which makes ``~df["isinside"]`` do
+        # integer bit-negation (~True == -2) and blow up the §6.1 inout
+        # mask. Force a real boolean dtype.
+        EPOCH_ERRORS_DF["isinside"] = (
+            EPOCH_ERRORS_DF["isinside"].fillna(False).astype(bool)
+        )
     if "combo" in EPOCH_ERRORS_DF.columns:
         EPOCH_ERRORS_DF["combo"] = EPOCH_ERRORS_DF["combo"].fillna("UNKNOWN")
     EPOCH_SYNTH = False
@@ -571,7 +577,9 @@ if HEX_EPOCHS_DF is not None:
         _hmap = {s: bool(_rng_cut.random() < 0.75) for s in _hst.unique()}
         HEX_EPOCHS_DF = HEX_EPOCHS_DF.assign(isinside=_hst.map(_hmap).to_numpy())
     else:
-        HEX_EPOCHS_DF["isinside"] = HEX_EPOCHS_DF["isinside"].fillna(False)
+        HEX_EPOCHS_DF["isinside"] = (
+            HEX_EPOCHS_DF["isinside"].fillna(False).astype(bool)
+        )
     if "netid" in HEX_EPOCHS_DF.columns:
         HEX_EPOCHS_DF["netid"] = _pd_at.to_numeric(HEX_EPOCHS_DF["netid"], errors="coerce")
 HEX_HAS_INOUT = HEX_EPOCHS_DF is not None and "isinside" in HEX_EPOCHS_DF.columns
