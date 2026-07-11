@@ -93,11 +93,45 @@ Storm** (Dst < −150 nT). Add a CS-threshold gate → mark **PB-candidate**
 Normal / Geomagnetic Storm / PB-candidate / "needs ionosphere data", with
 every event carrying its CS + Dst evidence.
 
-**Phase C — Ionosphere ingest (large, separate project).**
+**Phase C — Ionosphere ingest + MSTID classifier (large, separate project).**
 dTEC/ROTI ingest (NICT) → wave-like-pattern (MSTID) detection +
 spatiotemporal alignment scoring. This is the bulk of the remaining
 classes (MSTID, PB confirmation, Other/Complex) and is a data-engineering
 project in its own right. Scope independently; do not block Phases A/B.
+
+*ML angle (founder, 2026-07-11):* the MSTID call in the paper is made by
+**looking at the dTEC/ROTI images**, and MSTID signatures are visually
+very distinctive — extended wave-like banded structures with a
+characteristic ~100–500 km wavelength / 15–60 min period, NW–SE aligned
+phase fronts, and a clear summer-night / winter-day seasonal pattern. That
+is a strong fit for **image-based classification**, and it likely raises
+the automatable fraction of the tree well beyond the deterministic Dst/CS
+gates. Two framings, cheapest first:
+
+1. **Spectral-feature classifier (interpretable, low data need).** 2D-FFT
+   each dTEC/ROTI map tile; read off dominant wavelength, orientation, and
+   band-power in the MSTID band. Threshold or a shallow classifier
+   (logistic / gradient-boost) on those features. Physically interpretable,
+   needs few labels, and the features double as the "wave-like pattern"
+   test the flowchart already names.
+2. **CNN image classifier (higher ceiling, more data need).** Multi-class
+   on map tiles: MSTID / PB / geomagnetic-storm / quiet. PBs (localized
+   plume/depletion + high scintillation & CS) vs MSTID (extended
+   wavefronts) are visually separable, so a classifier could also help
+   resolve part of the MSTID-vs-PB "spatiotemporal alignment" judgment,
+   not just the wave-like gate.
+
+**Training data.** The paper already hand-labeled ~89 events (2021–2025)
+by primary cause — a ready seed set, and per-network-per-day granularity
+multiplies the samples. 89 is small for a CNN from scratch, so favor the
+spectral-feature route and/or transfer learning + augmentation; the
+spectral classifier can also *bootstrap labels* to grow the CNN set.
+
+**Boundaries.** ML replaces the *detector*, not the *data* — the dTEC/
+ROTI ingest is still the prerequisite. And the model output should feed
+the Phase E reviewer step as a **confidence-scored suggestion**, never an
+unreviewed authoritative cause label, until it is validated against the
+paper's labels on held-out years.
 
 **Phase D — CSSR decode (parallel, separate).**
 Decode the CSSR correction payload from the L6 archive → tropospheric-
@@ -140,3 +174,7 @@ judgment — never a fabricated cause label.
    (MSTID) → CSSR decode** — agree?
 4. Is a dTEC/ROTI ingest even in scope for Phase 0/1, or deferred? (It is
    a substantial new acquisition + detection subsystem.)
+5. MSTID via ML on dTEC/ROTI images (founder's proposal): start with the
+   interpretable spectral-feature classifier, or go straight to a CNN?
+   Either way, first secure the dTEC/ROTI ingest and a labeled seed set
+   (the paper's ~89 events).
