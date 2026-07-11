@@ -51,6 +51,8 @@ caps:
     hex_inout: "Spatial 95th-percentile error with the exact methodology v1.0.0 inside-network boundary overlaid (networks 3–11) — horizontal (left) and vertical (right)."
     equip_table: "Positioning accuracy by receiver × firmware combination (exact pooled percentiles, qualified stations, combos with ≥3 stations)."
     equip_cdf: "Horizontal-error CDF by receiver × firmware combination (epochs pooled per combo; combos with ≥3 stations)."
+    regional_table: "Per-network summary across the 12 CLAS Compact Networks (network 1–12): station count, H50/H95/V95, TTFF95, fix rate. From the accuracy/TTFF network cubes (scope=all, qualified→all fallback, full-day window)."
+    regional_map: "Regional breakdown — one small-multiple map per network (1–12): CLAS grid points (light) with that network's GEONET stations shown as individual points coloured by station H95 (shared scale). Each panel auto-zooms to its network."
   qc:
     network: "GEONET reference stations covered in this report."
     data_avail: "Data availability — fraction of the 2,880 nominal daily epochs with logged observations."
