@@ -840,6 +840,8 @@ STR = {
         "cut_all": "All data",
         "cut_daynight": "Daytime / Nighttime",
         "cut_inout": "Inside / Outside network",
+        "metric_h": "Horizontal",
+        "metric_v": "Vertical",
         "ttff_cut_col": "Cut",
         "ttff_cut_all": "National",
         "hex_title_all": "Horizontal error 95th percentile — all data",
@@ -994,6 +996,8 @@ STR = {
         "cut_all": "全データ",
         "cut_daynight": "昼間 / 夜間",
         "cut_inout": "網内 / 網外",
+        "metric_h": "水平",
+        "metric_v": "垂直",
         "ttff_cut_col": "区分",
         "ttff_cut_all": "全国",
         "hex_title_all": "水平誤差 95 パーセンタイル — 全データ",
@@ -1575,9 +1579,9 @@ group (Methodology §5.1).
 
 ## Error Distribution
 
-Cumulative distributions of horizontal and vertical error under the
-three cuts. The exact day/night × Inside/Outside percentiles follow in
-the cross-table; TTFF closes the subsection.
+Cumulative distributions of horizontal (left) and vertical (right) error,
+one figure per cut, followed by a summary table of the 95th-percentile
+error per cut and the TTFF distribution.
 :::
 ::: {.content-visible when-profile="ja"}
 # 全国概況
@@ -1586,17 +1590,17 @@ the cross-table; TTFF closes the subsection.
 
 ## 誤差の分布
 
-水平・垂直誤差の累積分布を3カットで示します。昼夜 × 網内/網外 の正確なパーセンタイルはクロス表に、TTFF は節末に掲載します。
+水平(左)・垂直(右)誤差の累積分布をカットごとに1枚で示し、続いてカット別 95 パーセンタイルのまとめ表、TTFF の分布を掲載します。
 :::
 
 ```{python}
 #| label: setup-sec6-cdf
 #| include: false
 
-# 3-cut CDF: panels [all | day/night | inside/outside]. Day = data blue,
-# night = deep emphasis blue; inside = data blue, outside = muted neutral
-# (COLOR_INSIDE/OUTSIDE). None are status colours — the cuts are
-# comparisons, not good/bad verdicts.
+# Per-cut CDF pair: one figure = [horizontal | vertical] for the chosen
+# cut. Day = data blue / night = deep emphasis blue; inside = data blue /
+# outside = muted neutral (COLOR_INSIDE/OUTSIDE). No status colours — the
+# cuts are comparisons, not good/bad verdicts.
 def _cdf_curve(ax, vals, color, label):
     vals = np.asarray(vals, dtype=float)
     vals = vals[np.isfinite(vals)]
@@ -1606,23 +1610,26 @@ def _cdf_curve(ax, vals, color, label):
     _c = np.arange(1, _s.size + 1) / _s.size
     ax.plot(_s * 100, _c, color=color, linewidth=2, label=label)
 
-def _plot_cdf_3cut(df, col, *, xlabel, preview):
-    fig, axes = plt.subplots(1, 3, figsize=(13, 4.2), sharey=True)
-    _all = df[col].to_numpy()
-    _cdf_curve(axes[0], _all, COLOR_PRIMARY, T("cut_all"))
-    if "is_day" in df.columns:
-        _cdf_curve(axes[1], df.loc[df["is_day"], col].to_numpy(), COLOR_PRIMARY, T("label_day"))
-        _cdf_curve(axes[1], df.loc[~df["is_day"], col].to_numpy(), COLOR_EMPHASIS, T("label_night"))
-    if "isinside" in df.columns:
-        _cdf_curve(axes[2], df.loc[df["isinside"], col].to_numpy(), COLOR_INSIDE, T("xt_inside"))
-        _cdf_curve(axes[2], df.loc[~df["isinside"], col].to_numpy(), COLOR_OUTSIDE, T("xt_outside"))
-    _xmax = max(float(np.nanquantile(_all, 0.999)) * 100 * 1.05, 1.0)
-    for _ax, _title in zip(axes, (T("cut_all"), T("cut_daynight"), T("cut_inout"))):
-        _ax.set_title(_title, fontsize=10)
+def _plot_cdf_pair(df, cut, *, preview):
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2), sharey=True)
+    for _ax, _col, _xl, _mt in (
+        (axes[0], "horizontal_m", T("cdf_xlabel_horiz"), T("metric_h")),
+        (axes[1], "vertical_m", T("cdf_xlabel_vert"), T("metric_v")),
+    ):
+        if cut == "all":
+            _cdf_curve(_ax, df[_col].to_numpy(), COLOR_PRIMARY, T("cut_all"))
+        elif cut == "daynight":
+            _cdf_curve(_ax, df.loc[df["is_day"], _col].to_numpy(), COLOR_PRIMARY, T("label_day"))
+            _cdf_curve(_ax, df.loc[~df["is_day"], _col].to_numpy(), COLOR_EMPHASIS, T("label_night"))
+        else:  # inout
+            _cdf_curve(_ax, df.loc[df["isinside"], _col].to_numpy(), COLOR_INSIDE, T("xt_inside"))
+            _cdf_curve(_ax, df.loc[~df["isinside"], _col].to_numpy(), COLOR_OUTSIDE, T("xt_outside"))
+        _xmax = max(float(np.nanquantile(df[_col].to_numpy(), 0.999)) * 100 * 1.05, 1.0)
         _ax.set_xlim(0, _xmax)
         _ax.set_ylim(0, 1.02)
-        _ax.set_xlabel(xlabel)
-        if _ax is not axes[0]:
+        _ax.set_xlabel(_xl)
+        _ax.set_title(_mt, fontsize=10)
+        if cut != "all":
             _ax.legend(loc="lower right", fontsize=8)
     axes[0].set_ylabel(T("cdf_ylabel"))
     if preview:
@@ -1631,20 +1638,26 @@ def _plot_cdf_3cut(df, col, *, xlabel, preview):
 ```
 
 ```{python}
-#| label: fig-cdf-h-3cut
-#| fig-cap: "{{< meta caps.pro.cdf_h_3cut >}}"
-_plot_cdf_3cut(EPOCH_ERRORS_DF, "horizontal_m", xlabel=T("cdf_xlabel_horiz"), preview=EPOCH_SYNTH)
+#| label: fig-cdf-all
+#| fig-cap: "{{< meta caps.pro.cdf_all >}}"
+_plot_cdf_pair(EPOCH_ERRORS_DF, "all", preview=EPOCH_SYNTH)
 ```
 
 ```{python}
-#| label: fig-cdf-v-3cut
-#| fig-cap: "{{< meta caps.pro.cdf_v_3cut >}}"
-_plot_cdf_3cut(EPOCH_ERRORS_DF, "vertical_m", xlabel=T("cdf_xlabel_vert"), preview=EPOCH_SYNTH)
+#| label: fig-cdf-daynight
+#| fig-cap: "{{< meta caps.pro.cdf_daynight >}}"
+_plot_cdf_pair(EPOCH_ERRORS_DF, "daynight", preview=EPOCH_SYNTH)
 ```
 
 ```{python}
-#| label: tbl-daynight-scope
-#| tbl-cap: "{{< meta caps.pro.xtab_daynight_scope >}}"
+#| label: fig-cdf-inout
+#| fig-cap: "{{< meta caps.pro.cdf_inout >}}"
+_plot_cdf_pair(EPOCH_ERRORS_DF, "inout", preview=EPOCH_SYNTH)
+```
+
+```{python}
+#| label: tbl-error-cuts
+#| tbl-cap: "{{< meta caps.pro.err_summary >}}"
 
 def _cube_val(scope, window, col):
     if ACCURACY_NETWORK_DF is None:
@@ -1663,32 +1676,33 @@ def _cube_val(scope, window, col):
 def _cmv(v):
     return f"{v*100:.2f}" if v is not None and v == v else "n/a"
 
-_col_dh = f'{T("label_day")} {T("xt_h95")}'
-_col_nh = f'{T("label_night")} {T("xt_h95")}'
-_col_dv = f'{T("label_day")} {T("xt_v95")}'
-_col_nv = f'{T("label_night")} {T("xt_v95")}'
-
+# Rows match the TTFF cut table: national / day / night / inside / outside.
+_cuts = [
+    (T("ttff_cut_all"), "all", "all"),
+    (T("label_day"), "all", "day"),
+    (T("label_night"), "all", "night"),
+    (T("xt_inside"), "inside", "all"),
+    (T("xt_outside"), "outside", "all"),
+]
+_col_h = f'{T("metric_h")} [cm]'
+_col_v = f'{T("metric_v")} [cm]'
 if ACCURACY_NETWORK_DF is not None:
-    _rows = []
-    for _scope, _lab in (("inside", T("xt_inside")), ("outside", T("xt_outside"))):
-        _rows.append({
-            T("xt_scope"): _lab,
-            _col_dh: _cmv(_cube_val(_scope, "day", "hor_p95")),
-            _col_nh: _cmv(_cube_val(_scope, "night", "hor_p95")),
-            _col_dv: _cmv(_cube_val(_scope, "day", "ver_p95")),
-            _col_nv: _cmv(_cube_val(_scope, "night", "ver_p95")),
-        })
-    daynight_scope_table = pd.DataFrame(_rows)
+    error_cut_table = pd.DataFrame([
+        {T("ttff_cut_col"): _lab,
+         _col_h: _cmv(_cube_val(_sc, _w, "hor_p95")),
+         _col_v: _cmv(_cube_val(_sc, _w, "ver_p95"))}
+        for _lab, _sc, _w in _cuts
+    ])
 else:
     _hq = float(np.quantile(EPOCH_ERRORS_DF["horizontal_m"].to_numpy(), 0.95))
     _vq = float(np.quantile(EPOCH_ERRORS_DF["vertical_m"].to_numpy(), 0.95))
-    daynight_scope_table = pd.DataFrame([
-        {T("xt_scope"): _lab,
-         _col_dh: f"{_hq*_sm*100:.2f}", _col_nh: f"{_hq*_sm*1.3*100:.2f}",
-         _col_dv: f"{_vq*_sm*100:.2f}", _col_nv: f"{_vq*_sm*1.3*100:.2f}"}
-        for _lab, _sm in ((T("xt_inside"), 1.0), (T("xt_outside"), 1.15))
+    error_cut_table = pd.DataFrame([
+        {T("ttff_cut_col"): _lab, _col_h: f"{_hq*_m*100:.2f}", _col_v: f"{_vq*_m*100:.2f}"}
+        for _lab, _m in ((T("ttff_cut_all"), 1.0), (T("label_day"), 0.9),
+                         (T("label_night"), 1.3), (T("xt_inside"), 0.95),
+                         (T("xt_outside"), 1.15))
     ])
-daynight_scope_table
+error_cut_table
 ```
 
 ```{python}
@@ -1743,8 +1757,7 @@ def _ttff_cut(scope, window, col):
 def _s1(v):
     return f"{v:.1f}" if v is not None and v == v else "n/a"
 
-# Rows: national / day / night / inside / outside; cols: p50 / p95 / p99.
-_cuts = [
+_cuts_t = [
     (T("ttff_cut_all"), "all", "all"),
     (T("label_day"), "all", "day"),
     (T("label_night"), "all", "night"),
@@ -1757,7 +1770,7 @@ if TTFF_NETWORK_DF is not None:
          "p50 [s]": _s1(_ttff_cut(_sc, _w, "ttff_p50_sec")),
          "p95 [s]": _s1(_ttff_cut(_sc, _w, "ttff_p95_sec")),
          "p99 [s]": _s1(_ttff_cut(_sc, _w, "ttff_p99_sec"))}
-        for _lab, _sc, _w in _cuts
+        for _lab, _sc, _w in _cuts_t
     ])
 else:
     _b50, _b95, _b99 = (float(np.quantile(_tt, q)) for q in (0.50, 0.95, 0.99))
@@ -1774,15 +1787,15 @@ ttff_cut_table
 ::: {.content-visible when-profile="en"}
 ## Spatial Distribution
 
-Horizontal 95th-percentile error binned into ~60 km hex cells, under the
-same three cuts: **all data**, **daytime vs nighttime**, and an
-**Inside-network boundary** overlaid on the all-data map. Cells backed by
-fewer than three distinct stations are left blank (ADR 0013).
+Horizontal and vertical 95th-percentile error binned into ~60 km hex
+cells, under the same three cuts: **all data**, **daytime vs nighttime**,
+and an **Inside-network boundary** overlaid on the all-data maps. Cells
+backed by fewer than three distinct stations are left blank (ADR 0013).
 :::
 ::: {.content-visible when-profile="ja"}
 ## 空間分布
 
-水平誤差 95 パーセンタイルを約 60 km の hex セルに集計し、同じ3カット —— **全データ**、**昼間 vs 夜間**、全データマップに **網内境界** を重畳 —— で示します。3局未満のセルは空白とします(ADR 0013)。
+水平・垂直の 95 パーセンタイル誤差を約 60 km の hex セルに集計し、同じ3カット —— **全データ**、**昼間 vs 夜間**、全データマップに **網内境界** を重畳 —— で示します。3局未満のセルは空白とします(ADR 0013)。
 :::
 
 ```{python}
@@ -1795,7 +1808,8 @@ from matplotlib.colors import Normalize
 from matplotlib.ticker import FuncFormatter
 
 MIN_STATIONS_PER_CELL = 3
-H_VMAX_CM = 30.0
+H_VMAX_CM = 30.0   # horizontal display cap (cm)
+V_VMAX_CM = 50.0   # vertical display cap (cm)
 _PROJ_AEA = ccrs.AlbersEqualArea(
     central_longitude=137.0, central_latitude=35.0, standard_parallels=(30.0, 43.0),
 )
@@ -1806,7 +1820,7 @@ def _basemap(ax):
     ax.add_feature(cfeature.OCEAN.with_scale("50m"), facecolor="#fafafa", edgecolor="none")
     ax.add_feature(cfeature.COASTLINE.with_scale("50m"), linewidth=0.4, edgecolor="#94a3b8")
 
-def _hex_panel(fig, ax, df_sub, title, vmax_cm, col="horizontal_m"):
+def _hex_panel(fig, ax, df_sub, title, vmax_cm, col):
     _basemap(ax)
     _vmax_m = vmax_cm / 100.0
     _norm = Normalize(vmin=0.0, vmax=_vmax_m)
@@ -1824,7 +1838,7 @@ def _hex_panel(fig, ax, df_sub, title, vmax_cm, col="horizontal_m"):
                    edgecolors="white", linewidths=0.3, mincnt=1, alpha=0.5, zorder=10)
     _keep = _counts >= MIN_STATIONS_PER_CELL
     hb.set_offsets(hb.get_offsets()[_keep]); hb.set_array(hb.get_array()[_keep])
-    ax.set_title(title, fontsize=11)
+    ax.set_title(title, fontsize=10)
     ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
     cbar = fig.colorbar(hb, ax=ax, fraction=0.04, pad=0.03, extend="max",
                         ticks=np.linspace(0.0, _vmax_m, 5))
@@ -1849,6 +1863,18 @@ def _convex_hull(points):
             upper.pop()
         upper.append(p)
     return lower[:-1] + upper[:-1]
+
+def _draw_inside_boundary(ax):
+    if not HEX_HAS_INOUT:
+        return
+    _in = HEX_EPOCHS_DF[HEX_EPOCHS_DF["isinside"]].drop_duplicates("station")
+    _groups = (_in.groupby("netid") if HEX_HAS_NETID else [(None, _in)])
+    for _nid, _g in _groups:
+        _hull = _convex_hull(_g[["lon", "lat"]].to_numpy())
+        if len(_hull) >= 3:
+            _poly = np.array(_hull + [_hull[0]])
+            ax.plot(_poly[:, 0], _poly[:, 1], transform=ccrs.PlateCarree(),
+                    color=COLOR_EMPHASIS, linewidth=1.1, alpha=0.85, zorder=20)
 ```
 
 ```{python}
@@ -1862,22 +1888,27 @@ if HEX_PRESENT and not HEX_REAL_DATA:
 #| label: fig-hex-all
 #| fig-cap: "{{< meta caps.pro.hex_all >}}"
 if HEX_PRESENT:
-    fig, ax = plt.subplots(figsize=(6.4, 6.8), subplot_kw={"projection": _PROJ_AEA})
-    _hex_panel(fig, ax, HEX_EPOCHS_DF, T("hex_title_all"), H_VMAX_CM)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 6), subplot_kw={"projection": _PROJ_AEA})
+    _hex_panel(fig, axes[0], HEX_EPOCHS_DF,
+               f'{T("cut_all")} — {T("metric_h")}', H_VMAX_CM, "horizontal_m")
+    _hex_panel(fig, axes[1], HEX_EPOCHS_DF,
+               f'{T("cut_all")} — {T("metric_v")}', V_VMAX_CM, "vertical_m")
     plt.tight_layout()
 else:
     print(T("hex_missing").format(period=PERIOD_LABEL))
 ```
 
 ```{python}
-#| label: fig-hex-daynight-h
-#| fig-cap: "{{< meta caps.pro.hex_daynight_h >}}"
+#| label: fig-hex-daynight
+#| fig-cap: "{{< meta caps.pro.hex_daynight >}}"
 if HEX_PRESENT:
-    fig, axes = plt.subplots(1, 2, figsize=(11, 6), subplot_kw={"projection": _PROJ_AEA})
-    _hex_panel(fig, axes[0], HEX_EPOCHS_DF[HEX_EPOCHS_DF["is_day"]],
-               f'{T("hex_title_horiz")} — {T("label_day")}', H_VMAX_CM)
-    _hex_panel(fig, axes[1], HEX_EPOCHS_DF[~HEX_EPOCHS_DF["is_day"]],
-               f'{T("hex_title_horiz")} — {T("label_night")}', H_VMAX_CM)
+    _day = HEX_EPOCHS_DF[HEX_EPOCHS_DF["is_day"]]
+    _night = HEX_EPOCHS_DF[~HEX_EPOCHS_DF["is_day"]]
+    fig, axes = plt.subplots(2, 2, figsize=(11, 11.5), subplot_kw={"projection": _PROJ_AEA})
+    _hex_panel(fig, axes[0, 0], _day, f'{T("metric_h")} — {T("label_day")}', H_VMAX_CM, "horizontal_m")
+    _hex_panel(fig, axes[0, 1], _night, f'{T("metric_h")} — {T("label_night")}', H_VMAX_CM, "horizontal_m")
+    _hex_panel(fig, axes[1, 0], _day, f'{T("metric_v")} — {T("label_day")}', V_VMAX_CM, "vertical_m")
+    _hex_panel(fig, axes[1, 1], _night, f'{T("metric_v")} — {T("label_night")}', V_VMAX_CM, "vertical_m")
     plt.tight_layout()
 ```
 
@@ -1885,19 +1916,13 @@ if HEX_PRESENT:
 #| label: fig-hex-inout
 #| fig-cap: "{{< meta caps.pro.hex_inout >}}"
 if HEX_PRESENT:
-    fig, ax = plt.subplots(figsize=(6.4, 6.8), subplot_kw={"projection": _PROJ_AEA})
-    _hex_panel(fig, ax, HEX_EPOCHS_DF, T("hex_inout_boundary"), H_VMAX_CM)
-    # Overlay the inside-network boundary: per-network convex hull of the
-    # inside-network stations (approximates the CLAS interpolation area).
-    if HEX_HAS_INOUT:
-        _in = HEX_EPOCHS_DF[HEX_EPOCHS_DF["isinside"]].drop_duplicates("station")
-        _groups = (_in.groupby("netid") if HEX_HAS_NETID else [(None, _in)])
-        for _nid, _g in _groups:
-            _hull = _convex_hull(_g[["lon", "lat"]].to_numpy())
-            if len(_hull) >= 3:
-                _poly = np.array(_hull + [_hull[0]])
-                ax.plot(_poly[:, 0], _poly[:, 1], transform=ccrs.PlateCarree(),
-                        color=COLOR_EMPHASIS, linewidth=1.1, alpha=0.85, zorder=20)
+    fig, axes = plt.subplots(1, 2, figsize=(11, 6), subplot_kw={"projection": _PROJ_AEA})
+    _hex_panel(fig, axes[0], HEX_EPOCHS_DF,
+               f'{T("metric_h")} — {T("hex_inout_boundary")}', H_VMAX_CM, "horizontal_m")
+    _draw_inside_boundary(axes[0])
+    _hex_panel(fig, axes[1], HEX_EPOCHS_DF,
+               f'{T("metric_v")} — {T("hex_inout_boundary")}', V_VMAX_CM, "vertical_m")
+    _draw_inside_boundary(axes[1])
     plt.tight_layout()
 ```
 
