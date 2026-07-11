@@ -325,6 +325,18 @@ def render(
         json.dumps(params, default=str, indent=2), encoding="utf-8",
     )
     env = {**os.environ, "PNTMONI_REPORT_PARAMS": str(params_path.resolve())}
+    # Correction re-renders: the HTML title-block banner's "Published"/
+    # "公開" date is driven by Quarto/pandoc's own `date` metadata field
+    # (frontmatter `date: today`), which a code cell cannot rewrite
+    # after the fact — unlike the PDF cover and revision table, which
+    # already read INITIAL_PUB_DATE from PNTMONI_REPORT_PARAMS inside
+    # the qmd. reports/templates/pntmoni-date.lua overrides `date` from
+    # this env var when set; leave it unset when initial_pub_date is
+    # empty (first publication) so the frontmatter's `date: today`
+    # keyword still resolves to the render day, unchanged.
+    initial_pub_date = str(params.get("initial_pub_date") or "")
+    if initial_pub_date:
+        env["PNTMONI_TITLE_DATE"] = initial_pub_date
     out: dict[str, Path] = {}
     for lang in langs:
         lang_dir = output_dir / lang

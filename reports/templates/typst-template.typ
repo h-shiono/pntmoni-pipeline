@@ -177,7 +177,25 @@
   // makes a row that no longer fits move to the next page as a whole
   // (longtable-like). Verified not to perturb auto column sizing or
   // per-cell alignment (right / horizon) on the bundled Typst 0.14.2.
-  show table.cell: it => block(breakable: false, inset: 0pt, it)
+  //
+  // Underscore-joined tokens (event-type values like
+  // `scheduled_maintenance`, sourced verbatim from the outage
+  // parquet) have no break opportunity, so under Typst's "auto"
+  // column-width negotiation a wide neighbor column (e.g. a long
+  // `severity` value like `informational`) can squeeze the token's
+  // column below the token's natural width — the unbreakable text
+  // then overprints the next cell rather than wrapping (observed on
+  // the 2026-06 CLAS-rapid PDFs' NAQU/NANU/NAGU events table;
+  // reproduced in isolation with the bundled Typst 0.14.2). Insert a
+  // zero-width space after each literal "_" so the line breaker gets
+  // an optional break point there; this only adds an opportunity, it
+  // never forces a break, so cells that already fit their column are
+  // unaffected. Scoped inside the table.cell show rule so no other
+  // text (headings, prose, captions) is touched.
+  show table.cell: it => block(breakable: false, inset: 0pt)[
+    #show "_": "_" + sym.zws
+    #it
+  ]
 
   // Provenance cover + TOC, driven by the typst-cover cell's state
   // update (none when a template renders without the cover cell). The

@@ -2,6 +2,8 @@
 title: "PNT Moni Monthly Report"
 subtitle: "QZSS CLAS Performance Evaluation"
 date: today
+filters:
+  - pntmoni-date.lua
 author: "PNT Moni"
 format:
   html:

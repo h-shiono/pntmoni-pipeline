@@ -2,6 +2,8 @@
 title: "{{< meta title_qc >}}"
 subtitle: "{{< meta subtitle_qc >}}"
 date: today
+filters:
+  - pntmoni-date.lua
 author: "PNT Moni"
 format:
   html:
