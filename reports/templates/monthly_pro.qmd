@@ -864,6 +864,14 @@ STR = {
         "reg_col_v95": "V95 [cm]",
         "reg_col_ttff95": "TTFF95 [s]",
         "reg_col_fix": "Fix rate",
+        "reg_col_h95_day": "H95 day [cm]",
+        "reg_col_h95_night": "H95 night [cm]",
+        "reg_col_v95_day": "V95 day [cm]",
+        "reg_col_v95_night": "V95 night [cm]",
+        "reg_col_h95_in": "H95 in [cm]",
+        "reg_col_h95_out": "H95 out [cm]",
+        "reg_col_v95_in": "V95 in [cm]",
+        "reg_col_v95_out": "V95 out [cm]",
         "reg_map_cbar_h": "Station H95 [cm]",
         "reg_map_cbar_v": "Station V95 [cm]",
         "reg_grid_label": "CLAS grid",
@@ -1036,6 +1044,14 @@ STR = {
         "reg_col_v95": "V95 [cm]",
         "reg_col_ttff95": "TTFF95 [s]",
         "reg_col_fix": "Fix率",
+        "reg_col_h95_day": "H95 昼 [cm]",
+        "reg_col_h95_night": "H95 夜 [cm]",
+        "reg_col_v95_day": "V95 昼 [cm]",
+        "reg_col_v95_night": "V95 夜 [cm]",
+        "reg_col_h95_in": "H95 網内 [cm]",
+        "reg_col_h95_out": "H95 網外 [cm]",
+        "reg_col_v95_in": "V95 網内 [cm]",
+        "reg_col_v95_out": "V95 網外 [cm]",
         "reg_map_cbar_h": "局別 H95 [cm]",
         "reg_map_cbar_v": "局別 V95 [cm]",
         "reg_grid_label": "CLAS グリッド",
@@ -2047,24 +2063,20 @@ equipment_table
 # Regional Overview
 
 Per-region breakdown across the **12 CLAS Compact Networks** (ordered
-1–12). Two views, directly comparable across regions:
-
-1. **Comparison table** — one row per network: station count, H50 / H95
-   / V95, TTFF95 and fix rate, from the accuracy / TTFF network cubes.
-2. **Small-multiple maps** — one panel per network showing the CLAS
-   grid points (the network's footprint) with that network's GEONET
-   stations drawn as **individual points coloured by their own H95**
-   (shared colour scale). Unlike the national §Spatial Distribution hex
-   maps, this regional view keeps each station resolved rather than
-   binning, so within-network outliers stay visible.
+1–12), under the **same three cuts as the National Overview**: all data,
+daytime vs nighttime, and Inside vs Outside network. Each cut carries a
+**comparison table** (one row per network, directly comparable across
+regions) and **per-network small-multiple maps** — one panel per network
+showing the CLAS grid points (the network's footprint) with that
+network's GEONET stations as **individual points coloured by their own
+error percentile** (shared scale, auto-zoomed). Unlike the national
+§Spatial Distribution hex maps, this regional view keeps every station
+resolved rather than binning, so within-network outliers stay visible.
 :::
 ::: {.content-visible when-profile="ja"}
 # 地域概況
 
-**CLAS 12 の Compact Network**(網1〜12の順)ごとの内訳。地域間を直接比較できる 2 つのビューで提示します。
-
-1. **比較表** — 1 網 1 行:局数、H50 / H95 / V95、TTFF95、Fix 率(精度 / TTFF ネットワークキューブより)。
-2. **小マルチプル地図** — 1 網 1 パネル。CLAS グリッド点(当該網の footprint)に、その網の GEONET 局を**局ごとの H95 で色分けした個別点**として重畳(共通カラースケール)。全国の§空間分布 Hex 地図と異なり、地域ビューでは各局を集約(ビニング)せず個別に描くため、網内の外れ値が埋もれません。
+**CLAS 12 の Compact Network**(網1〜12の順)ごとの内訳を、**全国概況と同じ 3 カット**(全データ / 昼間・夜間 / 網内・網外)で提示します。各カットに**比較表**(1 網 1 行、地域間を直接比較)と**ネットワーク別小マルチプル地図**をぶら下げます。地図は 1 網 1 パネルで、CLAS グリッド点(当該網の footprint)に、その網の GEONET 局を**局ごとの誤差パーセンタイルで色分けした個別点**として重畳(共通スケール・自網域に自動ズーム)。全国の§空間分布 Hex 地図と異なり、各局を集約(ビニング)せず個別に描くため、網内の外れ値が埋もれません。
 :::
 
 ```{python}
@@ -2099,17 +2111,29 @@ try:
 except Exception:
     REGION_GRID = None
 
-# --- per-station points: H95 ⊕ netid ⊕ coords ---
+# --- per-station points: H95/V95 (all + day + night) ⊕ netid ⊕ coords ---
+# The §7.2 day/night maps need per-station values per window; accuracy_
+# station carries window ∈ {all, day, night}, so pivot to wide columns
+# h95_cm/v95_cm (all), h95_day/v95_day, h95_night/v95_night.
 REGION_STATION_DF = None
 REGION_SYNTH = False
 if _acc_station_eq is not None and STATION_META is not None:
-    _st_rg = _acc_station_eq[_acc_station_eq["window"] == "all"][
-        ["station", "hor_p95", "ver_p95"]
-    ].copy()
-    _st_rg["station"] = _st_rg["station"].astype(str)
+    _base_rg = _acc_station_eq[["station", "window", "hor_p95", "ver_p95"]].copy()
+    _base_rg["station"] = _base_rg["station"].astype(str)
+    _pieces_rg = []
+    for _w_rg, _suf_rg in (("all", "_cm"), ("day", "_day"), ("night", "_night")):
+        _wsub = _base_rg[_base_rg["window"] == _w_rg][
+            ["station", "hor_p95", "ver_p95"]
+        ].rename(columns={"hor_p95": f"h95{_suf_rg}",
+                          "ver_p95": f"v95{_suf_rg}"}).set_index("station")
+        _pieces_rg.append(_wsub)
+    _wide_rg = pd.concat(_pieces_rg, axis=1).reset_index()
+    for _c_rg in _wide_rg.columns:
+        if _c_rg.startswith(("h95", "v95")):
+            _wide_rg[_c_rg] = _wide_rg[_c_rg] * 100.0
     _meta_rg = STATION_META.copy()
     _meta_rg["station"] = _meta_rg["station"].astype(str)
-    _m_rg = _st_rg.merge(
+    _m_rg = _wide_rg.merge(
         _meta_rg[["station", "netid", "isinside"]], on="station", how="left"
     )
     _coords_rg = None
@@ -2134,14 +2158,11 @@ if _acc_station_eq is not None and STATION_META is not None:
         _m_rg = _m_rg.merge(_coords_rg[["station", "lon", "lat"]],
                             on="station", how="left")
         _m_rg["netid"] = pd.to_numeric(_m_rg["netid"], errors="coerce")
-        _m_rg = _m_rg.dropna(subset=["netid", "lon", "lat"])
-        _m_rg["h95_cm"] = _m_rg["hor_p95"] * 100.0
-        _m_rg["v95_cm"] = _m_rg["ver_p95"] * 100.0
-        REGION_STATION_DF = _m_rg[
-            ["station", "netid", "isinside", "lon", "lat", "h95_cm", "v95_cm"]
-        ].reset_index(drop=True)
+        _m_rg = _m_rg.dropna(subset=["netid", "lon", "lat", "h95_cm"])
+        REGION_STATION_DF = _m_rg.reset_index(drop=True)
 
-# Synthetic fallback: scatter points around each network's grid centroid.
+# Synthetic fallback: scatter points around each network's grid centroid,
+# with a night bump so the §7.2 day/night contrast shows in preview.
 if REGION_STATION_DF is None or REGION_STATION_DF.empty:
     REGION_SYNTH = True
     _rng_rg = np.random.default_rng(71)
@@ -2156,32 +2177,34 @@ if REGION_STATION_DF is None or REGION_STATION_DF.empty:
     for _nid_rg, _row_rg in _cent_rg.iterrows():
         _n_rg = int(np.clip(_rng_rg.integers(6, 40), 3, 60))
         for _i_rg in range(_n_rg):
+            _h = float(_rng_rg.gamma(4.0, 3.0) + 4.0)
+            _v = float(_rng_rg.gamma(4.0, 5.0) + 6.0)
+            _dnf = float(_rng_rg.uniform(1.15, 1.45))  # night worse
             _rows_rg.append({
                 "station": f"S{int(_nid_rg):02d}{_i_rg:03d}",
                 "netid": float(_nid_rg),
                 "isinside": bool(_rng_rg.random() < 0.75),
                 "lon": _row_rg["lon"] + float(_rng_rg.normal(0, 0.9)),
                 "lat": _row_rg["lat"] + float(_rng_rg.normal(0, 0.7)),
-                "h95_cm": float(_rng_rg.gamma(4.0, 3.0) + 4.0),
-                "v95_cm": float(_rng_rg.gamma(4.0, 5.0) + 6.0),
+                "h95_cm": _h, "v95_cm": _v,
+                "h95_day": _h / _dnf, "v95_day": _v / _dnf,
+                "h95_night": _h * _dnf * 0.9, "v95_night": _v * _dnf * 0.9,
             })
     REGION_STATION_DF = pd.DataFrame(_rows_rg)
 ```
 
-::: {.content-visible when-profile="en"}
-## Comparison Table
-:::
-::: {.content-visible when-profile="ja"}
-## 比較表
-:::
-
 ```{python}
-#| label: tbl-regional
-#| tbl-cap: "{{< meta caps.pro.regional_table >}}"
+#| label: regional-helpers
+#| include: false
 
-# Per-network summary from the accuracy / TTFF network cubes
-# (network_id 1..12, scope='all', qualified→all station_set fallback,
-# full-day window). Values match the cube the headline tables use.
+# Shared helpers for all three §7 cuts.
+# (1) network-cube accessors (network_id 1..12, qualified→all fallback);
+# (2) the per-network small-multiples map builder (metric column + its own
+#     robust colour scale + optional inside-network boundary overlay).
+import cartopy.crs as _ccrs_rg
+import cartopy.feature as _cfeat_rg
+from matplotlib.colors import Normalize as _Norm_rg
+
 def _net_acc(nid, col, scope="all", window="all"):
     if ACCURACY_NETWORK_DF is None:
         return None
@@ -2219,55 +2242,11 @@ def _pctr(v):
 def _intr(v):
     return f"{int(v)}" if v is not None and v == v else "n/a"
 
-_reg_rows = []
-for _nid in range(1, 13):
-    if ACCURACY_NETWORK_DF is not None:
-        _reg_rows.append({
-            T("reg_col_net"): _nid,
-            T("reg_col_name"): _NET_NAMES[_nid - 1],
-            T("reg_col_n"): _intr(_net_acc(_nid, "n_stations")),
-            T("reg_col_h50"): _cmr(_net_acc(_nid, "hor_p50")),
-            T("reg_col_h95"): _cmr(_net_acc(_nid, "hor_p95")),
-            T("reg_col_v95"): _cmr(_net_acc(_nid, "ver_p95")),
-            T("reg_col_ttff95"): _s0r(_net_ttff(_nid, "ttff_p95_sec")),
-            T("reg_col_fix"): _pctr(_net_acc(_nid, "fix_rate")),
-        })
-    else:
-        _sub_rg = REGION_STATION_DF[REGION_STATION_DF["netid"] == float(_nid)]
-        _has = len(_sub_rg) > 0
-        _reg_rows.append({
-            T("reg_col_net"): _nid,
-            T("reg_col_name"): _NET_NAMES[_nid - 1],
-            T("reg_col_n"): _intr(len(_sub_rg)) if _has else "n/a",
-            T("reg_col_h50"): f"{np.median(_sub_rg['h95_cm'])*0.6:.1f}" if _has else "n/a",
-            T("reg_col_h95"): f"{np.median(_sub_rg['h95_cm']):.1f}" if _has else "n/a",
-            T("reg_col_v95"): f"{np.median(_sub_rg['v95_cm']):.1f}" if _has else "n/a",
-            T("reg_col_ttff95"): "n/a",
-            T("reg_col_fix"): "n/a",
-        })
-regional_table = pd.DataFrame(_reg_rows)
-regional_table
-```
-
-::: {.content-visible when-profile="en"}
-## Per-Network Maps
-:::
-::: {.content-visible when-profile="ja"}
-## ネットワーク別地図
-:::
-
-```{python}
-#| label: regional-map-helper
-#| include: false
-
-# Shared builder for the §7 per-network small-multiples. Both the
-# horizontal (H95) and vertical (V95) maps are the same 4×3 layout with
-# the same grid-point footprint and auto-zoom — only the coloured metric
-# and its (independent) colour scale differ, so V's larger errors get
-# their own range rather than saturating an H-tuned scale.
-import cartopy.crs as _ccrs_rg
-import cartopy.feature as _cfeat_rg
-from matplotlib.colors import Normalize as _Norm_rg
+# Synthetic per-network percentile from the station points (preview only).
+def _syn_pct(nid, col, q=95):
+    _sub = REGION_STATION_DF[REGION_STATION_DF["netid"] == float(nid)]
+    _sub = _sub[np.isfinite(_sub[col])] if col in _sub.columns else _sub.iloc[0:0]
+    return f"{np.percentile(_sub[col], q):.1f}" if len(_sub) else "n/a"
 
 _proj_rg = _ccrs_rg.AlbersEqualArea(
     central_longitude=137.0, central_latitude=35.0,
@@ -2275,7 +2254,7 @@ _proj_rg = _ccrs_rg.AlbersEqualArea(
 )
 _pc_rg = _ccrs_rg.PlateCarree()
 
-def _regional_multiples(metric_col, cbar_label):
+def _regional_multiples(metric_col, cbar_label, *, draw_boundary=False):
     _vals = REGION_STATION_DF[metric_col].to_numpy()
     _vals = _vals[np.isfinite(_vals)]
     _vmin = float(np.floor(np.nanpercentile(_vals, 5))) if _vals.size else 0.0
@@ -2291,6 +2270,7 @@ def _regional_multiples(metric_col, cbar_label):
         _gsub = (REGION_GRID[REGION_GRID["netid"] == _nid]
                  if REGION_GRID is not None else None)
         _ssub = REGION_STATION_DF[REGION_STATION_DF["netid"] == float(_nid)]
+        _mvals = _ssub[_ssub[metric_col].notna()] if metric_col in _ssub else _ssub
         _lons, _lats = [], []
         if _gsub is not None and len(_gsub):
             _lons += list(_gsub["lon"]); _lats += list(_gsub["lat"])
@@ -2311,14 +2291,16 @@ def _regional_multiples(metric_col, cbar_label):
             ax.scatter(_gsub["lon"], _gsub["lat"], s=9, marker="s",
                        color="#d6d3d1", edgecolors="#a8a29e", linewidths=0.2,
                        transform=_pc_rg, zorder=6)
-        if len(_ssub):
+        if len(_mvals):
             _sc = ax.scatter(
-                _ssub["lon"], _ssub["lat"], c=_ssub[metric_col],
+                _mvals["lon"], _mvals["lat"], c=_mvals[metric_col],
                 cmap=CMAP_SEQUENTIAL, norm=_norm, s=15, marker="o",
                 edgecolors="#061128", linewidths=0.2, transform=_pc_rg,
                 zorder=10,
             )
-        _n_lab = len(_ssub) if len(_ssub) else T("reg_no_stn")
+        if draw_boundary:
+            _draw_inside_boundary(ax)  # §6.2 GeoJSON rings (networks 3–11)
+        _n_lab = len(_mvals) if len(_mvals) else T("reg_no_stn")
         ax.set_title(
             T("reg_panel_title").format(netid=_nid, name=_NET_NAMES[_nid - 1],
                                         n=_n_lab),
@@ -2339,18 +2321,196 @@ def _regional_multiples(metric_col, cbar_label):
     return fig
 ```
 
+::: {.content-visible when-profile="en"}
+## All Data
+
+Full-day, all-station view: the comparison table plus per-network H95 and
+V95 maps.
+:::
+::: {.content-visible when-profile="ja"}
+## 全データ
+
+全日・全局のビュー:比較表と、ネットワーク別の H95・V95 地図。
+:::
+
 ```{python}
-#| label: fig-regional-multiples-h
+#| label: tbl-regional
+#| tbl-cap: "{{< meta caps.pro.regional_table >}}"
+
+# Per-network summary (scope=all, full-day window) from the accuracy /
+# TTFF network cubes. Values match the cube the headline tables use.
+_reg_rows = []
+for _nid in range(1, 13):
+    if ACCURACY_NETWORK_DF is not None:
+        _reg_rows.append({
+            T("reg_col_net"): _nid,
+            T("reg_col_name"): _NET_NAMES[_nid - 1],
+            T("reg_col_n"): _intr(_net_acc(_nid, "n_stations")),
+            T("reg_col_h50"): _cmr(_net_acc(_nid, "hor_p50")),
+            T("reg_col_h95"): _cmr(_net_acc(_nid, "hor_p95")),
+            T("reg_col_v95"): _cmr(_net_acc(_nid, "ver_p95")),
+            T("reg_col_ttff95"): _s0r(_net_ttff(_nid, "ttff_p95_sec")),
+            T("reg_col_fix"): _pctr(_net_acc(_nid, "fix_rate")),
+        })
+    else:
+        _sub_rg = REGION_STATION_DF[REGION_STATION_DF["netid"] == float(_nid)]
+        _has = len(_sub_rg) > 0
+        _reg_rows.append({
+            T("reg_col_net"): _nid,
+            T("reg_col_name"): _NET_NAMES[_nid - 1],
+            T("reg_col_n"): _intr(len(_sub_rg)) if _has else "n/a",
+            T("reg_col_h50"): _syn_pct(_nid, "h95_cm", 50),
+            T("reg_col_h95"): _syn_pct(_nid, "h95_cm", 95),
+            T("reg_col_v95"): _syn_pct(_nid, "v95_cm", 95),
+            T("reg_col_ttff95"): "n/a",
+            T("reg_col_fix"): "n/a",
+        })
+regional_table = pd.DataFrame(_reg_rows)
+regional_table
+```
+
+```{python}
+#| label: fig-regional-all-h
 #| fig-cap: "{{< meta caps.pro.regional_map_h >}}"
 
 _regional_multiples("h95_cm", T("reg_map_cbar_h"))
 ```
 
 ```{python}
-#| label: fig-regional-multiples-v
+#| label: fig-regional-all-v
 #| fig-cap: "{{< meta caps.pro.regional_map_v >}}"
 
 _regional_multiples("v95_cm", T("reg_map_cbar_v"))
+```
+
+::: {.content-visible when-profile="en"}
+## Daytime & Nighttime
+
+Day/night split per network (day/night per the Shiono & Kubo 2026 UTC
+definition). The table gives H95/V95 for each window; the maps show each
+station's own daytime and nighttime error separately.
+:::
+::: {.content-visible when-profile="ja"}
+## 昼間・夜間
+
+ネットワーク別の昼夜内訳(昼夜は Shiono & Kubo 2026 の UTC 定義)。表は窓ごとの H95/V95、地図は各局の昼・夜の誤差を別々に示します。
+:::
+
+```{python}
+#| label: tbl-regional-daynight
+#| tbl-cap: "{{< meta caps.pro.regional_table_dn >}}"
+
+_reg_dn_rows = []
+for _nid in range(1, 13):
+    if ACCURACY_NETWORK_DF is not None:
+        _reg_dn_rows.append({
+            T("reg_col_net"): _nid,
+            T("reg_col_name"): _NET_NAMES[_nid - 1],
+            T("reg_col_h95_day"): _cmr(_net_acc(_nid, "hor_p95", window="day")),
+            T("reg_col_h95_night"): _cmr(_net_acc(_nid, "hor_p95", window="night")),
+            T("reg_col_v95_day"): _cmr(_net_acc(_nid, "ver_p95", window="day")),
+            T("reg_col_v95_night"): _cmr(_net_acc(_nid, "ver_p95", window="night")),
+        })
+    else:
+        _reg_dn_rows.append({
+            T("reg_col_net"): _nid,
+            T("reg_col_name"): _NET_NAMES[_nid - 1],
+            T("reg_col_h95_day"): _syn_pct(_nid, "h95_day", 95),
+            T("reg_col_h95_night"): _syn_pct(_nid, "h95_night", 95),
+            T("reg_col_v95_day"): _syn_pct(_nid, "v95_day", 95),
+            T("reg_col_v95_night"): _syn_pct(_nid, "v95_night", 95),
+        })
+regional_table_dn = pd.DataFrame(_reg_dn_rows)
+regional_table_dn
+```
+
+```{python}
+#| label: fig-regional-day-h
+#| fig-cap: "{{< meta caps.pro.regional_map_day_h >}}"
+
+_regional_multiples("h95_day", T("reg_map_cbar_h"))
+```
+
+```{python}
+#| label: fig-regional-night-h
+#| fig-cap: "{{< meta caps.pro.regional_map_night_h >}}"
+
+_regional_multiples("h95_night", T("reg_map_cbar_h"))
+```
+
+```{python}
+#| label: fig-regional-day-v
+#| fig-cap: "{{< meta caps.pro.regional_map_day_v >}}"
+
+_regional_multiples("v95_day", T("reg_map_cbar_v"))
+```
+
+```{python}
+#| label: fig-regional-night-v
+#| fig-cap: "{{< meta caps.pro.regional_map_night_v >}}"
+
+_regional_multiples("v95_night", T("reg_map_cbar_v"))
+```
+
+::: {.content-visible when-profile="en"}
+## Inside & Outside Network
+
+Inside vs Outside split per network. The table gives H95/V95 for the
+inside- and outside-network station sets (networks 1, 2, 12 have no
+inside-network area → "n/a"); the maps colour every station by its H95 /
+V95 with the exact methodology v1.0.0 inside-network boundary overlaid, so
+which stations fall inside vs outside is visible against the error field.
+:::
+::: {.content-visible when-profile="ja"}
+## 網内・網外
+
+ネットワーク別の網内/網外内訳。表は網内・網外の局集合ごとの H95/V95(網1・2・12 は網内域がないため「n/a」)、地図は各局を H95 / V95 で色分けし、方法論 v1.0.0 の正式な網内境界を重畳して、どの局が網内/網外かを誤差場と重ねて示します。
+:::
+
+```{python}
+#| label: tbl-regional-inout
+#| tbl-cap: "{{< meta caps.pro.regional_table_io >}}"
+
+_reg_io_rows = []
+for _nid in range(1, 13):
+    if ACCURACY_NETWORK_DF is not None:
+        _reg_io_rows.append({
+            T("reg_col_net"): _nid,
+            T("reg_col_name"): _NET_NAMES[_nid - 1],
+            T("reg_col_h95_in"): _cmr(_net_acc(_nid, "hor_p95", scope="inside")),
+            T("reg_col_h95_out"): _cmr(_net_acc(_nid, "hor_p95", scope="outside")),
+            T("reg_col_v95_in"): _cmr(_net_acc(_nid, "ver_p95", scope="inside")),
+            T("reg_col_v95_out"): _cmr(_net_acc(_nid, "ver_p95", scope="outside")),
+        })
+    else:
+        _sub_rg = REGION_STATION_DF[REGION_STATION_DF["netid"] == float(_nid)]
+        _in = _sub_rg[_sub_rg["isinside"]]
+        _out = _sub_rg[~_sub_rg["isinside"].astype(bool)]
+        _p = lambda d, c: (f"{np.percentile(d[c], 95):.1f}" if len(d) else "n/a")
+        _reg_io_rows.append({
+            T("reg_col_net"): _nid,
+            T("reg_col_name"): _NET_NAMES[_nid - 1],
+            T("reg_col_h95_in"): _p(_in, "h95_cm"),
+            T("reg_col_h95_out"): _p(_out, "h95_cm"),
+            T("reg_col_v95_in"): _p(_in, "v95_cm"),
+            T("reg_col_v95_out"): _p(_out, "v95_cm"),
+        })
+regional_table_io = pd.DataFrame(_reg_io_rows)
+regional_table_io
+```
+
+```{python}
+#| label: fig-regional-inout-h
+#| fig-cap: "{{< meta caps.pro.regional_map_inout_h >}}"
+
+_regional_multiples("h95_cm", T("reg_map_cbar_h"), draw_boundary=True)
+```
+
+```{python}
+#| label: fig-regional-inout-v
+#| fig-cap: "{{< meta caps.pro.regional_map_inout_v >}}"
+
+_regional_multiples("v95_cm", T("reg_map_cbar_v"), draw_boundary=True)
 ```
 
 <!-- ==================================================================
