@@ -137,6 +137,58 @@ edited here.
 
 ---
 
+## [2026-07-11] Task: Pro §6 全国概況 — figures + receiver×FW accuracy
+
+### Goal
+Fill Pro §6 (National Overview): faceted error/spatial distributions
+(day/night × inside/outside) from the existing cube, plus a NEW
+receiver × receiver-FW accuracy breakdown requiring a new analysis
+aggregation.
+
+### Definitions (resolved 2026-07-11)
+- **Day/night** — ALREADY paper-aligned, NO re-processing.
+  `DAY_HOURS_UTC = {0–9, 21–23} UTC` == Shiono & Kubo (2026, NAVIGATION):
+  "daytime 00:00–09:59 and 21:00–23:59 UTC; nighttime 10:00–20:59 UTC."
+  State this definition in the §6 prose.
+- **Inside/outside** — already defined (`isinside`, point-in-polygon;
+  scopes all/inside/outside/outside_wo_southern). No change.
+- **Receiver×FW** — `rec_type` + `rec_fw_ver` per station-day live in the
+  QC summary (teqc, Product 2, `qc/_summary_parser.py` wide_columns).
+  User calls: build a NEW methodology-correct aggregation (epoch pool,
+  exact percentiles, monthly re-pool), NOT a render-time approx.
+
+### Plan
+- [ ] A. Analysis: `accuracy_equipment` aggregation — join epoch_errors
+      to per-station-day (rec_type, rec_fw_ver), group by
+      (combo × window[× station_set]), pool epochs, exact percentiles
+      (reuse `_group_stats`), ADR-0013 min-stations-per-combo suppression.
+      Mirror `compute_network_accuracy` in `_accuracy_stats.py`.
+- [ ] B. Monthly re-pool in `_monthly.py` → `accuracy_equipment_monthly`.
+- [ ] C. CLI wiring + driver INPUTS path; unit test on the pure fn.
+- [ ] D. §6.1 誤差分布: faceted CDFs (H/V/TTFF), day/night × inside/outside
+      (accuracy_network_monthly netid=all + epoch_errors sample).
+- [ ] E. §6.2 空間分布: day/night hex pair (epoch_errors is_day split,
+      reuse Free `_render_hex_panel`).
+- [ ] F. §6.3 受信機×FW別精度 (NEW subsection): ranking table + box/strip
+      of top-N combos (accuracy_equipment_monthly; min-station suppress).
+- [ ] G. Synthetic fallbacks so `quarto preview` renders standalone.
+- [ ] H. Verify: aggregation on real data (sample parquet) + render
+      both profiles, 0 cell-errors.
+
+### Phase Guard
+[ ] Pro tier (see prior task's note). Receiver×FW introduces a Product 2
+    (QC equipment) dependency into the Product 1 (CLAS) report — keyed by
+    station, acceptable; note in provenance.
+
+### Done Criteria
+- §6 renders (ja+en) with the three subsections populated on real data;
+  `accuracy_equipment_monthly` parquet produced and unit-tested.
+
+### Result
+(Fill after completion)
+
+---
+
 ## [2026-06-10] Task: Bilingual (JA/EN) report templates
 
 ### Goal

@@ -50,6 +50,15 @@ STATION_SETS = ("eval_only", "qualified", "all")
 NETWORK_IDS_INDIVIDUAL = tuple(str(i) for i in range(1, 13))
 NETWORK_IDS = NETWORK_IDS_INDIVIDUAL + ("all",)
 
+# Receiver × firmware small-combo suppression (ADR 0013, the same
+# small-cell rule the hex maps apply): a combo backed by fewer than this
+# many distinct stations is neither anonymous (GEONET equipment is
+# public-ish and a near-single-station combo is reverse-engineerable) nor
+# a stable percentile. Kept equal to the report's MIN_STATIONS_PER_CELL.
+MIN_STATIONS_PER_COMBO = 3
+
+DEFAULT_QC_SUMMARY_ROOT = Path("data/processed/qc_summary")
+
 _PERCENTILES = (50, 95, 99, 99.9)
 
 
@@ -234,6 +243,102 @@ def compute_network_accuracy(
 
 
 # ---------------------------------------------------------------------------
+# Per receiver × firmware (equipment) accuracy
+# ---------------------------------------------------------------------------
+
+def qc_summary_path(target: date, root: Path = DEFAULT_QC_SUMMARY_ROOT) -> Path:
+    return root / f"{target.year}" / f"{target.strftime('%Y%m%d')}.parquet"
+
+
+def load_equipment(
+    dates: Sequence[date],
+    qc_summary_root: Path = DEFAULT_QC_SUMMARY_ROOT,
+) -> pd.DataFrame:
+    """Per-station receiver / firmware snapshot for a period.
+
+    Returns one row per station: ``station``, ``rec_type``, ``rec_fw_ver``.
+    Equipment is stable within a month (receiver/firmware swaps are rare),
+    so — mirroring how the registry is loaded once at the last found date —
+    we take the most recent available ``qc_summary`` in ``dates`` rather
+    than joining per-day. Missing/empty → empty frame (caller fails open).
+    """
+    for d in reversed(list(dates)):
+        p = qc_summary_path(d, qc_summary_root)
+        if p.is_file():
+            df = pd.read_parquet(p, columns=["id", "rec_type", "rec_fw_ver"])
+            df = df.rename(columns={"id": "station"}).drop_duplicates("station")
+            return df.reset_index(drop=True)
+    return pd.DataFrame(columns=["station", "rec_type", "rec_fw_ver"])
+
+
+def compute_equipment_accuracy(
+    epoch_errors: pd.DataFrame,
+    equipment: pd.DataFrame,
+    registry: pd.DataFrame,
+    *,
+    target_date: date,
+    mode: str,
+    engine_version: str,
+    min_stations_per_combo: int = MIN_STATIONS_PER_COMBO,
+) -> pd.DataFrame:
+    """Per (receiver × firmware) combo × station_set × window accuracy.
+
+    Long-format DataFrame: one row per (rec_type, rec_fw_ver, station_set,
+    window). Percentiles are pooled over every epoch in the combo (same
+    exact-pool rule as the network cube — percentiles cannot be averaged).
+    Combos backed by fewer than ``min_stations_per_combo`` distinct
+    stations are dropped (ADR 0013 small-combo suppression). An empty
+    ``equipment`` (no qc_summary) yields an empty frame.
+    """
+    cols = ["rec_type", "rec_fw_ver", "station_set", "window",
+            "n_stations", "n_epoch", "n_sat_mean", "fix_rate",
+            "hor_p50", "hor_p95", "hor_p99", "hor_p999", "hor_rms",
+            "ver_p50", "ver_p95", "ver_p99", "ver_p999", "ver_rms"]
+    if equipment.empty:
+        return pd.DataFrame(columns=["date", "mode", "engine_version", *cols])
+
+    reg_cols = ["rinex_id", "is_eval", "qualified"]
+    joined = epoch_errors.merge(
+        registry[reg_cols], left_on="station", right_on="rinex_id", how="inner",
+    ).merge(equipment, on="station", how="inner")
+    # Normalise the equipment strings so blanks/NaNs group as one bucket.
+    for c in ("rec_type", "rec_fw_ver"):
+        joined[c] = joined[c].fillna("UNKNOWN").astype(str).str.strip().replace("", "UNKNOWN")
+
+    rows: list[dict] = []
+    for (rec_type, rec_fw), base_combo in joined.groupby(
+        ["rec_type", "rec_fw_ver"], sort=True,
+    ):
+        for station_set in STATION_SETS:
+            base_set = _select_station_set(base_combo, station_set)
+            for window in WINDOWS:
+                sub = _select_window(base_set, window)
+                n_stations = int(sub["station"].nunique())
+                if n_stations < min_stations_per_combo:
+                    continue  # ADR 0013 small-combo suppression
+                stats = _group_stats(
+                    sub["horizontal_m"].to_numpy(),
+                    sub["vertical_m"].to_numpy(),
+                    sub["quality"].to_numpy(),
+                    sub["num_sat"].to_numpy(),
+                    n_stations=n_stations,
+                )
+                rows.append({
+                    "date": target_date.isoformat(),
+                    "mode": mode,
+                    "engine_version": engine_version,
+                    "rec_type": rec_type,
+                    "rec_fw_ver": rec_fw,
+                    "station_set": station_set,
+                    "window": window,
+                    **stats,
+                })
+    if not rows:
+        return pd.DataFrame(columns=["date", "mode", "engine_version", *cols])
+    return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------------
 
@@ -338,14 +443,19 @@ def _record_provenance(res: AccuracyDailyResult, path: Path) -> None:
 
 
 __all__ = [
-    "AccuracyDailyResult",
     "DEFAULT_EPOCH_ERRORS_ROOT",
     "DEFAULT_OUTPUT_ROOT",
+    "DEFAULT_QC_SUMMARY_ROOT",
+    "MIN_STATIONS_PER_COMBO",
     "NETWORK_IDS",
     "SCOPES",
     "STATION_SETS",
     "WINDOWS",
+    "AccuracyDailyResult",
     "compute_daily",
+    "compute_equipment_accuracy",
     "compute_network_accuracy",
     "compute_station_accuracy",
+    "load_equipment",
+    "qc_summary_path",
 ]

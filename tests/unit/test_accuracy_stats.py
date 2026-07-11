@@ -315,3 +315,97 @@ def test_compute_network_accuracy_outside_wo_southern_excludes_southern(tmp_path
     # 0500 (netid=1, southern) is excluded; 0231 (netid=7) and 1098
     # (no netid → is_southern=False) remain.
     assert cell["n_stations"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Receiver × firmware (equipment) accuracy — Pro §6.3
+# ---------------------------------------------------------------------------
+
+def _flat_registry(station_flags: dict[str, tuple[bool, bool]]) -> pd.DataFrame:
+    """Minimal registry frame: {station: (is_eval, qualified)}."""
+    return pd.DataFrame([
+        {"rinex_id": s, "is_eval": ev, "qualified": q}
+        for s, (ev, q) in station_flags.items()
+    ])
+
+
+def test_compute_equipment_accuracy_groups_by_combo_and_pools() -> None:
+    # Two combos of 3 stations each; constant errors → pooled percentile
+    # equals the value.
+    errs = {
+        "S1": (0.05, 0.10, 4), "S2": (0.05, 0.10, 4), "S3": (0.05, 0.10, 4),
+        "S4": (0.20, 0.40, 4), "S5": (0.20, 0.40, 4), "S6": (0.20, 0.40, 4),
+    }
+    df = _make_epoch_errors(errs)
+    reg = _flat_registry({s: (True, True) for s in errs})
+    equip = pd.DataFrame([
+        {"station": s, "rec_type": "TRIMBLE NETR9", "rec_fw_ver": "5.45"}
+        for s in ("S1", "S2", "S3")
+    ] + [
+        {"station": s, "rec_type": "SEPT POLARX5", "rec_fw_ver": "5.3.2"}
+        for s in ("S4", "S5", "S6")
+    ])
+    out = _accuracy_stats.compute_equipment_accuracy(
+        df, equip, reg, target_date=date(2026, 4, 1), mode="m", engine_version="v",
+    )
+    cell_a = out[(out["rec_type"] == "TRIMBLE NETR9")
+                 & (out["station_set"] == "all") & (out["window"] == "all")].iloc[0]
+    cell_b = out[(out["rec_type"] == "SEPT POLARX5")
+                 & (out["station_set"] == "all") & (out["window"] == "all")].iloc[0]
+    assert cell_a["n_stations"] == 3
+    assert cell_a["hor_p95"] == pytest.approx(0.05, abs=1e-4)
+    assert cell_b["n_stations"] == 3
+    assert cell_b["hor_p95"] == pytest.approx(0.20, abs=1e-4)
+    # Long-format schema carries the combo keys + the shared metric kernel.
+    assert {"rec_type", "rec_fw_ver", "station_set", "window",
+            "n_stations", "hor_p95", "ver_p95"}.issubset(out.columns)
+
+
+def test_compute_equipment_accuracy_suppresses_small_combos() -> None:
+    # Combo A has 3 stations (survives); combo C has 1 station (dropped,
+    # ADR 0013 small-combo suppression at the default threshold of 3).
+    errs = {
+        "S1": (0.05, 0.10, 4), "S2": (0.05, 0.10, 4), "S3": (0.05, 0.10, 4),
+        "S7": (0.9, 0.9, 4),
+    }
+    df = _make_epoch_errors(errs)
+    reg = _flat_registry({s: (True, True) for s in errs})
+    equip = pd.DataFrame([
+        {"station": s, "rec_type": "TRIMBLE NETR9", "rec_fw_ver": "5.45"}
+        for s in ("S1", "S2", "S3")
+    ] + [{"station": "S7", "rec_type": "RARE RX", "rec_fw_ver": "0.1"}])
+    out = _accuracy_stats.compute_equipment_accuracy(
+        df, equip, reg, target_date=date(2026, 4, 1), mode="m", engine_version="v",
+    )
+    assert "RARE RX" not in set(out["rec_type"])
+    assert "TRIMBLE NETR9" in set(out["rec_type"])
+
+
+def test_compute_equipment_accuracy_station_set_filter() -> None:
+    # 3 stations in one combo; only 2 are qualified → the qualified cell
+    # drops below the min-3 threshold and is suppressed, while the "all"
+    # cell (3 stations) survives.
+    errs = {"S1": (0.05, 0.1, 4), "S2": (0.05, 0.1, 4), "S3": (0.05, 0.1, 4)}
+    df = _make_epoch_errors(errs)
+    reg = _flat_registry({"S1": (True, True), "S2": (True, True), "S3": (True, False)})
+    equip = pd.DataFrame([
+        {"station": s, "rec_type": "RX", "rec_fw_ver": "1.0"} for s in errs
+    ])
+    out = _accuracy_stats.compute_equipment_accuracy(
+        df, equip, reg, target_date=date(2026, 4, 1), mode="m", engine_version="v",
+    )
+    all_cell = out[(out["station_set"] == "all") & (out["window"] == "all")]
+    qual_cell = out[(out["station_set"] == "qualified") & (out["window"] == "all")]
+    assert len(all_cell) == 1 and int(all_cell.iloc[0]["n_stations"]) == 3
+    assert qual_cell.empty  # 2 qualified < min 3 → suppressed
+
+
+def test_compute_equipment_accuracy_empty_equipment_returns_empty() -> None:
+    df = _make_epoch_errors({"S1": (0.05, 0.1, 4)})
+    reg = _flat_registry({"S1": (True, True)})
+    empty = pd.DataFrame(columns=["station", "rec_type", "rec_fw_ver"])
+    out = _accuracy_stats.compute_equipment_accuracy(
+        df, empty, reg, target_date=date(2026, 4, 1), mode="m", engine_version="v",
+    )
+    assert out.empty
+    assert {"rec_type", "rec_fw_ver", "station_set", "window"}.issubset(out.columns)

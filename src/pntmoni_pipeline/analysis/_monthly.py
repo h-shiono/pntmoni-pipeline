@@ -43,6 +43,9 @@ class MonthlyRollupResult:
     ttff_station: Path
     ttff_network: Path
     n_dates_pooled: int
+    # Receiver × firmware accuracy (Pro §6.3). Optional / fail-open: None
+    # when no qc_summary snapshot is available for the period.
+    accuracy_equipment: Path | None = None
 
 
 def _dates_in_month(year: int, month: int) -> list[date]:
@@ -76,6 +79,7 @@ def compute_monthly(
     engine_version: str = "unknown",
     epoch_errors_root: Path = _accuracy_stats.DEFAULT_EPOCH_ERRORS_ROOT,
     output_root: Path = _accuracy_stats.DEFAULT_OUTPUT_ROOT,
+    qc_summary_root: Path = _accuracy_stats.DEFAULT_QC_SUMMARY_ROOT,
     reset_period_sec: int = _ttff_stats.DEFAULT_RESET_PERIOD_SEC,
     sampling_interval_sec: int = _ttff_stats.DEFAULT_SAMPLING_INTERVAL_SEC,
     horizontal_threshold_m: float | None = None,
@@ -134,6 +138,28 @@ def compute_monthly(
     accuracy_network["date"] = period_label
     accuracy_network = accuracy_network.rename(columns={"date": "period"})
 
+    # Stage-2a receiver × firmware accuracy (Pro §6.3), fail-open: a
+    # missing qc_summary snapshot must never break the four core outputs.
+    accuracy_equipment: pd.DataFrame | None = None
+    try:
+        equipment = _accuracy_stats.load_equipment(found, qc_summary_root)
+        accuracy_equipment = _accuracy_stats.compute_equipment_accuracy(
+            epoch_errors, equipment, registry,
+            target_date=last_date, mode=mode, engine_version=engine_version,
+        )
+        accuracy_equipment["date"] = period_label
+        accuracy_equipment = accuracy_equipment.rename(columns={"date": "period"})
+        if equipment.empty:
+            logger.warning(
+                "monthly rollup %s: no qc_summary equipment snapshot found; "
+                "accuracy_equipment will be empty", period_label,
+            )
+    except Exception:  # noqa: BLE001 — never let §6.3 sink the rollup
+        logger.exception(
+            "monthly rollup %s: equipment accuracy failed; skipping", period_label,
+        )
+        accuracy_equipment = None
+
     # Stage-2b TTFF on pooled epochs.
     ttff_station, events = _ttff_stats.compute_station_ttff(
         epoch_errors,
@@ -181,6 +207,12 @@ def compute_monthly(
         path.parent.mkdir(parents=True, exist_ok=True)
         df.to_parquet(path, index=False)
 
+    equipment_path: Path | None = None
+    if accuracy_equipment is not None:
+        equipment_path = output_root / "accuracy_equipment_monthly" / suffix
+        equipment_path.parent.mkdir(parents=True, exist_ok=True)
+        accuracy_equipment.to_parquet(equipment_path, index=False)
+
     result = MonthlyRollupResult(
         period=period_label,
         mode=mode,
@@ -190,10 +222,11 @@ def compute_monthly(
         ttff_station=out_paths["ttff_station"],
         ttff_network=out_paths["ttff_network"],
         n_dates_pooled=len(found),
+        accuracy_equipment=equipment_path,
     )
     logger.info(
-        "monthly rollup: %s mode=%s pooled %d dates; wrote 4 Parquets",
-        period_label, mode, len(found),
+        "monthly rollup: %s mode=%s pooled %d dates; wrote %d Parquets",
+        period_label, mode, len(found), 4 + (equipment_path is not None),
     )
     if record_provenance:
         _record_provenance(result)
@@ -211,6 +244,9 @@ def _record_provenance(res: MonthlyRollupResult) -> None:
         "accuracy_network": str(res.accuracy_network),
         "ttff_station": str(res.ttff_station),
         "ttff_network": str(res.ttff_network),
+        "accuracy_equipment": (
+            str(res.accuracy_equipment) if res.accuracy_equipment else None
+        ),
         "generated_at": datetime.now(UTC).isoformat(),
     }
     with DEFAULT_PROVENANCE_PATH.open("a", encoding="utf-8") as f:
