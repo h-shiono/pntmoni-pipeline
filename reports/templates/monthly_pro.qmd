@@ -84,7 +84,7 @@ MONTH = 4
 PERIOD = "2026-04"
 STREAM = "final"
 MODE = "kinematic_p30_verify"
-METHODOLOGY_VERSION = "1.0.1"
+METHODOLOGY_VERSION = "1.0.2"
 CONFIG_HASH = "5b53653d2bff9f1e"
 CONFIG_HASH_FULL = "5b53653d2bff9f1e" + "0" * 48
 ENGINE = "pntmoni-claslib"
@@ -1268,7 +1268,7 @@ attention.
 The "Methodology Version Tag" at the end of this report uniquely
 identifies the processing configuration that produced it. For the full
 methodology document see
-[https://pntmoni.com/methodology/v1.0.1](https://pntmoni.com/methodology/v1.0.1).
+[https://pntmoni.com/methodology/clas/v1.0.2](https://pntmoni.com/methodology/clas/v1.0.2).
 
 # Methodology
 
@@ -1335,7 +1335,7 @@ this report.
 
 PNT Moni は GNSS 補強サービスの独立評価サービスとして、内閣府／準天頂衛星システムサービス株式会社(Quasi-Zenith Satellite System Services Inc.; QSS)が公開する公式 Service Performance Report より高い空間・時間解像度で CLAS の性能を継続的にモニタリングしています。月次レポート(本書)は公式の半期毎レポートを補完するもので、月次の更新頻度、独立した第三者評価、実務に資する分析深度を提供します。本 **Pro tier** レポートは、Free tier の全国統計値に加えて、**ネットワーク別(地域別)内訳**、**昼夜別の層別化**(電離圏の影響)、**イベント別の深掘り**、および **要注意局リスト** を提供します。
 
-本レポート末尾の「方法論バージョンタグ」は、本レポートを生成した処理構成を一意に識別します。完全な方法論文書は [https://pntmoni.com/methodology/v1.0.1](https://pntmoni.com/methodology/v1.0.1) を参照してください。
+本レポート末尾の「方法論バージョンタグ」は、本レポートを生成した処理構成を一意に識別します。完全な方法論文書は [https://pntmoni.com/methodology/clas/v1.0.2](https://pntmoni.com/methodology/clas/v1.0.2) を参照してください。
 
 # 評価手法
 

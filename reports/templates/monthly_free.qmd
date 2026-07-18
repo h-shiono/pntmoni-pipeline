@@ -84,7 +84,7 @@ MONTH = 4
 PERIOD = "2026-04"
 STREAM = "final"
 MODE = "kinematic_p30_verify"
-METHODOLOGY_VERSION = "1.0.1"
+METHODOLOGY_VERSION = "1.0.2"
 CONFIG_HASH = "5b53653d2bff9f1e"
 CONFIG_HASH_FULL = "5b53653d2bff9f1e" + "0" * 48
 ENGINE = "pntmoni-claslib"
@@ -988,7 +988,7 @@ in the **Pro tier**.
 The "Methodology Version Tag" at the end of this report uniquely
 identifies the processing configuration that produced it. For the full
 methodology document see
-[https://pntmoni.com/methodology/v1.0.1](https://pntmoni.com/methodology/v1.0.1).
+[https://pntmoni.com/methodology/clas/v1.0.2](https://pntmoni.com/methodology/clas/v1.0.2).
 
 # Methodology
 
@@ -1055,7 +1055,7 @@ this report.
 
 PNT Moni は GNSS 補強サービスの独立評価サービスとして、内閣府／準天頂衛星システムサービス株式会社(Quasi-Zenith Satellite System Services Inc.; QSS)が公開する公式 Service Performance Report より高い空間・時間解像度で CLAS の性能を継続的にモニタリングしています。月次レポート(本書)は公式の半期毎レポートを補完するもので、月次の更新頻度、独立した第三者評価、実務に資する分析深度を提供します。本 Free tier 月次レポートは **全国統計値のみ** を対象とし、観測局単位の詳細分析は **Pro tier** で提供されます。
 
-本レポート末尾の「方法論バージョンタグ」は、本レポートを生成した処理構成を一意に識別します。完全な方法論文書は [https://pntmoni.com/methodology/v1.0.1](https://pntmoni.com/methodology/v1.0.1) を参照してください。
+本レポート末尾の「方法論バージョンタグ」は、本レポートを生成した処理構成を一意に識別します。完全な方法論文書は [https://pntmoni.com/methodology/clas/v1.0.2](https://pntmoni.com/methodology/clas/v1.0.2) を参照してください。
 
 # 評価手法
 
@@ -1959,7 +1959,7 @@ stations.
 | Reporting period | `{python} PERIOD_LABEL` |
 | Data mode | `{python} DATA_MODE` |
 
-For the full methodology document see [https://pntmoni.com/methodology/v1.0.1](https://pntmoni.com/methodology/v1.0.1).
+For the full methodology document see [https://pntmoni.com/methodology/clas/v1.0.2](https://pntmoni.com/methodology/clas/v1.0.2).
 
 ---
 
@@ -1989,7 +1989,7 @@ PNT Moni の評価は GEONET 観測局で受信される Galileo 信号も対象
 | 対象期間                   | `{python} PERIOD_LABEL` |
 | データモード               | `{python} DATA_MODE`               |
 
-完全な方法論文書は [https://pntmoni.com/methodology/v1.0.1](https://pntmoni.com/methodology/v1.0.1) を参照してください。
+完全な方法論文書は [https://pntmoni.com/methodology/clas/v1.0.2](https://pntmoni.com/methodology/clas/v1.0.2) を参照してください。
 
 ---
 
