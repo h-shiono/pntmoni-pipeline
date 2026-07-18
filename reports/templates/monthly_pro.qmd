@@ -1846,12 +1846,14 @@ ttff_cut_table
 Horizontal and vertical 95th-percentile error binned into ~60 km hex
 cells, under the same three cuts: **all data**, **daytime vs nighttime**,
 and an **Inside-network boundary** overlaid on the all-data maps. Cells
-backed by fewer than three distinct stations are left blank (ADR 0013).
+backed by fewer than three distinct stations are drawn with a dotted
+inner ring — a reliability marking, not an exclusion (ADR 0013
+Postscript 2026-07-18).
 :::
 ::: {.content-visible when-profile="ja"}
 ## 空間分布
 
-水平・垂直の 95 パーセンタイル誤差を約 60 km の hex セルに集計し、同じ3カット —— **全データ**、**昼間 vs 夜間**、全データマップに **網内境界** を重畳 —— で示します。3局未満のセルは空白とします(ADR 0013)。
+水平・垂直の 95 パーセンタイル誤差を約 60 km の hex セルに集計し、同じ3カット —— **全データ**、**昼間 vs 夜間**、全データマップに **網内境界** を重畳 —— で示します。3 局未満のセルは点線の内側リング付きで表示します — 除外ではなく信頼性の表示です(ADR 0013 Postscript 2026-07-18)。
 :::
 
 ```{python}
@@ -1863,7 +1865,14 @@ import cartopy.feature as cfeature
 from matplotlib.colors import Normalize
 from matplotlib.ticker import FuncFormatter
 
-MIN_STATIONS_PER_CELL = 3
+# Low-n reliability marking (ADR 0013 Postscript 2026-07-18): all
+# populated cells render; < MIN_STATIONS_PER_CELL distinct stations →
+# dotted inset ring over the true fill colour (data.lowN token).
+from pntmoni_pipeline.reports.hex_lown import (
+    MIN_STATIONS_PER_CELL,
+    overlay_lown_rings,
+)
+
 H_VMAX_CM = 30.0   # horizontal display cap (cm)
 V_VMAX_CM = 50.0   # vertical display cap (cm)
 _PROJ_AEA = ccrs.AlbersEqualArea(
@@ -1892,8 +1901,7 @@ def _hex_panel(fig, ax, df_sub, title, vmax_cm, col):
                    reduce_C_function=lambda v: np.percentile(v, 95),
                    gridsize=50, extent=_ext, cmap=CMAP_SEQUENTIAL, norm=_norm,
                    edgecolors="white", linewidths=0.3, mincnt=1, alpha=0.5, zorder=10)
-    _keep = _counts >= MIN_STATIONS_PER_CELL
-    hb.set_offsets(hb.get_offsets()[_keep]); hb.set_array(hb.get_array()[_keep])
+    overlay_lown_rings(ax, hb, _counts, background="#f5f5f4")
     ax.set_title(title, fontsize=10)
     ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)
     cbar = fig.colorbar(hb, ax=ax, fraction=0.04, pad=0.03, extend="max",

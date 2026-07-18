@@ -50,8 +50,11 @@ QC_TOOL_FULL = f"{QC_TOOL_NAME} {QC_TOOL_VERSION}"
 # published editions — e.g. the 2026-06 GEONET QC final was published
 # under qc 1.0.0 while clas was already at 1.0.1.
 METHODOLOGY_VERSIONS = {
-    "clas": "1.0.1",   # Product 1 — CLAS evaluation (monthly_free / monthly_pro)
-    "qc": "1.0.0",     # Product 2 — GEONET QC (monthly_qc)
+    # 1.0.2 / 1.1.0 (2026-07-18): hex low-n blank suppression retired —
+    # all populated cells render, <3-station cells carry the dotted
+    # inset-ring reliability marking (ADR 0013 Postscript, Issue #27).
+    "clas": "1.0.2",   # Product 1 — CLAS evaluation (monthly_free / monthly_pro)
+    "qc": "1.1.0",     # Product 2 — GEONET QC (monthly_qc)
 }
 
 # Template stem → product track. New templates MUST be registered here;

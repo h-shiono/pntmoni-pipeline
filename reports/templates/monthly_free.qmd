@@ -1419,12 +1419,15 @@ plt.tight_layout()
 Performance is visualised on hexagonal cells sized to the CLAS
 augmentation grid spacing (~60 km). Each cell's value is the **95th
 percentile computed over all stations and all epochs pooled within that
-cell** (same rule as methodology §5.1). Cells with no stations, and
-**cells backed by fewer than 3 distinct stations, are left blank**
-(a single-station cell is reverse-engineerable from public coordinates,
-losing anonymity, and its percentile is unstable). Southern-island
-stations outside the CLAS service area (`out_of_service`) are excluded
-from cell evaluation.
+cell** (same rule as methodology §5.1). Cells with no stations remain
+blank. **Cells backed by fewer than 3 distinct stations are drawn with
+a dotted inner ring** — a reliability marking: with so few stations the
+cell's percentile is statistically thin and station-local effects
+(multipath environment, antenna snow accretion) can colour the whole
+cell, so read those cells as indicative rather than representative
+(methodology §5.1, 2026-07-18 revision). Southern-island stations
+outside the CLAS service area (`out_of_service`) are excluded from
+cell evaluation.
 
 Colour encodes error magnitude on a **perceptually-uniform continuous
 colormap** (purple = smaller error → yellow = larger error), with **no
@@ -1440,7 +1443,7 @@ Summary note). Cells exceeding the range render at the top colour
 ::: {.content-visible when-profile="ja"}
 ### 空間分布
 
-CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセル、および**異なる観測局が 3 局未満のセルは空白**で表示します(単独局セルは公開座標から逆引き可能で匿名性を欠き、かつパーセンタイルが不安定なため)。CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
+CLAS の補強グリッド間隔(約 60 km)に合わせた六角形セルで、全国を区切って性能を可視化します。各セルの値は **当該セル内の全観測局・全エポックをプールして算出した 95 パーセンタイル**(方法論 §5.1 と同一規則)です。観測局を含まないセルは空白のままです。**異なる観測局が 3 局未満のセルは、点線の内側リング付きで表示**します — これは信頼性の表示です。局数の少ないセルのパーセンタイルは統計的に薄く、局固有要因(マルチパス環境、アンテナ着雪等)がセル全体の色を決めうるため、該当セルは代表値ではなく参考値として読んでください(方法論 §5.1、2026-07-18 改訂)。CLAS のサービス対象範囲外(`out_of_service`)の南方諸島観測局はセル評価から除外しています。
 
 色は誤差の大きさを**知覚均等な連続カラーマップ**(紫=誤差小 → 黄=誤差大)で表し、**明確な境界を設けません** — 地図は性能の空間的なグラデーションを示すものであり、合否の分類ではありません。スケールは固定レンジ(水平 0〜40 cm、垂直 0〜60 cm)で、PNT Moni 自身の歴史的な誤差レンジから設定しているため、月をまたいで比較できます。このレンジは性能標準の閾値では**なく**、色分けは適合性判定でも**ありません**(§評価手法およびエグゼクティブサマリの注記参照)。レンジを超えるセルは上端色で表示します(カラーバー上端の矢印)。
 :::
@@ -1469,16 +1472,18 @@ from matplotlib.ticker import FuncFormatter
 H_VMAX_CM = 40.0
 V_VMAX_CM = 60.0
 
-# Mandatory minimum-stations-per-cell suppression (ADR 0013, shared
-# Product 1 / Product 2 hex requirement): a cell backed by fewer than
-# this many distinct stations is neither anonymous (GEONET coordinates
-# are public, so a near-single-station cell is reverse-engineerable) nor
-# a stable percentile. Because this map pools *epochs* (not per-station
-# values), the epoch-count `mincnt` does NOT enforce a station count —
+# Low-n reliability marking (ADR 0013 Postscript 2026-07-18, shared
+# Product 1 / Product 2 hex spec): every populated cell is rendered;
+# cells backed by fewer than MIN_STATIONS_PER_CELL distinct stations
+# keep their true fill colour and carry a dotted inset ring (data.lowN
+# token). Because this map pools *epochs* (not per-station values), the
+# epoch-count `mincnt` does NOT measure a station count —
 # `_render_hex_panel` computes the distinct-station count per cell in a
-# separate pass and drops cells below this threshold. Value kept equal to
-# Product 2's MIN_STATIONS_PER_CELL.
-MIN_STATIONS_PER_CELL = 3
+# separate pass and hands it to overlay_lown_rings.
+from pntmoni_pipeline.reports.hex_lown import (
+    MIN_STATIONS_PER_CELL,
+    overlay_lown_rings,
+)
 
 # Albers Equal-Area Conic over Japan — matches methodology v1.0.0
 # Figure 1 and the rest of the report's maps.
@@ -1554,13 +1559,10 @@ def _render_hex_panel(col, title, vmax_cm):
         mincnt=1, alpha=0.5, zorder=10,
     )
 
-    # Mandatory minimum-stations-per-cell suppression (ADR 0013): drop
-    # cells backed by < MIN_STATIONS_PER_CELL distinct stations — removing
-    # both the fill and the hex outline (set_offsets, not just a masked
-    # array, so suppressed cells leave no white edge).
-    _keep = _counts >= MIN_STATIONS_PER_CELL
-    hb.set_offsets(hb.get_offsets()[_keep])
-    hb.set_array(hb.get_array()[_keep])
+    # Low-n reliability marking (ADR 0013 Postscript 2026-07-18): all
+    # populated cells stay; cells with < MIN_STATIONS_PER_CELL distinct
+    # stations get the dotted inset ring over their true fill colour.
+    overlay_lown_rings(ax, hb, _counts, background="#f5f5f4")
 
     ax.set_title(title, fontsize=11)
     ax.gridlines(draw_labels=False, linewidth=0.3, alpha=0.3)

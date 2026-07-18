@@ -104,7 +104,7 @@ def test_assemble_params_contains_required_fields(tmp_path: Path):
     assert p["year"] == 2026 and p["month"] == 4 and p["period"] == "2026-04"
     assert p["stream"] == "final" and p["data_mode"] == "live"
     assert p["product"] == "clas"
-    assert p["methodology_version"] == "1.0.1"
+    assert p["methodology_version"] == "1.0.2"
     assert p["engine"] == "pntmoni-claslib"
     assert p["config_hash"] == "0" * ch.DISPLAY_LEN
     assert p["reference_coord_version"] == "gsi-daily-median15d-1.0"

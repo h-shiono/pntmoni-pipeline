@@ -309,15 +309,16 @@ QC_TOOL = "teqc"
 QC_VERSION = "2019Feb25"
 CONVBIN_VERSION = "RTKLIB 2.4.2"
 
-# Minimum stations backing a hex cell for it to render in the spatial
-# maps; sparser cells are left blank. Mandatory minimum-stations-per-cell
-# suppression (ADR 0013, shared Product 1 / Product 2 hex requirement):
-# a cell with <3 stations is neither anonymous (GEONET coordinates are
-# public, so a single-station cell is reverse-engineerable to that
-# station) nor a statistically stable median. Empirical tuning parameter
-# — raise it if regional sparsity (Okinawa / Ogasawara) still leaves
-# identifiable near-single-station cells.
-MIN_STATIONS_PER_CELL = 3
+# Low-n reliability marking (ADR 0013 Postscript 2026-07-18, shared
+# Product 1 / Product 2 hex spec): every populated cell renders; a cell
+# backed by fewer than MIN_STATIONS_PER_CELL reporting stations keeps
+# its true fill colour and carries a dotted inset ring (data.lowN
+# token) — its median is statistically thin, so it is marked, not
+# hidden. Empirical tuning parameter captured by config_hash.
+from pntmoni_pipeline.reports.hex_lown import (
+    MIN_STATIONS_PER_CELL,
+    overlay_lown_rings,
+)
 
 # ---- Data loading: stack the month's per-DOY QC parquets ------------
 # Each parquet is one DOY × ~1298 stations × 639 columns. Stack along a
@@ -1124,9 +1125,10 @@ station-monthly values of the stations falling inside it. The grid is
 drawn on an Albers Equal-Area projection so every cell covers the same
 ground area, making colour directly comparable across the country and
 between months. Cells backed by fewer than `{python} MIN_STATIONS_PER_CELL`
-reporting stations are left blank — both because a single-station cell
-is not anonymous (GEONET coordinates are public) and because its median
-would be statistically thin.
+reporting stations are drawn with a **dotted inner ring** — a
+reliability marking: their median is statistically thin, so read those
+cells as indicative rather than representative (methodology §5.3,
+2026-07-18 revision).
 :::
 ::: {.content-visible when-profile="ja"}
 ## 空間分布
@@ -1136,8 +1138,9 @@ would be statistically thin.
 セル内に含まれる局の基準局・月間値の **中央値** で着色しています。グリッドは
 Albers 正積図法上に描画され、全セルが同一の地表面積を覆うため、全国間・月間で
 色を直接比較できます。報告局数が `{python} MIN_STATIONS_PER_CELL` 局未満の
-セルは空白とします — 単独局セルは匿名性を欠く(GEONET 座標は公開情報)うえ、
-中央値が統計的に薄くなるためです。
+セルは**点線の内側リング付き**で表示します — これは信頼性の表示であり、
+局数の少ないセルの中央値は統計的に薄いため、参考値として読んでください
+(方法論 §5.3、2026-07-18 改訂)。
 :::
 
 ```{python}
@@ -1146,8 +1149,8 @@ Albers 正積図法上に描画され、全セルが同一の地表面積を覆�
 
 from matplotlib.colors import LogNorm
 
-# MIN_STATIONS_PER_CELL (defined in setup) is the mandatory
-# minimum-stations-per-cell hex suppression — see its definition.
+# MIN_STATIONS_PER_CELL / overlay_lown_rings (imported in setup) carry
+# the shared low-n reliability-marking spec — see the setup comment.
 
 def map_grid(metrics, n_rows, n_cols, fig_size, cmap, norm_factory, *, title_fn=None):
     """Render a grid of hex maps for the given station_monthly metrics.
@@ -1171,15 +1174,21 @@ def map_grid(metrics, n_rows, n_cols, fig_size, cmap, norm_factory, *, title_fn=
         # is taken over real observations only (a NaN in the pool would
         # propagate to the whole cell via np.median).
         sub = station_monthly[["_x_aea", "_y_aea", m]].dropna(subset=[m])
-        # mincnt=MIN_STATIONS_PER_CELL suppresses sparse cells: a cell
-        # backed by <3 stations is neither anonymous (GEONET coords are
-        # public, so a 1-station cell is reverse-engineerable) nor a
-        # stable median. Mandatory minimum-stations-per-cell suppression
-        # per ADR 0013 (shared Product 1 / Product 2 hex requirement).
-        ax.hexbin(sub["_x_aea"].to_numpy(), sub["_y_aea"].to_numpy(),
-                  C=sub[m].to_numpy(), reduce_C_function=np.median,
-                  gridsize=50, cmap=cmap, norm=norm, mincnt=MIN_STATIONS_PER_CELL,
-                  edgecolors="white", linewidths=0.3, alpha=0.5, zorder=3)
+        _sx, _sy = sub["_x_aea"].to_numpy(), sub["_y_aea"].to_numpy()
+        _ext = (_sx.min(), _sx.max(), _sy.min(), _sy.max())
+        # One row = one station here, so a len() reduce in a shared-grid
+        # counting pass gives the per-cell station count for the low-n
+        # marking (ADR 0013 Postscript 2026-07-18: all populated cells
+        # render; <MIN_STATIONS_PER_CELL stations → dotted inset ring).
+        _cnt = ax.hexbin(_sx, _sy, C=sub[m].to_numpy(),
+                         reduce_C_function=len, gridsize=50, extent=_ext,
+                         mincnt=1)
+        _counts = np.asarray(_cnt.get_array()); _cnt.remove()
+        hb = ax.hexbin(_sx, _sy,
+                       C=sub[m].to_numpy(), reduce_C_function=np.median,
+                       gridsize=50, extent=_ext, cmap=cmap, norm=norm, mincnt=1,
+                       edgecolors="white", linewidths=0.3, alpha=0.5, zorder=3)
+        overlay_lown_rings(ax, hb, _counts, background="#f5f5f4")
         title = title_fn(m) if title_fn else f"{METRIC_LABELS.get(m, m)} ({METRIC_UNITS.get(m, '')})"
         ax.set_title(title, loc="left", fontweight=600, fontsize=11)
         cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap),
@@ -1265,11 +1274,17 @@ norm = LogNorm(vmin=vmin, vmax=vmax)
 # colour-scale floor so a zero-slip station maps onto the LogNorm).
 _cs = station_monthly[["_x_aea", "_y_aea", "cycle_slips_core"]].dropna(
     subset=["cycle_slips_core"])
-ax.hexbin(_cs["_x_aea"].to_numpy(), _cs["_y_aea"].to_numpy(),
-          C=_cs["cycle_slips_core"].clip(lower=vmin).to_numpy(),
-          reduce_C_function=np.median, gridsize=50,
-          cmap=CMAP_PERFORMANCE, norm=norm, mincnt=MIN_STATIONS_PER_CELL,
-          edgecolors="white", linewidths=0.3, alpha=0.5, zorder=3)
+_csx, _csy = _cs["_x_aea"].to_numpy(), _cs["_y_aea"].to_numpy()
+_csv = _cs["cycle_slips_core"].clip(lower=vmin).to_numpy()
+_cs_ext = (_csx.min(), _csx.max(), _csy.min(), _csy.max())
+_cnt = ax.hexbin(_csx, _csy, C=_csv, reduce_C_function=len,
+                 gridsize=50, extent=_cs_ext, mincnt=1)
+_counts = np.asarray(_cnt.get_array()); _cnt.remove()
+hb = ax.hexbin(_csx, _csy, C=_csv,
+               reduce_C_function=np.median, gridsize=50, extent=_cs_ext,
+               cmap=CMAP_PERFORMANCE, norm=norm, mincnt=1,
+               edgecolors="white", linewidths=0.3, alpha=0.5, zorder=3)
+overlay_lown_rings(ax, hb, _counts, background="#f5f5f4")
 ax.set_title(T("spatial_slips_title"),
              loc="left", fontweight=600, fontsize=11)
 cbar = fig.colorbar(ScalarMappable(norm=norm, cmap=CMAP_PERFORMANCE),
