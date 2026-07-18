@@ -1,4 +1,4 @@
-// pntmoni brand tokens v1.1.0 — GENERATED from pntmoni-docs/60-brand/tokens.json
+// pntmoni brand tokens v1.2.0 — GENERATED from pntmoni-docs/60-brand/tokens.json
 // Do not hand-edit. Regenerate: node 60-brand/generate-tokens.mjs (see ADR 0017)
 
 /*-- scss:defaults --*/
@@ -29,10 +29,11 @@ $pm-status-normal:   #2E8B6B;
 $pm-status-degraded: #E08A1E;
 $pm-status-critical: #C24B3A;
 
-// low-n hex-cell reliability hatch — overlay only, never recolor the fill
-$pm-lown-hatch-on-dark:  #FFFFFF;
-$pm-lown-hatch-on-light: #22273A;
-$pm-lown-hatch-opacity:  0.5;
+// low-n hex-cell reliability marking — dotted inset ring; never recolor fill or restyle cell edge
+$pm-lown-ring-on-dark:  #FFFFFF;
+$pm-lown-ring-on-light: #22273A;
+$pm-lown-ring-inset-ratio: 0.8;
+$pm-lown-ring-stroke-ratio: 0.08;
 
 // report headings = sans; NO font embedding (system-installed + fallbacks only)
 $font-family-sans-serif: "IBM Plex Sans JP", "Noto Sans JP", system-ui, sans-serif;
