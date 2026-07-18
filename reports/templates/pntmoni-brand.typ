@@ -1,4 +1,4 @@
-// pntmoni brand tokens v1.0.0 — GENERATED from pntmoni-docs/60-brand/tokens.json
+// pntmoni brand tokens v1.1.0 — GENERATED from pntmoni-docs/60-brand/tokens.json
 // Do not hand-edit. Regenerate: node 60-brand/generate-tokens.mjs (see ADR 0017)
 
 // brand palette (editorial only)
